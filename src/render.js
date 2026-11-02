@@ -1,0 +1,510 @@
+// Three.js renderer: level scene, trucks, particles, camera, menu dioramas.
+import * as THREE from 'three';
+import { tex, skyTexture } from './textures.js';
+import { mat, box, cbox, buildTruck, buildWheel, buildHookLink, buildGem, buildFinish, buildDeco } from './models.js';
+
+const D = 4; // terrain depth (z)
+
+const STYLE = {
+  grass: { top: 'grassTop', side: 'dirt', cap: true },
+  dirt: { top: 'dirt', side: 'dirt' },
+  sand: { top: 'sand', side: 'sand' },
+  wood: { top: 'plank', side: 'wood' },
+  stone: { top: 'castleTop', side: 'stone' },
+  castle: { top: 'castleTop', side: 'castle' },
+  concrete: { top: 'concreteTop', side: 'concrete' },
+  girder: { top: 'girder', side: 'girder' },
+  metal: { top: 'metalTop', side: 'metal' },
+  pad: { top: 'pad', side: 'metal', emissive: 0x0a7d99 },
+  crate: { top: 'crate', side: 'crate' },
+  labcrate: { top: 'labcrate', side: 'labcrate' },
+  log: { top: 'log', side: 'log' },
+  barrel: { top: 'barrel', side: 'barrel' },
+};
+const texMats = {};
+function tmat(name, emissive) {
+  const k = name + (emissive || '');
+  if (!texMats[k]) texMats[k] = new THREE.MeshLambertMaterial({ map: tex(name), ...(emissive ? { emissive, emissiveIntensity: 0.6 } : {}) });
+  return texMats[k];
+}
+const styleMats = (s) => { const st = STYLE[s] || STYLE.concrete; return [tmat(st.top, st.emissive), tmat(st.side)]; };
+
+// Extrude a 2D convex polygon into a terrain prism with world-space box-projected UVs
+function prismGeo(pts, depth = D, zc = 0) {
+  const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+  let g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+  g.translate(0, 0, zc - depth / 2);
+  g = g.toNonIndexed(); g.computeVertexNormals();
+  const pos = g.attributes.position, nor = g.attributes.normal;
+  const top = [], side = [];
+  for (let i = 0; i < pos.count; i += 3) {
+    const ny = (nor.getY(i) + nor.getY(i + 1) + nor.getY(i + 2)) / 3;
+    (ny > 0.45 ? top : side).push(i);
+  }
+  const P = [], N = [], U = [];
+  const push = (i) => {
+    for (let k = 0; k < 3; k++) {
+      const x = pos.getX(i + k), y = pos.getY(i + k), z = pos.getZ(i + k);
+      const nx = nor.getX(i + k), ny = nor.getY(i + k), nz = nor.getZ(i + k);
+      P.push(x, y, z); N.push(nx, ny, nz);
+      const ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+      if (ay >= ax && ay >= az) U.push(x, z); else if (az >= ax) U.push(x, y); else U.push(z, y);
+    }
+  };
+  top.forEach(push); side.forEach(push);
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  out.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  out.addGroup(0, top.length * 3, 0); out.addGroup(top.length * 3, side.length * 3, 1);
+  return out;
+}
+
+function piecePoly(p) {
+  if (p.t === 'poly') return p.pts;
+  const c = Math.cos(p.a || 0), s = Math.sin(p.a || 0), hw = p.w / 2, hh = p.h / 2;
+  return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => [p.x + x * c - y * s, p.y + x * s + y * c]);
+}
+
+// grass cap along a top edge
+function capMesh(x0, y0, x1, y1, depth = D + 0.08) {
+  const len = Math.hypot(x1 - x0, y1 - y0), ang = Math.atan2(y1 - y0, x1 - x0);
+  const h = 0.42;
+  const geo = new THREE.BoxGeometry(len + 0.04, h, depth);
+  const uv = geo.attributes.uv;
+  for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) {
+    const i = f * 4 + k;
+    if (f === 2 || f === 3) uv.setXY(i, uv.getX(i) * len, uv.getY(i) * depth);
+    else if (f === 4 || f === 5) uv.setXY(i, uv.getX(i) * len, uv.getY(i));
+    else uv.setXY(i, uv.getX(i) * depth, uv.getY(i));
+  }
+  const side = new THREE.MeshLambertMaterial({ map: tex('grassSide'), transparent: true, alphaTest: 0.5 });
+  const top = tmat('grassTop');
+  const m = new THREE.Mesh(geo, [side, side, top, top, side, side]);
+  m.position.set((x0 + x1) / 2 - Math.sin(ang) * -0.0, (y0 + y1) / 2 - h / 2 + 0.06, 0);
+  m.rotation.z = ang; m.receiveShadow = true; m.castShadow = false;
+  return m;
+}
+
+function texturedBox(w, h, d, style) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const uv = geo.attributes.uv;
+  const sizes = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * sizes[f][0], uv.getY(i) * sizes[f][1]); }
+  const [top, side] = styleMats(style);
+  const cube = ['crate', 'labcrate', 'barrel'].includes(style);
+  if (cube) { for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / sizes[(i / 4) | 0][0], uv.getY(i) / sizes[(i / 4) | 0][1]); }
+  const m = new THREE.Mesh(geo, [side, side, top, top, side, side]);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+function nameSprite(text, color = '#ffffff') {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.font = '700 34px Fredoka, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 8; g.strokeStyle = '#11131c'; g.strokeText(text, 128, 34); g.fillStyle = color; g.fillText(text, 128, 34);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
+  s.scale.set(3.2, 0.8, 1); s.renderOrder = 10;
+  return s;
+}
+
+let rseed = 1;
+const srand = () => ((rseed = (rseed * 16807) % 2147483647) / 2147483647);
+
+export class Renderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.r = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.r.outputColorSpace = THREE.SRGBColorSpace;
+    this.r.shadowMap.enabled = true;
+    this.r.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.camera = new THREE.PerspectiveCamera(32, 1, 0.5, 600);
+    this.scene = new THREE.Scene();
+    this.cars = [];
+    this.particles = [];
+    this.shake = 0;
+    this.camPos = new THREE.Vector3();
+    this.camLook = new THREE.Vector3();
+    this.mode = 'none';
+    this.resize();
+    window.addEventListener('resize', () => this.resize());
+  }
+
+  setShadows(on) { this.shadowsOn = on; this.r.shadowMap.enabled = on; if (this.sun) this.sun.castShadow = on; }
+
+  resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    this.r.setSize(w, h, false);
+    this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+  }
+
+  // ------------------------------------------------------------ shared scene bits
+  newScene(theme) {
+    const s = new THREE.Scene();
+    s.background = skyTexture(theme.skyTop, theme.skyBottom);
+    s.fog = new THREE.Fog(theme.fog, 70, 260);
+    s.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab8, 1.35));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.9);
+    sun.position.set(-8, 20, 14); sun.castShadow = this.shadowsOn !== false;
+    sun.shadow.mapSize.set(2048, 2048);
+    const sc = sun.shadow.camera; sc.left = -22; sc.right = 22; sc.top = 16; sc.bottom = -12; sc.near = 1; sc.far = 80;
+    sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.02;
+    s.add(sun); s.add(sun.target);
+    this.sun = sun;
+    return s;
+  }
+
+  background(s, theme, x0, x1, waterY) {
+    rseed = 99;
+    const mg = new THREE.ConeGeometry(1, 1, 4, 1);
+    for (let x = x0 - 120; x < x1 + 160; x += 26 + srand() * 22) {
+      const h = 30 + srand() * 45, r = h * (0.8 + srand() * 0.4);
+      const m = new THREE.Mesh(mg, mat(theme.mount[(srand() * 3) | 0], { flatShading: true, fog: true }));
+      m.scale.set(r, h, r * 0.7); m.position.set(x, waterY + h / 2 - 2, -110 - srand() * 70); m.rotation.y = Math.PI / 4 + srand() * 0.3;
+      s.add(m);
+    }
+    // clouds
+    this.clouds = [];
+    for (let x = x0 - 60; x < x1 + 80; x += 18 + srand() * 20) {
+      const c = new THREE.Group(); const cm = mat(theme.cloud, { fog: false });
+      const w = 6 + srand() * 8;
+      cbox(c, 0, 0, 0, w, 0.5, 3, cm); cbox(c, srand() * 2, 0.4, 0, w * 0.6, 0.5, 2.6, cm);
+      c.children.forEach((m) => { m.castShadow = false; });
+      c.position.set(x, 20 + srand() * 12, -70 - srand() * 40); c.scale.setScalar(1.6); s.add(c); this.clouds.push(c);
+    }
+    // water / floor
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ color: theme.water }));
+    water.rotation.x = -Math.PI / 2; water.position.y = waterY; water.receiveShadow = true; s.add(water);
+    const deep = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshBasicMaterial({ color: theme.waterDeep, fog: true }));
+    deep.rotation.x = -Math.PI / 2; deep.position.set(0, waterY + 0.01, -1500 - 30); s.add(deep);
+  }
+
+  // ------------------------------------------------------------ level
+  buildLevel(level, theme) {
+    this.dispose();
+    const s = this.scene = this.newScene(theme);
+    this.mode = 'game';
+    this.theme = theme;
+    const pieces = level.pieces;
+    let minX = 0, maxX = 0;
+    rseed = 17 + level.index * 13 + level.world * 101;
+    const foam = mat(0xffffff);
+    const waterY = level.water ?? -3;
+    for (const p of pieces) {
+      if (p.t === 'box' || p.t === 'poly') {
+        const pts = piecePoly(p);
+        const m = new THREE.Mesh(prismGeo(pts), styleMats(p.s)); m.receiveShadow = true; m.castShadow = true; s.add(m);
+        const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+        const bx0 = Math.min(...xs), bx1 = Math.max(...xs), by0 = Math.min(...ys), by1 = Math.max(...ys);
+        minX = Math.min(minX, bx0); maxX = Math.max(maxX, bx1);
+        if (by0 < waterY + 0.05 && by1 > waterY) box(s, bx0 - 0.12, waterY - 0.02, -D / 2 - 0.12, bx1 + 0.12, waterY + 0.06, D / 2 + 0.12, foam).castShadow = false;
+        // grass caps on upward faces
+        if (STYLE[p.s]?.cap && !p.a) {
+          for (let i = 0; i < pts.length; i++) {
+            const a = pts[i], b = pts[(i + 1) % pts.length];
+            if (b[0] > a[0] + 0.01 === false) continue;
+            const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+            if (Math.abs(ang) > 0.9) continue;
+            // only top edges: interior lies below edge
+            const cx = xs.reduce((u, v) => u + v) / xs.length, cy = ys.reduce((u, v) => u + v) / ys.length;
+            const cross = (b[0] - a[0]) * (cy - a[1]) - (b[1] - a[1]) * (cx - a[0]);
+            if (cross > 0) continue;
+            s.add(capMesh(a[0], a[1], b[0], b[1]));
+          }
+          // auto decoration on wide flat grass
+          if (p.t === 'box' && p.w > 5) this.autoDeco(s, theme, bx0 + 1, bx1 - 1, by1);
+        } else if (p.t === 'box' && p.w > 6 && !['girder', 'pad', 'wood'].includes(p.s)) this.autoDeco(s, theme, bx0 + 1, bx1 - 1, by1);
+      } else if (p.t === 'deco') {
+        const d = buildDeco(p.kind, srand); d.position.set(p.x, p.y, -1.2); s.add(d);
+      } else if (p.t === 'bridge') {
+        for (const [x, y] of [[p.x1, p.y1], [p.x2, p.y2]]) for (const z of [-1.75, 1.75]) {
+          box(s, x - 0.16, y - 1.0, z - 0.16, x + 0.16, y + 1.2, z + 0.16, 0x9a5b34);
+          box(s, x - 0.2, y + 1.1, z - 0.2, x + 0.2, y + 1.25, z + 0.2, 0x7a4426);
+        }
+      } else if (p.t === 'finish') {
+        const f = buildFinish(); f.position.set(p.x, p.y, 0); s.add(f); this.finish = f;
+      }
+    }
+    this.background(s, theme, minX, maxX, waterY);
+    this.level = level;
+    this.ropes = [];
+    this.dynViews = [];
+    this.gemViews = [];
+    return s;
+  }
+
+  autoDeco(s, theme, x0, x1, y) {
+    for (let x = x0; x < x1; x += 3 + srand() * 5) {
+      if (srand() < 0.35) continue;
+      const kind = theme.deco[(srand() * theme.deco.length) | 0];
+      const d = buildDeco(kind, srand);
+      d.position.set(x, y, -1.3 - srand() * 0.5); d.rotation.y = (srand() - 0.5) * 0.6;
+      s.add(d);
+    }
+  }
+
+  attachSim(sim) {
+    // dynamic pieces from the player's simulation
+    const s = this.scene;
+    let bridgePlanks = [];
+    for (const d of sim.dynamics) {
+      const p = d.piece;
+      let m;
+      if (p.t === 'plank') {
+        m = texturedBox(p.w, p.h, 3.4, 'wood'); m.material = [tmat('wood'), tmat('wood'), tmat('plank'), tmat('wood'), tmat('wood'), tmat('wood')];
+        bridgePlanks.push(m);
+      } else {
+        const depth = ['crate', 'labcrate', 'barrel'].includes(p.s) ? p.w : p.t === 'dyn' && p.s === 'log' ? 3 : 3.4;
+        m = texturedBox(p.w, p.h, depth, p.s);
+      }
+      s.add(m); this.dynViews.push({ m, body: d.body });
+    }
+    // rope rails over bridge planks
+    if (bridgePlanks.length) {
+      for (const z of [-1.7, 1.7]) {
+        const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(bridgePlanks.length * 3 * 2), 3));
+        const line = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x5b3a1e }));
+        line.frustumCulled = false; s.add(line); this.ropes.push({ line, z });
+      }
+      this.bridgeBodies = sim.dynamics.filter((d) => d.piece.t === 'plank').map((d) => d.body);
+    }
+    for (const g of sim.gems) {
+      const v = buildGem(); v.position.set(g.piece.x, g.piece.y, 0); s.add(v); this.gemViews.push({ v, g, t: srand() * 6, pop: 0 });
+    }
+  }
+
+  addCar(sim, spec, { label, color, ghost } = {}) {
+    const parts = buildTruck(spec);
+    this.scene.add(parts.group);
+    const wheels = sim.wheels.map(() => { const w = buildWheel(spec.wheelR, spec.look); this.scene.add(w); return w; });
+    const hook = sim.hook.map((b, i) => { const h = buildHookLink(i === sim.hook.length - 1); this.scene.add(h); return h; });
+    if (ghost) [parts.group, ...wheels, ...hook].forEach((o) => o.traverse((m) => { if (m.isMesh) { m.material = (Array.isArray(m.material) ? m.material[0] : m.material).clone(); m.material.transparent = true; m.material.opacity = 0.55; m.castShadow = false; } }));
+    let tag = null;
+    if (label) { tag = nameSprite(label, color); this.scene.add(tag); }
+    const car = { sim, spec, parts, wheels, hook, tag, dustT: 0 };
+    this.cars.push(car);
+    return car;
+  }
+
+  // ------------------------------------------------------------ particles
+  spawn(x, y, z, vx, vy, vz, color, life = 0.8, size = 0.22, grav = -9) {
+    let p = this.particles.find((q) => q.life <= 0);
+    if (!p) {
+      if (this.particles.length > 220) return;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color }));
+      this.scene.add(m); p = { m, life: 0 }; this.particles.push(p);
+    }
+    if (p.m.parent !== this.scene) this.scene.add(p.m);
+    p.m.material.color.setHex(color); p.m.visible = true;
+    p.m.position.set(x, y, z); p.v = new THREE.Vector3(vx, vy, vz); p.life = p.max = life; p.size = size; p.grav = grav;
+    p.m.scale.setScalar(size);
+  }
+
+  burst(x, y, color, n = 16, speed = 5, grav = -9, life = 0.9) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = speed * (0.4 + Math.random() * 0.6);
+      this.spawn(x, y, (Math.random() - 0.5) * 2, Math.cos(a) * s, Math.abs(Math.sin(a)) * s + 1, (Math.random() - 0.5) * s, color, life * (0.6 + Math.random() * 0.6), 0.14 + Math.random() * 0.18, grav);
+    }
+  }
+
+  // ------------------------------------------------------------ per-frame
+  update(dt, focus, throttle = 0) {
+    const t = performance.now() / 1000;
+    for (const car of this.cars) {
+      const { sim } = car;
+      const c = sim.chassis, p = c.getPosition();
+      car.parts.group.position.set(p.x, p.y, 0); car.parts.group.rotation.z = c.getAngle();
+      sim.wheels.forEach((w, i) => { const q = w.getPosition(); car.wheels[i].position.set(q.x, q.y, 0); car.wheels[i].rotation.z = w.getAngle(); });
+      sim.hook.forEach((b, i) => { const q = b.getPosition(); car.hook[i].position.set(q.x, q.y, 0); car.hook[i].rotation.z = b.getAngle(); });
+      for (const sp of car.parts.spin) sp.obj.rotation[sp.axis] += sp.speed * dt;
+      if (car.tag) car.tag.position.set(p.x, p.y + 3.1, 0);
+      // dust from spinning wheels on ground
+      car.dustT -= dt;
+      if (car === this.cars[0] && car.dustT <= 0 && sim.state === 'run' && throttle !== 0) {
+        sim.wheels.forEach((w, i) => {
+          if (sim.wheelTouch[i] > 0 && Math.abs(w.getAngularVelocity()) > 6) {
+            const q = w.getPosition();
+            this.spawn(q.x - 0.5 * Math.sign(throttle), q.y - sim.spec.wheelR + 0.15, (Math.random() - 0.5) * 2.2, -throttle * (1 + Math.random() * 2), 1 + Math.random() * 1.5, 0, this.theme?.deco?.includes('tank') ? 0xbfe6d8 : 0xf3e2d2, 0.5, 0.18 + Math.random() * 0.15, -2);
+          }
+        });
+        car.dustT = 0.05;
+      }
+    }
+    for (const d of this.dynViews || []) { const q = d.body.getPosition(); d.m.position.set(q.x, q.y, 0); d.m.rotation.z = d.body.getAngle(); }
+    if (this.ropes?.length && this.bridgeBodies) {
+      for (const r of this.ropes) {
+        const arr = r.line.geometry.attributes.position.array; let k = 0;
+        for (const b of this.bridgeBodies) {
+          const q = b.getPosition();
+          arr[k++] = q.x; arr[k++] = q.y; arr[k++] = r.z; arr[k++] = q.x; arr[k++] = q.y + 0.9; arr[k++] = r.z;
+        }
+        r.line.geometry.attributes.position.needsUpdate = true;
+      }
+    }
+    for (const gv of this.gemViews || []) {
+      gv.t += dt;
+      if (gv.g.taken) {
+        gv.pop += dt;
+        const k = Math.min(1, gv.pop / 0.35);
+        gv.v.scale.setScalar(Math.max(0.001, 1 + k * 0.8) * (1 - k));
+        gv.v.position.y = gv.g.piece.y + k * 1.5;
+        if (k >= 1) gv.v.visible = false;
+      } else {
+        gv.v.rotation.y = gv.t * 2.2; gv.v.position.y = gv.g.piece.y + Math.sin(gv.t * 3) * 0.12;
+      }
+    }
+    if (this.finish) this.finish.traverse((o) => { if (o.userData.wave) o.rotation.y = Math.sin(t * 6 + o.position.z) * 0.25; });
+    this.scene.traverse((o) => { if (o.userData.flicker) o.scale.y = 0.28 * (0.85 + Math.sin(t * 20 + o.id) * 0.15); });
+    for (const c of this.clouds || []) c.position.x += dt * 0.4;
+    for (const p of this.particles) {
+      if (p.life <= 0) continue;
+      p.life -= dt;
+      p.v.y += p.grav * dt;
+      p.m.position.addScaledVector(p.v, dt);
+      p.m.scale.setScalar(p.size * Math.max(0.05, p.life / p.max));
+      p.m.rotation.x += dt * 4; p.m.rotation.y += dt * 3;
+      if (p.life <= 0) p.m.visible = false;
+    }
+    if (this.mode === 'game' && focus) this.follow(dt, focus);
+    if (this.mode === 'menu') this.menuUpdate(dt);
+    this.r.render(this.scene, this.camera);
+  }
+
+  follow(dt, sim) {
+    const c = sim.chassis, p = c.getPosition(), v = c.getLinearVelocity();
+    const aspect = this.camera.aspect;
+    const viewW = aspect < 0.7 ? 12.5 : aspect < 1 ? 15 : aspect < 1.4 ? 19 : 24;
+    const dist = viewW / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * aspect);
+    const look = new THREE.Vector3(p.x + 1.6 + THREE.MathUtils.clamp(v.x * 0.15, -2, 2.5), p.y + 0.7 + THREE.MathUtils.clamp(v.y * 0.06, -1, 1), 0);
+    const pos = new THREE.Vector3(look.x + dist * 0.17, look.y + dist * 0.15, dist);
+    const k = this.snapCam ? 1 : 1 - Math.exp(-dt * 4);
+    this.camLook.lerp(look, k); this.camPos.lerp(pos, k);
+    this.snapCam = false;
+    this.camera.position.copy(this.camPos);
+    if (this.shake > 0) { this.shake -= dt; const a = this.shake * 0.6; this.camera.position.x += (Math.random() - 0.5) * a; this.camera.position.y += (Math.random() - 0.5) * a; }
+    this.camera.lookAt(this.camLook);
+    if (this.sun) { this.sun.position.set(p.x - 8, p.y + 20, 14); this.sun.target.position.set(p.x, p.y, 0); }
+  }
+
+  snapshot() {
+    this.r.render(this.scene, this.camera);
+    try { return this.canvas.toDataURL('image/jpeg', 0.82); } catch { return ''; }
+  }
+
+  // ------------------------------------------------------------ menus
+  showDiorama(world, spec, lift = 0) {
+    this.dispose();
+    const th = world.theme;
+    const s = this.scene = this.newScene(th);
+    s.fog = null;
+    this.mode = 'menu';
+    this.theme = th;
+    const g = new THREE.Group(); s.add(g); this.dioramaRoot = g;
+    // water block base
+    const wb = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 6.4), new THREE.MeshLambertMaterial({ color: th.water, transparent: true, opacity: 0.92 }));
+    wb.position.y = -0.8; wb.receiveShadow = true; g.add(wb);
+    box(g, -4.5, -0.02, -3.2, 4.5, 0.02, 3.2, 0xffffff).material = mat(th.waterDeep);
+    const styleOf = { classic: 'grass', construction: 'concrete', medieval: 'castle', science: 'metal' }[world.id];
+    const isl = new THREE.Mesh(prismGeo([[-3.6, -1.2], [2.4, -1.2], [2.4, 1.3], [-3.6, 1.3]], 3.4), styleMats(styleOf)); g.add(isl); isl.castShadow = isl.receiveShadow = true;
+    if (styleOf === 'grass') g.add(capMesh(-3.6, 1.3, 2.4, 1.3, 3.48));
+    rseed = 5 + world.id.length;
+    if (world.id === 'classic') {
+      for (let i = 0; i < 5; i++) { const pl = texturedBox(0.75, 0.2, 2.6, 'wood'); pl.position.set(2.9 + i * 0.8, 1.1 - i * 0.28, 0); pl.rotation.z = -0.32; g.add(pl); }
+      const t = buildDeco('tree', srand); t.position.set(-2.8, 1.3, -1.1); g.add(t);
+      const b = buildDeco('rock', srand); b.position.set(1.6, 1.3, -1.1); g.add(b);
+      for (let i = 0; i < 3; i++) { const gm = buildGem(); gm.position.set(-1 + i * 0.9, 3.5, 0); gm.scale.setScalar(0.7); g.add(gm); }
+    } else if (world.id === 'construction') {
+      for (let i = 0; i < 2; i++) box(g, -3.4 + i * 4.8, 1.3, -1.6, -3.0 + i * 4.8, 4.0, -1.2, 0xe8333c);
+      box(g, -3.4, 3.8, -1.7, 1.8, 4.2, -1.1, 0xe8333c);
+      for (const [x, k] of [[-3, 'cone'], [1.7, 'barrier'], [2, 'cone']]) { const d = buildDeco(k); d.position.set(x, 1.3, 1.2); g.add(d); }
+      const c = buildDeco('crateDeco'); c.position.set(-2.4, 1.3, -0.6); g.add(c);
+    } else if (world.id === 'medieval') {
+      const tower = new THREE.Mesh(prismGeo([[-1.2, 1.3], [0.8, 1.3], [0.8, 5.0], [-1.2, 5.0]], 1.8, -1.2), styleMats('castle')); g.add(tower); tower.castShadow = true;
+      for (let i = 0; i < 3; i++) box(g, -1.2 + i * 0.75, 5.0, -2.1, -0.85 + i * 0.75, 5.4, -0.3, 0xb9bdc9);
+      box(g, -0.55, 1.3, -0.28, 0.15, 2.6, -0.26, 0x5b3a1e);
+      for (let i = 0; i < 4; i++) { const pl = texturedBox(0.75, 0.25, 2.6, 'wood'); pl.position.set(2.8 + i * 0.78, 1.15, 0); g.add(pl); }
+      const tr = buildDeco('torch'); tr.position.set(-3, 1.3, 1.2); g.add(tr);
+      const bn = buildDeco('banner'); bn.position.set(1.6, 1.3, -1.2); g.add(bn);
+    } else {
+      for (const [x, z] of [[-3, -1.1], [1.8, -1.1]]) { const t = buildDeco('tank'); t.position.set(x, 1.3, z); g.add(t); }
+      const pad = texturedBox(1.6, 0.12, 1.6, 'pad'); pad.position.set(1.2, 1.36, 0.9); g.add(pad);
+      for (let i = 0; i < 2; i++) { const c = buildDeco('labcrateDeco'); c.position.set(-2.6 + i * 0.85, 1.3 + i * 0.0, 0.9); g.add(c); }
+      box(g, -1.6, 1.3, -1.7, 0.6, 3.6, -1.3, 0x3b4766); box(g, -1.4, 1.6, -1.31, 0.4, 3.3, -1.28, 0x7df9ff).material = mat(0x7df9ff, { emissive: 0x1a8a99 });
+    }
+    // the truck
+    const tg = new THREE.Group(); tg.position.set(-0.6, 1.3 + spec.wheelR - spec.wheelY, 0.2); tg.scale.setScalar(0.62); g.add(tg);
+    const parts = buildTruck(spec); tg.add(parts.group);
+    spec.wheelX.forEach((wx) => { const w = buildWheel(spec.wheelR, spec.look); w.position.set(wx, spec.wheelY, 0); tg.add(w); });
+    if (spec.crane) { const c = spec.crane; let y = c.pivot[1] + Math.sin(c.angle) * c.length; const x = c.pivot[0] + Math.cos(c.angle) * c.length; for (let i = 0; i < c.links; i++) { const l = buildHookLink(i === c.links - 1); l.position.set(x, y - c.linkLen * (i + 0.5), 0); tg.add(l); } }
+    this.menuSpin = parts.spin;
+    this.menuT = 0;
+    this.menuCam = { pos: new THREE.Vector3(9, 7 + lift, 14), look: new THREE.Vector3(0, 1.4 + lift, 0) };
+    this.sun.position.set(-6, 14, 10); this.sun.target.position.set(0, 0, 0);
+    const sc = this.sun.shadow.camera; sc.left = -8; sc.right = 8; sc.top = 8; sc.bottom = -8; sc.updateProjectionMatrix();
+  }
+
+  showGarage(spec) {
+    this.dispose();
+    const s = this.scene = this.newScene({ skyTop: '#3b8cff', skyBottom: '#bfe3ff', fog: 0xbfe3ff });
+    s.fog = null; this.mode = 'menu';
+    const g = new THREE.Group(); s.add(g); this.dioramaRoot = g;
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.4, 0.6, 24), mat(0x2a63d9)); pedestal.position.y = -0.3; pedestal.receiveShadow = true; g.add(pedestal);
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(3.45, 3.45, 0.14, 24), mat(0xffc61a)); ring.position.y = -0.62; g.add(ring);
+    const tg = new THREE.Group(); tg.position.set(0, spec.wheelR - spec.wheelY + 0.05, 0); g.add(tg);
+    const parts = buildTruck(spec); tg.add(parts.group);
+    spec.wheelX.forEach((wx) => { const w = buildWheel(spec.wheelR, spec.look); w.position.set(wx, spec.wheelY, 0); tg.add(w); });
+    if (spec.crane) { const c = spec.crane; const y = c.pivot[1] + Math.sin(c.angle) * c.length; const x = c.pivot[0] + Math.cos(c.angle) * c.length; for (let i = 0; i < c.links; i++) { const l = buildHookLink(i === c.links - 1); l.position.set(x, y - c.linkLen * (i + 0.5), 0); tg.add(l); } }
+    this.menuSpin = parts.spin; this.menuT = 0;
+    this.menuCam = { pos: new THREE.Vector3(8.5, 4.6, 11), look: new THREE.Vector3(0, 1.4, 0) };
+    this.sun.position.set(-6, 14, 10);
+    const sc = this.sun.shadow.camera; sc.left = -6; sc.right = 6; sc.top = 6; sc.bottom = -6; sc.updateProjectionMatrix();
+  }
+
+  menuUpdate(dt) {
+    this.menuT += dt;
+    if (this.dioramaRoot) {
+      this.dioramaRoot.rotation.y = Math.sin(this.menuT * 0.5) * 0.35 - 0.25;
+      this.dioramaRoot.position.y = Math.sin(this.menuT * 1.2) * 0.12;
+      this.dioramaRoot.traverse((o) => { if (o.geometry?.type === 'OctahedronGeometry') o.parent.rotation.y += dt * 2; });
+    }
+    for (const sp of this.menuSpin || []) sp.obj.rotation[sp.axis] += sp.speed * dt;
+    const aspect = this.camera.aspect;
+    const d = Math.max(1, 0.95 / aspect);
+    const mc = this.menuCam;
+    if (mc) {
+      this.camera.position.copy(mc.look).addScaledVector(mc.pos.clone().sub(mc.look), d);
+      this.camera.lookAt(mc.look.x, mc.look.y - (d - 1) * 0.6, mc.look.z);
+    }
+  }
+
+  // Render a still image of a truck for shop cards
+  thumbnail(spec, w = 240, h = 160) {
+    if (!this.thumbR) {
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      this.thumbR = new THREE.WebGLRenderer({ canvas: c, antialias: true, alpha: true, preserveDrawingBuffer: true });
+      this.thumbR.outputColorSpace = THREE.SRGBColorSpace;
+      this.thumbR.setSize(w, h, false);
+    }
+    const s = new THREE.Scene();
+    s.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab8, 1.4));
+    const l = new THREE.DirectionalLight(0xffffff, 1.8); l.position.set(-4, 8, 8); s.add(l);
+    const tg = new THREE.Group(); s.add(tg);
+    tg.add(buildTruck(spec).group);
+    spec.wheelX.forEach((wx) => { const wv = buildWheel(spec.wheelR, spec.look); wv.position.set(wx, spec.wheelY, 0); tg.add(wv); });
+    if (spec.crane) { const c = spec.crane; const y = c.pivot[1] + Math.sin(c.angle) * c.length; const x = c.pivot[0] + Math.cos(c.angle) * c.length; for (let i = 0; i < c.links; i++) { const lk = buildHookLink(i === c.links - 1); lk.position.set(x, y - c.linkLen * (i + 0.5), 0); tg.add(lk); } }
+    const cam = new THREE.PerspectiveCamera(30, w / h, 0.1, 100);
+    cam.position.set(5.5, 3.6, 8.5); cam.lookAt(0.3, 0.6, 0);
+    this.thumbR.setClearColor(0x000000, 0);
+    this.thumbR.render(s, cam);
+    return this.thumbR.domElement.toDataURL('image/png');
+  }
+
+  dispose() {
+    this.cars = []; this.particles = []; this.finish = null; this.dynViews = []; this.gemViews = []; this.ropes = []; this.bridgeBodies = null;
+    this.clouds = []; this.dioramaRoot = null; this.menuSpin = []; this.garage = false;
+    this.snapCam = true;
+  }
+}

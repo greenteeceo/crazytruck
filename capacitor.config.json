@@ -1,0 +1,6 @@
+{
+  "appId": "com.greentee.cranerush",
+  "appName": "Crane Rush",
+  "webDir": "dist",
+  "android": { "backgroundColor": "#2fb6ff" }
+}

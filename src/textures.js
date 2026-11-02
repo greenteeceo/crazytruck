@@ -1,0 +1,108 @@
+// Procedural pixel-art textures (16px per metre) for the voxel look.
+import * as THREE from 'three';
+
+let seed = 7;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const hex = (c) => '#' + c.toString(16).padStart(6, '0');
+
+function canvasTex(w, h, draw, { repeat = true } = {}) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  draw(g, w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestMipmapLinearFilter;
+  t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
+  t.anisotropy = 4;
+  return t;
+}
+
+function noise(g, w, h, base, specks, amount = 0.12, size = 1) {
+  g.fillStyle = base; g.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += size) for (let x = 0; x < w; x += size) {
+    if (rnd() < amount) { g.fillStyle = specks[(rnd() * specks.length) | 0]; g.fillRect(x, y, size, size); }
+  }
+}
+
+function bricks(g, w, h, base, mortar, light, bw = 8, bh = 4) {
+  g.fillStyle = mortar; g.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += bh) {
+    const off = ((y / bh) % 2) * (bw / 2);
+    for (let x = -bw; x < w + bw; x += bw) {
+      g.fillStyle = rnd() < 0.3 ? light : base;
+      g.fillRect(x + off + 1, y + 1, bw - 1, bh - 1);
+    }
+  }
+}
+
+const cache = {};
+export function tex(name) {
+  if (cache[name]) return cache[name];
+  seed = 1 + name.length * 977 + name.charCodeAt(0) * 31;
+  let t;
+  switch (name) {
+    case 'grassTop': t = canvasTex(16, 16, (g, w, h) => noise(g, w, h, '#46d35c', ['#5ee872', '#3bbf50', '#6ff07f'], 0.2)); break;
+    case 'grassSide': t = canvasTex(16, 8, (g, w, h) => {
+      g.clearRect(0, 0, w, h); g.fillStyle = '#46d35c'; g.fillRect(0, 0, w, 4);
+      for (let x = 0; x < w; x++) { const d = 4 + ((rnd() * 4) | 0); g.fillStyle = rnd() < 0.5 ? '#46d35c' : '#3bbf50'; g.fillRect(x, 3, 1, d - 3); }
+      for (let x = 0; x < w; x += 2) if (rnd() < 0.5) { g.fillStyle = '#6ff07f'; g.fillRect(x, 0, 1, 1); }
+    }); break;
+    case 'dirt': t = canvasTex(16, 16, (g, w, h) => noise(g, w, h, '#f7c9a9', ['#ecb58f', '#fcd8bf', '#e6a982'], 0.08, 2)); break;
+    case 'sand': t = canvasTex(16, 16, (g, w, h) => noise(g, w, h, '#ffd9b8', ['#f4c49e', '#ffe6cc'], 0.1, 2)); break;
+    case 'wood': t = canvasTex(16, 16, (g, w, h) => {
+      g.fillStyle = '#c9765a'; g.fillRect(0, 0, w, h);
+      for (let y = 0; y < h; y += 4) { g.fillStyle = '#a95d48'; g.fillRect(0, y + 3, w, 1); g.fillStyle = '#d98c6e'; g.fillRect(0, y, w, 1); }
+      for (let i = 0; i < 6; i++) { g.fillStyle = '#b5664f'; g.fillRect((rnd() * w) | 0, (rnd() * h) | 0, 3, 1); }
+    }); break;
+    case 'plank': t = canvasTex(16, 16, (g, w, h) => {
+      noise(g, w, h, '#c9765a', ['#b5664f', '#d98c6e'], 0.15);
+      g.fillStyle = '#9a523f'; g.fillRect(0, 0, w, 1); g.fillRect(0, h - 1, w, 1); g.fillRect(0, 0, 1, h); g.fillRect(w - 1, 0, 1, h);
+      g.fillStyle = '#d6dbe6'; g.fillRect(2, 2, 2, 2); g.fillRect(w - 4, 2, 2, 2); g.fillRect(2, h - 4, 2, 2); g.fillRect(w - 4, h - 4, 2, 2);
+    }); break;
+    case 'stone': t = canvasTex(16, 16, (g, w, h) => bricks(g, w, h, '#a3a8b6', '#7d8292', '#b8bdca')); break;
+    case 'castle': t = canvasTex(16, 16, (g, w, h) => bricks(g, w, h, '#b9bdc9', '#8c90a0', '#cdd1db', 8, 4)); break;
+    case 'castleTop': t = canvasTex(16, 16, (g, w, h) => bricks(g, w, h, '#a7acbb', '#878b9b', '#bfc3cf', 8, 8)); break;
+    case 'concrete': t = canvasTex(16, 16, (g, w, h) => { noise(g, w, h, '#c4c8d4', ['#b3b8c6', '#d2d6e0'], 0.12); g.fillStyle = '#a9aebd'; g.fillRect(0, 15, w, 1); g.fillRect(15, 0, 1, h); }); break;
+    case 'concreteTop': t = canvasTex(16, 16, (g, w, h) => { noise(g, w, h, '#b7bcc9', ['#a9aebd', '#c6cad6'], 0.12); g.fillStyle = '#ffd21a'; g.fillRect(0, 6, w, 2); }); break;
+    case 'girder': t = canvasTex(16, 16, (g, w, h) => {
+      g.fillStyle = '#e8333c'; g.fillRect(0, 0, w, h); g.fillStyle = '#b81f2a'; g.fillRect(0, 0, w, 2); g.fillRect(0, h - 2, w, 2);
+      g.fillStyle = '#c4242f'; for (let x = 0; x < w; x += 8) { g.fillRect(x, 2, 1, h - 4); }
+      g.fillStyle = '#ff7078'; for (let x = 3; x < w; x += 8) { g.fillRect(x, 4, 2, 2); g.fillRect(x, h - 6, 2, 2); }
+    }); break;
+    case 'metal': t = canvasTex(16, 16, (g, w, h) => {
+      g.fillStyle = '#3b4766'; g.fillRect(0, 0, w, h); g.fillStyle = '#2b3550'; g.fillRect(0, 0, w, 1); g.fillRect(0, 0, 1, h);
+      g.fillStyle = '#4a5878'; g.fillRect(1, 1, w - 2, 1); g.fillRect(1, 1, 1, h - 2);
+      g.fillStyle = '#8fa0c4'; g.fillRect(3, 3, 1, 1); g.fillRect(12, 3, 1, 1); g.fillRect(3, 12, 1, 1); g.fillRect(12, 12, 1, 1);
+    }); break;
+    case 'metalTop': t = canvasTex(16, 16, (g, w, h) => { noise(g, w, h, '#d9e0ec', ['#c7cfde', '#e6ebf3'], 0.1); g.fillStyle = '#9aa6bd'; g.fillRect(0, 0, w, 1); g.fillRect(0, 0, 1, h); }); break;
+    case 'pad': t = canvasTex(16, 16, (g, w, h) => { g.fillStyle = '#18cfff'; g.fillRect(0, 0, w, h); g.fillStyle = '#9ff4ff'; g.fillRect(2, 2, w - 4, h - 4); g.fillStyle = '#4fe2ff'; g.fillRect(4, 4, w - 8, h - 8); }); break;
+    case 'crate': t = canvasTex(16, 16, (g, w, h) => {
+      g.fillStyle = '#ff8a1f'; g.fillRect(0, 0, w, h); g.fillStyle = '#d96a0c'; g.fillRect(0, 0, w, 2); g.fillRect(0, h - 2, w, 2); g.fillRect(0, 0, 2, h); g.fillRect(w - 2, 0, 2, h);
+      for (let i = 2; i < 14; i++) { g.fillRect(i, i, 2, 1); g.fillRect(w - i - 2, i, 2, 1); }
+    }); break;
+    case 'labcrate': t = canvasTex(16, 16, (g, w, h) => {
+      noise(g, w, h, '#f2604c', ['#e04a38', '#ff7a66'], 0.2, 2); g.fillStyle = '#b8352a'; g.fillRect(0, 0, w, 1); g.fillRect(0, h - 1, w, 1); g.fillRect(0, 0, 1, h); g.fillRect(w - 1, 0, 1, h);
+    }); break;
+    case 'log': t = canvasTex(16, 16, (g, w, h) => { noise(g, w, h, '#8a5233', ['#6f3f26', '#a0623f'], 0.25, 2); }); break;
+    case 'barrel': t = canvasTex(16, 16, (g, w, h) => { g.fillStyle = '#2f7cf6'; g.fillRect(0, 0, w, h); g.fillStyle = '#ffd21a'; g.fillRect(0, 3, w, 2); g.fillRect(0, 11, w, 2); }); break;
+    case 'hazard': t = canvasTex(16, 16, (g, w, h) => {
+      g.fillStyle = '#ffcc12'; g.fillRect(0, 0, w, h); g.fillStyle = '#1d1d22';
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (((x + y) % 8) < 4) g.fillRect(x, y, 1, 1);
+    }); break;
+    case 'checker': t = canvasTex(8, 8, (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { g.fillStyle = (Math.floor(x / 2) + Math.floor(y / 2)) % 2 ? '#1d1d22' : '#ffffff'; g.fillRect(x, y, 1, 1); } }); break;
+    default: t = canvasTex(4, 4, (g) => { g.fillStyle = '#ff00ff'; g.fillRect(0, 0, 4, 4); });
+  }
+  cache[name] = t;
+  return t;
+}
+
+export function skyTexture(top, bottom) {
+  const c = document.createElement('canvas'); c.width = 2; c.height = 256;
+  const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, top); gr.addColorStop(1, bottom); g.fillStyle = gr; g.fillRect(0, 0, 2, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+export { hex };

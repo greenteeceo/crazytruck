@@ -1,0 +1,247 @@
+// Level definitions. Units are metres; the track runs left -> right, ground top ~ y=0.
+
+class B {
+  constructor(style) { this.p = []; this.s = style; }
+  add(o) { this.p.push(o); return this; }
+  // static ground slab whose top is at `top`
+  ground(x0, x1, top = 0, s = this.s, depth = 3) { return this.add({ t: 'box', x: (x0 + x1) / 2, y: top - depth / 2, w: x1 - x0, h: depth, s }); }
+  block(cx, cy, w, h, s = this.s, a = 0) { return this.add({ t: 'box', x: cx, y: cy, w, h, s, a }); }
+  // convex ramp from (x0,y0) to (x1,y1), filled down to `base`
+  ramp(x0, y0, x1, y1, s = this.s, base) {
+    const b = base ?? Math.min(y0, y1) - 1.2;
+    return this.add({ t: 'poly', pts: [[x0, b], [x1, b], [x1, y1], [x0, y0]], s });
+  }
+  hill(x0, x1, h, top = 0, s = this.s) { const m = (x0 + x1) / 2; this.ramp(x0, top, m, top + h, s, top - 0.6); return this.ramp(m, top + h, x1, top, s, top - 0.6); }
+  steps(x0, top0, n, dx, dy, s = this.s, depth = 3) { for (let i = 0; i < n; i++) this.ground(x0 + i * dx, x0 + (i + 1) * dx, top0 + (i + 1) * dy, s, depth + i * dy); return this; }
+  bridge(x1, y1, x2, y2, s = 'wood', n) { return this.add({ t: 'bridge', x1, y1, x2, y2, s, n }); }
+  dyn(x, y, w, h, s = 'crate', d = 0.4, a = 0) { return this.add({ t: 'dyn', x, y, w, h, s, d, a }); }
+  crate(x, y, sz = 0.9, s = 'crate') { return this.dyn(x, y + sz / 2, sz, sz, s, 0.25); }
+  stack(x, y, cols, rows, sz = 0.9, s = 'crate') { for (let r = 0; r < rows; r++) for (let c = 0; c < cols - r; c++) this.crate(x + c * sz + r * sz / 2, y + r * sz, sz, s); return this; }
+  seesaw(x, y, w, a0 = 0.2, lim = 0.22, s = 'wood') { return this.add({ t: 'seesaw', x, y, w, a0, lim, s }); }
+  hinge(x, y, w, a0, lo, hi, s = 'wood', h = 0.35) { return this.add({ t: 'hinge', x, y, w, a0, lo, hi, s, h }); }
+  mover(x, y, w, h, dx, dy, period = 3, s = this.s, phase = 0) { return this.add({ t: 'mover', x, y, w, h, dx, dy, period, s, phase }); }
+  spin(x, y, w, h, speed, s = this.s) { return this.add({ t: 'spin', x, y, w, h, speed, s }); }
+  pad(x, top, w = 2.4, vx = 11, vy = 9) { this.add({ t: 'box', x, y: top - 0.15, w, h: 0.3, s: 'pad', vx, vy }); return this.add({ t: 'boost', x, y: top, w, vx, vy }); }
+  gem(x, y) { return this.add({ t: 'gem', x, y }); }
+  gems(x0, y, n, dx = 1.4) { for (let i = 0; i < n; i++) this.gem(x0 + i * dx, y); return this; }
+  finish(x, y = 0) { return this.add({ t: 'finish', x, y }); }
+  deco(kind, x, y, o = {}) { return this.add({ t: 'deco', kind, x, y, ...o }); }
+}
+
+const lvl = (name, style, fn, opts = {}) => { const b = new B(style); fn(b); return { name, pieces: b.p, water: -3, start: { x: 0, y: 0 }, ...opts }; };
+
+// ---------------------------------------------------------------- CLASSIC
+const classic = [
+  lvl('Warm Up', 'grass', (b) => {
+    b.ground(-8, 46, 0).hill(14, 22, 1.0).gems(16, 2.4, 3, 1.0).gem(30, 1.2).gem(33, 1.2).finish(40);
+  }),
+  lvl('Little Hop', 'grass', (b) => {
+    b.ground(-8, 17, 0).ramp(11, 0, 17, 1.3, 'grass', -0.5).ground(23, 52, 0).gems(18, 2.8, 3, 1.6).gem(34, 1.2).finish(46);
+  }),
+  lvl('Plank Path', 'grass', (b) => {
+    b.ground(-8, 10, 0).bridge(10, 0, 24, 0).ground(24, 36, 0).bridge(36, 0, 48, 0).ground(48, 66, 0)
+      .gem(17, 0.7).gem(30, 1.2).gem(42, 0.7).finish(60);
+  }, { ai: { zones: [[8, 50, 9]] } }),
+  lvl('Step It Up', 'grass', (b) => {
+    b.ground(-8, 10, 0).steps(10, 0, 5, 3, 0.45).ground(25, 34, 2.25).ramp(34, 2.25, 42, 0).ground(42, 60, 0)
+      .gem(19, 2.6).gem(30, 3.4).gem(46, 1.2).finish(54);
+  }, { water: -3 }),
+  lvl('Hill Hopper', 'grass', (b) => {
+    b.ground(-8, 86, 0).hill(10, 18, 1.2).hill(26, 34, 1.4).hill(42, 52, 1.6).hill(60, 68, 1.2)
+      .gem(14, 2.6).gem(30, 2.8).gem(47, 3.2).finish(78);
+  }, { ai: { zones: [[30, 47, 9]] } }),
+  lvl('Seesaw Sea', 'grass', (b) => {
+    b.ground(-8, 12.4, 0).block(17, -1.6, 0.6, 3.6, 'wood').seesaw(17, 0.3, 9.2, 0.2, 0.2)
+      .ground(21.6, 44, -0.8).gem(14, 1.0).gem(17, 2.0).gem(30, 0.4).finish(38, -0.8);
+  }, { ai: { zones: [[8, 24, 6]] } }),
+  lvl('Rickety Bridge', 'grass', (b) => {
+    b.ground(-8, 8, 0).bridge(8, 0, 30, 0.0).ground(30, 38, 0).ramp(33, 0, 38, 1.0, 'grass', -0.5)
+      .ground(44, 64, 0).gem(14, 0.6).gem(24, 0.6).gem(41, 2.6).finish(58);
+  }, { ai: { zones: [[6, 31, 8]] } }),
+  lvl('Big Air', 'grass', (b) => {
+    b.ground(-8, 22, 0).ramp(14, 0, 22, 2.0, 'grass', -0.5).ramp(32, 1.2, 44, 0, 'grass', -2).ground(44, 70, 0)
+      .gems(24, 4.2, 3, 2.4).gem(55, 1.2).finish(64);
+  }, { ai: { airAngle: -0.1 } }),
+  lvl('Log Jam', 'grass', (b) => {
+    b.ground(-8, 50, 0).dyn(14, 0.3, 0.6, 0.6, 'log', 0.2).dyn(15, 0.3, 0.6, 0.6, 'log', 0.2).dyn(14.5, 0.9, 0.6, 0.6, 'log', 0.2)
+      .hill(20, 28, 1.2).stack(32, 0, 3, 2, 0.8, 'crate').bridge(50, 0, 62, 0).ground(62, 76, 0)
+      .gem(24, 2.6).gem(40, 1.2).gem(56, 1.0).finish(70);
+  }, { ai: { zones: [[48, 63, 9]] } }),
+  lvl('Island Tour', 'grass', (b) => {
+    b.ground(-8, 12, 0).bridge(12, 0, 22, 0).ground(22, 34, 0).ramp(28, 0, 34, 1.2, 'grass', -0.5)
+      .ground(40, 52, 0).hill(43, 49, 1.0).block(56.6, -1.6, 0.6, 3.6, 'wood').seesaw(56.6, 0.3, 9, 0.2, 0.2)
+      .ground(61.1, 80, -0.8).gem(17, 1.0).gem(37, 2.8).gem(46, 2.4).gem(66, 0.4).finish(74, -0.8);
+  }, { ai: { zones: [[10, 23, 9], [52, 62, 6]] } }),
+];
+
+// ---------------------------------------------------------------- CONSTRUCTION
+const construction = [
+  lvl('Site Entry', 'concrete', (b) => {
+    b.ground(-8, 50, 0).ramp(12, 0, 16, 0.8).ramp(16, 0.8, 20, 0).ground(26, 30, 0.6, 'girder', 0.6)
+      .deco('cone', 6, 0).deco('cone', 8, 0).deco('barrier', 22, 0).gems(13, 2.0, 3, 2).gem(36, 1.2).finish(44);
+  }),
+  lvl('Girder Gap', 'concrete', (b) => {
+    b.ground(-8, 12, 0).block(18, -0.2, 12, 0.4, 'girder').ground(24, 34, 0).ramp(29, 0, 34, 1.2, 'concrete', -0.5)
+      .ground(40, 58, 0).gem(18, 1.0).gem(37, 2.8).gem(48, 1.2).finish(52);
+  }),
+  lvl('Crate Stack', 'concrete', (b) => {
+    b.ground(-8, 56, 0).stack(14, 0, 3, 2, 0.85).stack(30, 0, 2, 2, 0.85).crate(42, 0, 1.0).crate(43, 0, 1.0)
+      .gem(20, 1.2).gem(36, 1.2).gem(46, 1.2).finish(50);
+  }),
+  lvl('Scaffold Climb', 'concrete', (b) => {
+    b.ground(-8, 8, 0).steps(8, 0, 6, 2.6, 0.42, 'girder').ground(23.6, 32, 2.52).ramp(32, 2.52, 40, 0).ground(40, 58, 0)
+      .gem(13, 2.0).gem(20, 3.2).gem(28, 3.8).finish(52);
+  }),
+  lvl('Tilt Beam', 'concrete', (b) => {
+    b.ground(-8, 12.4, 0).block(17, -1.6, 0.8, 3.6, 'girder').seesaw(17, 0.3, 9.2, 0.2, 0.2, 'girder')
+      .ground(21.6, 34, -0.8).block(38.6, -2.4, 0.8, 3.6, 'girder').seesaw(38.6, -0.5, 9.2, 0.2, 0.2, 'girder')
+      .ground(43.2, 60, -1.6).gem(17, 2.0).gem(28, 0.4).gem(38.6, 1.2).finish(54, -1.6);
+  }, { ai: { zones: [[8, 46, 6]] }, water: -4 }),
+  lvl('Shifting Slabs', 'concrete', (b) => {
+    b.ground(-8, 10, 0).mover(14.5, -0.3, 6.5, 0.6, 1.6, 0, 2.6, 'girder').ground(19, 28, 0)
+      .mover(33.5, -0.3, 6.5, 0.6, 1.6, 0, 2.2, 'girder', 1.5).ground(38, 56, 0)
+      .gem(14.5, 1.0).gem(33.5, 1.0).gem(46, 1.2).finish(50);
+  }),
+  lvl('Ramp Rally', 'concrete', (b) => {
+    b.ground(-8, 14, 0).ramp(8, 0, 14, 1.2).ground(20, 32, 0).ramp(26, 0, 32, 1.4).ground(39, 52, 0).ramp(46, 0, 52, 1.2).ground(58, 74, 0)
+      .gem(17, 2.8).gem(35.5, 3.2).gem(55, 2.8).finish(68);
+  }),
+  lvl('Barrel Roll', 'concrete', (b) => {
+    b.ground(-8, 10, 0).ramp(10, 0, 30, -3).ground(30, 56, -3)
+      .dyn(18, 0, 0.7, 0.7, 'barrel', 0.15).dyn(22, -0.8, 0.7, 0.7, 'barrel', 0.15).dyn(26, -1.6, 0.7, 0.7, 'barrel', 0.15)
+      .stack(38, -3, 3, 2, 0.8).gem(15, 0.4).gem(34, -1.8).gem(45, -1.8).finish(50, -3);
+  }, { water: -6 }),
+  lvl('Rooftops', 'concrete', (b) => {
+    b.ground(-8, 14, 0).ramp(9, 0, 14, 1.0).ground(19, 27, 0.6, 'concrete', 3.6).ramp(23, 0.6, 27, 1.4)
+      .ground(32, 40, 1.4, 'concrete', 4.4).ramp(36, 1.4, 40, 2.2).ground(45, 66, 0.8, 'concrete', 3.8)
+      .gem(16.5, 2.6).gem(29.5, 3.4).gem(42.5, 4.2).finish(60, 0.8);
+  }),
+  lvl('Skyline', 'concrete', (b) => {
+    b.ground(-8, 10, 0).block(16, -0.2, 12, 0.4, 'girder').ground(22, 30, 0).stack(25, 0, 2, 2, 0.8)
+      .mover(34.5, -0.3, 6.5, 0.6, 1.4, 0, 2.4, 'girder').ground(39, 48, 0).ramp(43, 0, 48, 1.2)
+      .ground(54, 62, 0).block(66.6, -1.6, 0.8, 3.6, 'girder').seesaw(66.6, 0.3, 9.2, 0.2, 0.2, 'girder')
+      .ground(71.2, 88, -0.8).gem(16, 1.0).gem(34.5, 1.0).gem(51, 2.8).gem(76, 0.4).finish(82, -0.8);
+  }, { ai: { zones: [[62, 72, 6]] } }),
+];
+
+// ---------------------------------------------------------------- MEDIEVAL
+const medieval = [
+  lvl('Castle Road', 'castle', (b) => {
+    b.ground(-8, 56, 0, 'grass').hill(10, 18, 1.0, 0, 'castle').hill(26, 34, 1.4, 0, 'castle')
+      .deco('torch', 6, 0).deco('banner', 22, 0).deco('torch', 38, 0).gem(14, 2.4).gem(30, 2.8).gem(42, 1.2).finish(50);
+  }),
+  lvl('Moat Jump', 'castle', (b) => {
+    b.ground(-8, 16, 0, 'grass').ramp(10, 0, 16, 1.2, 'castle', -0.5).ground(22, 40, 0, 'castle')
+      .ramp(34, 0, 40, 1.2, 'castle', -0.5).ground(46, 62, 0, 'grass').gem(19, 2.8).gem(43, 2.8).finish(56);
+  }),
+  lvl('Drawbridge', 'castle', (b) => {
+    b.ground(-8, 11.6, 0, 'grass').hinge(12, -0.18, 11, 1.25, -0.02, 1.3, 'wood').block(23.4, -0.5, 0.8, 0.6, 'castle')
+      .ground(23.8, 50, 0, 'castle').deco('banner', 27, 0).deco('banner', 33, 0).gem(17.5, 1.0).gem(36, 1.2).finish(44);
+  }),
+  lvl('Tower Steps', 'castle', (b) => {
+    b.ground(-8, 8, 0, 'grass').steps(8, 0, 6, 2.5, 0.42).ground(23, 30, 2.52).ramp(30, 2.52, 34, 2.52)
+      .bridge(30, 2.52, 42, 2.52).ground(42, 48, 2.52, 'castle', 5.5).ramp(48, 2.52, 56, 0, 'castle').ground(56, 70, 0, 'grass')
+      .gem(16, 2.8).gem(36, 3.4).gem(52, 2.4).finish(64);
+  }, { ai: { zones: [[28, 43, 9]] } }),
+  lvl('Rope Bridges', 'castle', (b) => {
+    b.ground(-8, 8, 0, 'grass').bridge(8, 0, 18, 0).ground(18, 24, 0).bridge(24, 0, 34, -0.8).ground(34, 40, -0.8)
+      .bridge(40, -0.8, 52, 0).ground(52, 66, 0, 'grass').gem(13, 0.8).gem(29, 0.2).gem(46, 0.4).finish(60);
+  }, { ai: { zones: [[6, 53, 8]] } }),
+  lvl('Castle Gate', 'castle', (b) => {
+    b.ground(-8, 60, 0, 'grass').block(24, 5.0, 10, 2, 'castle').ground(18.5, 30, 0.4, 'castle', 0.4)
+      .hill(36, 44, 1.2, 0, 'castle').deco('torch', 17, 0).deco('torch', 31, 0)
+      .gem(24, 1.6).gem(40, 2.6).gem(48, 1.2).finish(54);
+  }),
+  lvl('Battlements', 'castle', (b) => {
+    b.ground(-8, 60, 0).block(12, 0.2, 2, 0.4).block(16, 0.2, 2, 0.4).block(20, 0.2, 2, 0.4).block(24, 0.2, 2, 0.4)
+      .block(32, 0.25, 2.5, 0.5).block(37, 0.25, 2.5, 0.5).block(42, 0.25, 2.5, 0.5).deco('banner', 28, 0)
+      .gem(14, 1.4).gem(22, 1.4).gem(39.5, 1.6).finish(54);
+  }),
+  lvl('Catapult', 'castle', (b) => {
+    b.ground(-8, 12.4, 0, 'grass').block(17, -1.6, 0.8, 3.6, 'castle').seesaw(17, 0.3, 9.2, 0.2, 0.2)
+      .ground(21.6, 30, -0.8, 'castle').ramp(25, -0.8, 30, 0.4, 'castle', -1.4).ground(36, 54, -0.4, 'grass')
+      .gem(17, 2.0).gem(33, 2.4).gem(44, 0.8).finish(48, -0.4);
+  }, { ai: { zones: [[8, 24, 6]] } }),
+  lvl('Loose Planks', 'castle', (b) => {
+    b.ground(-8, 10, 0, 'grass').block(14, -1.5, 0.8, 3, 'castle').block(18, -1.5, 0.8, 3, 'castle').block(22, -1.5, 0.8, 3, 'castle')
+      .dyn(12, 0.15, 4.2, 0.3, 'wood', 1.2).dyn(16, 0.15, 4.2, 0.3, 'wood', 1.2).dyn(20, 0.15, 4.2, 0.3, 'wood', 1.2)
+      .ground(22.4, 30, 0, 'castle').ramp(25, 0, 30, 1.2, 'castle', -0.5).ground(36, 54, 0, 'grass')
+      .gem(16, 1.2).gem(33, 2.8).gem(42, 1.2).finish(48);
+  }, { ai: { zones: [[8, 24, 7]] } }),
+  lvl("King's Run", 'castle', (b) => {
+    b.ground(-8, 11.6, 0, 'grass').hinge(12, -0.18, 10, 1.25, -0.02, 1.3, 'wood').block(22.4, -0.5, 0.8, 0.6)
+      .ground(22.8, 34, 0).steps(34, 0, 3, 2.5, 0.42).ground(41.5, 46, 1.26).bridge(46, 1.26, 58, 1.26)
+      .ground(58, 64, 1.26, 'castle', 4.3).ramp(64, 1.26, 70, 0).ground(70, 76, 0, 'grass').ramp(72, 0, 76, 1.0, 'castle', -0.5)
+      .ground(82, 98, 0, 'grass').gem(17, 1.0).gem(38, 2.4).gem(52, 2.0).gem(79, 2.6).finish(92);
+  }, { ai: { zones: [[44, 59, 9]] } }),
+];
+
+// ---------------------------------------------------------------- SCIENCE
+const science = [
+  lvl('Lab Entry', 'metal', (b) => {
+    b.ground(-8, 56, 0).block(16, 0.3, 3, 0.6).pad(26, 0.02, 2.4, 11, 8).block(32, 0.6, 2, 1.2).deco('tank', 8, 0).deco('lamp', 22, 0)
+      .gems(28, 3.2, 3, 1.4).gem(42, 1.2).finish(50);
+  }),
+  lvl('Bounce Pads', 'metal', (b) => {
+    b.ground(-8, 14, 0).pad(12, 0.02, 2.4, 11, 8).ground(24, 32, 0).pad(30, 0.02, 2.4, 11, 8).ground(42, 58, 0)
+      .gem(18, 3.6).gem(36, 3.6).gem(48, 1.2).finish(52);
+  }),
+  lvl('Low Gravity', 'metal', (b) => {
+    b.ground(-8, 16, 0).ramp(10, 0, 16, 1.2).ground(26, 34, 0.8).ramp(28, 0.8, 34, 2.0).ground(46, 66, 0)
+      .gems(19, 4.0, 3, 2.2).gems(37, 5.0, 3, 2.4).finish(60);
+  }, { gravity: 5, ai: { airAngle: -0.05 } }),
+  lvl('Moving Lifts', 'metal', (b) => {
+    b.ground(-8, 10, 0).mover(14.5, -0.3, 6.5, 0.6, 1.6, 0, 2.4).ground(19, 26, 0).mover(30.5, -0.3, 6.5, 0.6, 1.6, 0, 2.0, 'metal', 2)
+      .ground(35, 40, 0).mover(44.5, -0.3, 6.5, 0.6, 1.6, 0, 2.8, 'metal', 1).ground(49, 64, 0)
+      .gem(14.5, 1.0).gem(30.5, 1.0).gem(44.5, 1.0).finish(58);
+  }),
+  lvl('Test Tubes', 'metal', (b) => {
+    b.ground(-8, 10, 0).ramp(5, 0, 10, 0.9).ground(15, 20, 0.6, 'metal', 3.6).ramp(17, 0.6, 20, 1.2)
+      .ground(25, 30, 1.0, 'metal', 4).ramp(27, 1.0, 30, 1.6).ground(35, 52, 0.6, 'metal', 3.6)
+      .deco('tank', 12.5, -2).deco('tank', 22.5, -2).deco('tank', 32.5, -2).gem(12.5, 2.4).gem(22.5, 3.0).gem(32.5, 3.4).finish(46, 0.6);
+  }),
+  lvl('Zero-G Hop', 'metal', (b) => {
+    b.ground(-8, 12, 0).pad(10, 0.02, 2.4, 9, 6).ground(24, 30, 1.0).pad(28, 1.02, 2.4, 9, 6).ground(33, 60, 0.5)
+      .gems(15, 4.4, 3, 2).gems(33, 5.4, 3, 2).finish(54, 0.5);
+  }, { gravity: 3.6, ai: { airAngle: -0.05 } }),
+  lvl('Lift Off', 'metal', (b) => {
+    b.ground(-8, 14, 0).pad(12, 0.02, 2.4, 6, 13).block(17, 0.5, 1.2, 7, 'metal').ground(17.6, 34, 4, 'metal', 7)
+      .ramp(34, 4, 42, 0).ground(42, 58, 0).gem(14, 5.0).gem(26, 5.2).gem(46, 1.2).finish(52);
+  }),
+  lvl('Lab Crates', 'metal', (b) => {
+    b.ground(-8, 60, 0).stack(12, 0, 3, 2, 0.85, 'labcrate').pad(22, 0.02, 2.4, 11, 7).stack(30, 0, 4, 2, 0.85, 'labcrate')
+      .stack(44, 0, 2, 2, 0.85, 'labcrate').gem(25, 3.4).gem(38, 1.2).gem(50, 1.2).finish(54);
+  }),
+  lvl('Gravity Well', 'metal', (b) => {
+    b.ground(-8, 12.4, 0).block(17, -1.6, 0.8, 3.6).seesaw(17, 0.3, 9.2, 0.2, 0.2, 'metal').ground(21.6, 30, -0.8)
+      .ramp(25, -0.8, 30, 0.4, 'metal', -1.4).ground(40, 58, 0).gems(31, 3.0, 4, 2).finish(52);
+  }, { gravity: 6, ai: { zones: [[8, 24, 6]] } }),
+  lvl('Reactor Run', 'metal', (b) => {
+    b.ground(-8, 12, 0).pad(10, 0.02, 2.4, 11, 8).ground(22, 30, 0).mover(34.5, -0.3, 6.5, 0.6, 1.6, 0, 2.4).ground(39, 46, 0)
+      .stack(42, 0, 2, 2, 0.85, 'labcrate').pad(50, 0.02, 2.4, 6, 13).ground(46, 54.4, 0).block(55, 0.5, 1.2, 7)
+      .ground(55.6, 66, 4, 'metal', 7).ramp(66, 4, 74, 0).ground(74, 90, 0)
+      .gem(16, 3.6).gem(34.5, 1.0).gem(52, 5.0).gem(80, 1.2).finish(84);
+  }),
+];
+
+export const WORLDS = [
+  {
+    id: 'classic', name: 'Classic', sub: 'A timeless grassy adventure.', levels: classic,
+    theme: { skyTop: '#2fb6ff', skyBottom: '#bff0ff', mount: [0x1f8bff, 0x0f74f0, 0x45a8ff], water: 0x16c3ff, waterDeep: 0x0a8fe6, fog: 0x9fe2ff, ui: '#1d8cff', deco: ['tree', 'bush', 'rock'], cloud: 0xffffff },
+  },
+  {
+    id: 'construction', name: 'Construction', sub: 'Industrial platforms and site hazards.', levels: construction,
+    theme: { skyTop: '#ff4b3a', skyBottom: '#ffae6b', mount: [0xff7a5c, 0xe95a45, 0xffa07a], water: 0xffd2b0, waterDeep: 0xf2a77e, fog: 0xffb88f, ui: '#ff5a3c', deco: ['cone', 'barrier', 'crateDeco'], cloud: 0xfff1e6 },
+  },
+  {
+    id: 'medieval', name: 'Medieval', sub: 'Castles, bridges and royal challenges.', levels: medieval,
+    theme: { skyTop: '#2b54d9', skyBottom: '#7aa2ff', mount: [0x284fc9, 0x1d3aa0, 0x3d66e6], water: 0x2aa9ff, waterDeep: 0x1b6fd6, fog: 0x6f8ff0, ui: '#3557e0', deco: ['tree', 'torch', 'rock'], cloud: 0xe9efff },
+  },
+  {
+    id: 'science', name: 'Science', sub: 'A high-tech lab with energy mechanics.', levels: science,
+    theme: { skyTop: '#1d2a5a', skyBottom: '#45d98a', mount: [0x2a3a6e, 0x223060, 0x34508a], water: 0x5cf2a0, waterDeep: 0x24b46a, fog: 0x3f9a8a, ui: '#14a37a', deco: ['tank', 'lamp', 'labcrateDeco'], cloud: 0xcaf7ff },
+  },
+];
+
+WORLDS.forEach((w, wi) => w.levels.forEach((l, li) => { l.world = wi; l.index = li; l.id = `${w.id}-${li + 1}`; }));
+export const allLevels = () => WORLDS.flatMap((w) => w.levels);
