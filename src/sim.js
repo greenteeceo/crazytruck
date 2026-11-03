@@ -26,7 +26,7 @@ export class Sim {
     this.headTime = 0;
     this.padCooldown = 0;
     this.freeze = 0;
-    this.pose = '';
+    this.failPose = '';
     this.landed = 0;     // set when wheel lands after air; used for fx
     this.airTime = 0;
     this.events = [];    // queued fx events for renderer/audio
@@ -190,6 +190,9 @@ export class Sim {
       }
     }
     this.mass = ch.getMass() + this.wheels.reduce((a, b) => a + b.getMass(), 0);
+    // bodies whose render pose is interpolated between physics steps
+    this.tracked = [ch, ...this.wheels, ...this.hook, ...this.dynamics.map((d) => d.body)];
+    this.prev = new Map(this.tracked.map((b) => [b, { x: b.getPosition().x, y: b.getPosition().y, a: b.getAngle() }]));
     this.startX = (this.level.start || { x: 0 }).x;
   }
 
@@ -253,6 +256,7 @@ export class Sim {
         k.body.setAngularVelocity(p.speed || 1);
       }
     }
+    for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
     this.world.step(DT, 8, 3);
     this.time += DT;
 
@@ -289,8 +293,8 @@ export class Sim {
   fail(reason) {
     if (this.state !== 'run') return;
     this.state = 'fail'; this.reason = reason;
-    this.pose = this.classifyPose(reason);
-    this.events.push({ type: 'fail', reason, pose: this.pose });
+    this.failPose = this.classifyPose(reason);
+    this.events.push({ type: 'fail', reason, pose: this.failPose });
   }
 
   // How did we crash? Used for funny captions and stickers.
@@ -334,11 +338,19 @@ export class Sim {
       this.hook.forEach((b, i) => place(b, gx + tx, cy + ty - c.linkLen * (i + 0.5)));
     }
     this.headTouch = 0; this.headProp = 0; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
+    for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
     this.state = 'recover'; this.reason = ''; this.freeze = hold;
     this.maxX = Math.max(this.maxX, gx);
     const to = { x: gx, y: cy, a: 0 };
     this.events.push({ type: 'recover', from, to, hold });
     return to;
+  }
+
+  // Render pose of a body, blended between the previous and current physics step (alpha 0..1).
+  pose(b, alpha = 1) {
+    const pos = b.getPosition(), a = b.getAngle(), q = this.prev.get(b);
+    if (!q || alpha >= 1) return { x: pos.x, y: pos.y, a };
+    return { x: q.x + (pos.x - q.x) * alpha, y: q.y + (pos.y - q.y) * alpha, a: q.a + (a - q.a) * alpha };
   }
 
   // Highest static ground surface at x (for respawns), or null over a gap.

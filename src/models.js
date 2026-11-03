@@ -1,6 +1,7 @@
 // Voxel models built from boxes: trucks, wheels, gems, finish gate, decorations.
 import * as THREE from 'three';
 import { tex } from './textures.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 const matCache = new Map();
 export function mat(color, opts = {}) {
@@ -47,29 +48,52 @@ export function addOutline(group, mat2 = outlineMat) {
 const BLACK = 0x1c1c22, TIRE = 0x26262c, TIRE2 = 0x34343b, SILVER = 0xc9ccd6, SILVER2 = 0x8d91a0, GLASS = 0x15161c, WHITE = 0xfafafa, RED = 0xff2a3a;
 
 // ---------------------------------------------------------------- wheels
+// Chunky voxel monster-truck tyre: knobby cube treads around a thick rim, inset hub cap.
+// Geometry is merged per colour so a 6-truck race stays cheap.
+const wheelCache = new Map();
 export function buildWheel(r, look) {
+  const key = r.toFixed(2);
+  if (!wheelCache.has(key)) wheelCache.set(key, makeWheelGeo(r));
+  const { dark, light, hub, hub2 } = wheelCache.get(key);
   const g = new THREE.Group();
-  const W = 0.5;
-  for (const side of [-1, 1]) {
-    const t = new THREE.Group(); t.position.z = side * 0.86; g.add(t);
-    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.86, r * 0.86, W, 10), mat(TIRE, { flatShading: true }));
-    cyl.rotation.x = Math.PI / 2; cyl.castShadow = true; t.add(cyl);
-    const n = 12;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const lug = new THREE.Group(); lug.rotation.z = a; t.add(lug);
-      const off = i % 2 ? 0.1 : -0.1;
-      box(lug, r * 0.78, -0.13, -W / 2 + (i % 2 ? 0.08 : 0), r, 0.13, W / 2 - (i % 2 ? 0 : 0.08), i % 2 ? TIRE : TIRE2);
-      void off;
-    }
-    // hub
-    const hz = side * (W / 2 + 0.02);
-    cbox(t, 0, 0, hz, r * 0.62, r * 0.62, 0.06, SILVER);
-    cbox(t, 0, 0, hz + side * 0.03, r * 0.4, r * 0.4, 0.06, SILVER2);
-    cbox(t, 0, 0, hz + side * 0.06, r * 0.18, r * 0.18, 0.04, 0x6b6f7c);
+  for (const [geo, c] of [[dark, TIRE], [light, TIRE2], [hub, SILVER], [hub2, SILVER2]]) {
+    const m = new THREE.Mesh(geo, mat(c, { flatShading: true })); m.castShadow = true; m.receiveShadow = true; g.add(m);
   }
   addOutline(g);
   return g;
+}
+
+function makeWheelGeo(r) {
+  const W = 0.62;            // tyre width
+  const dark = [], light = [], hub = [], hub2 = [];
+  const bx = (arr, x0, y0, z0, x1, y1, z1, rot = 0) => {
+    const geo = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0);
+    geo.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    if (rot) geo.rotateZ(rot);
+    arr.push(geo);
+  };
+  for (const side of [-1, 1]) {
+    const zc = side * 0.86;
+    // rim body: 14-sided drum
+    const drum = new THREE.CylinderGeometry(r * 0.8, r * 0.8, W, 14); drum.rotateX(Math.PI / 2); drum.translate(0, 0, zc); dark.push(drum);
+    // knobby treads: two staggered rows of cubes
+    const n = 14, cube = r * 0.21;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, even = i % 2 === 0;
+      const rowZ = even ? [-W / 2 + cube * 0.55, 0] : [0, W / 2 - cube * 0.55];
+      for (const dz of rowZ) bx(even ? dark : light, r * 0.76, -cube / 2, zc + dz - cube / 2 - (dz === 0 ? cube * 0.05 : 0), r, cube / 2, zc + dz + cube / 2, a);
+      // side-wall nubs
+      bx(light, r * 0.56, -cube * 0.35, zc + side * (W / 2 - 0.02), r * 0.78, cube * 0.35, zc + side * (W / 2 + 0.05), a + Math.PI / n);
+    }
+    // hub cap (outer side) + axle plate (inner side)
+    const hz = zc + side * (W / 2 + 0.01);
+    bx(hub, -r * 0.5, -r * 0.5, Math.min(hz, hz + side * 0.07), r * 0.5, r * 0.5, Math.max(hz, hz + side * 0.07));
+    bx(hub2, -r * 0.3, -r * 0.3, Math.min(hz + side * 0.07, hz + side * 0.12), r * 0.3, r * 0.3, Math.max(hz + side * 0.07, hz + side * 0.12));
+    bx(hub, -r * 0.14, -r * 0.14, Math.min(hz + side * 0.12, hz + side * 0.17), r * 0.14, r * 0.14, Math.max(hz + side * 0.12, hz + side * 0.17));
+    bx(hub2, -r * 0.5, -r * 0.5, Math.min(zc - side * W / 2, zc - side * (W / 2 + 0.04)), r * 0.5, r * 0.5, Math.max(zc - side * W / 2, zc - side * (W / 2 + 0.04)));
+  }
+  const merge = (arr) => mergeGeometries(arr, false);
+  return { dark: merge(dark), light: merge(light), hub: merge(hub), hub2: merge(hub2) };
 }
 
 // ---------------------------------------------------------------- trucks

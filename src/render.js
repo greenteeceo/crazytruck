@@ -357,7 +357,7 @@ export class Renderer {
     const t = performance.now() / 1000;
     for (const car of this.cars) {
       const { sim } = car;
-      const c = sim.chassis, p = c.getPosition();
+      const c = sim.chassis, al = this.alpha ?? 1, p = sim.pose(c, al);
       const z = car.z;
       // squash & stretch on landings, little hop on finish
       car.squash *= Math.exp(-dt * 7); car.hop = Math.max(0, car.hop - dt);
@@ -377,10 +377,19 @@ export class Renderer {
         if (car.tag) car.tag.position.set(x, y + 3.2, z);
         continue;
       }
-      car.parts.group.position.set(p.x, p.y + hopY, z); car.parts.group.rotation.z = c.getAngle();
+      car.parts.group.position.set(p.x, p.y + hopY, z); car.parts.group.rotation.z = p.a;
       car.parts.group.scale.set(1 + sq * 0.1, 1 - sq * 0.16, 1 + sq * 0.08);
-      sim.wheels.forEach((w, i) => { const q = w.getPosition(); car.wheels[i].position.set(q.x, q.y + hopY, z); car.wheels[i].rotation.z = w.getAngle(); });
-      sim.hook.forEach((b, i) => { const q = b.getPosition(); car.hook[i].position.set(q.x, q.y + hopY, z); car.hook[i].rotation.z = b.getAngle(); });
+      sim.wheels.forEach((w, i) => {
+        const q = sim.pose(w, al), wv = car.wheels[i];
+        wv.position.set(q.x, q.y + hopY, z); wv.rotation.z = q.a;
+        // tyre squash from suspension compression (joint travel is negative when compressed)
+        const tr = sim.joints[i].getJointTranslation();
+        const comp = Math.min(0.35, Math.max(0, -tr - 0.02)) / 0.35;
+        const k = 1 - Math.exp(-dt * 18);
+        wv.userData.sq = (wv.userData.sq || 0) + (comp - (wv.userData.sq || 0)) * k;
+        wv.scale.set(1 + wv.userData.sq * 0.08, 1 - wv.userData.sq * 0.12, 1 + wv.userData.sq * 0.05);
+      });
+      sim.hook.forEach((b, i) => { const q = sim.pose(b, al); car.hook[i].position.set(q.x, q.y + hopY, z); car.hook[i].rotation.z = q.a; });
       for (const sp of car.parts.spin) sp.obj.rotation[sp.axis] += sp.speed * dt;
       if (car.tag) car.tag.position.set(p.x, p.y + 3.2, z);
       // dust from spinning wheels on ground
@@ -396,7 +405,7 @@ export class Renderer {
       }
     }
     for (const lane of this.lanes || []) {
-      for (const d of lane.dynViews) { const q = d.body.getPosition(); d.m.position.set(q.x, q.y, lane.z); d.m.rotation.z = d.body.getAngle(); }
+      for (const d of lane.dynViews) { const q = lane.sim.pose(d.body, this.alpha ?? 1); d.m.position.set(q.x, q.y, lane.z); d.m.rotation.z = q.a; }
       for (const r of lane.ropes) {
         const arr = r.line.geometry.attributes.position.array; let k = 0;
         for (const b of lane.bridgeBodies) {
@@ -442,7 +451,7 @@ export class Renderer {
   }
 
   follow(dt, sim) {
-    const c = sim.chassis, p = c.getPosition(), v = c.getLinearVelocity();
+    const c = sim.chassis, p = sim.pose(c, this.alpha ?? 1), v = c.getLinearVelocity();
     const aspect = this.camera.aspect;
     const race = this.laneCount > 1;
     let look, pos;

@@ -280,7 +280,7 @@ function onFail() {
   Audio.engineStop(); Audio.fail();
   const g = game, l = g.level;
   const snap = g.snap || R.snapshotCar(g.sim, g.z);
-  const pose = g.sim.pose || g.sim.reason || 'crash';
+  const pose = g.sim.failPose || g.sim.reason || 'crash';
   const q = QUIPS[pose] || QUIPS.crash;
   const tilt = (Math.random() * 10 - 5).toFixed(1);
   screen('fail', html`
@@ -639,6 +639,7 @@ let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   tick(dt);
+  R.alpha = game && !game.paused && game.countdown <= 0 ? Math.min(1, game.acc / DT) : 1;
   R.update(dt, game?.sim, throttleInput());
   requestAnimationFrame(loop);
 }
