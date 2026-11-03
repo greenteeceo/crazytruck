@@ -138,6 +138,8 @@ function tick(dt) {
     ui.request(0.1);
     return;
   }
+  // keep counting below zero so the lights and GO! fade out, then stop
+  if (g.countdown > -1) { g.countdown = Math.max(-1, g.countdown - dt); ui.request(0.1); }
   g.acc += Math.min(dt, 0.1);
   const t = save.autoplay || testRun ? g.autoBot(g.sim) : throttleInput();
   while (g.acc >= DT) {
@@ -567,10 +569,12 @@ function drawHud(u) {
   }
   // race start lights + countdown, or level banner
   if (g.race) {
-    const left = g.countdown, n = Math.ceil(left), ly = u.h * 0.24;
+    // start lights and the count in one row under the HUD, above the trucks and their name tags
+    const left = g.countdown, n = Math.ceil(left);
     const out = left <= 0 ? Math.min(1, (-left) / 0.6) : 0;
     if (out < 1) {
-      const lw2 = 3 * 38 + 2 * 12 + 28, lx = u.w / 2 - lw2 / 2, yy = ly - out * 120;
+      const lw2 = 3 * 38 + 2 * 12 + 28, nsz = short() ? 54 : 64, numW = u.measure('GO!', nsz);
+      const lx = u.w / 2 - (lw2 + GAP + numW) / 2, yy = topY(u) + (testRun ? 140 : 100) - out * 30;
       c.save(); c.globalAlpha = 1 - out;
       u.rr(lx - 3, yy - 3, lw2 + 6, 64, 21); c.fillStyle = '#fff'; c.fill();
       u.rr(lx, yy, lw2, 58, 18); c.fillStyle = '#1d1f2b'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
@@ -579,9 +583,10 @@ function drawHud(u) {
         c.beginPath(); c.arc(lx + 14 + 19 + i * 50, yy + 29, 19, 0, Math.PI * 2);
         c.fillStyle = on === 'go' ? '#46d35c' : on ? '#ff3d57' : '#3a3d4f'; c.fill();
       }
-      c.restore();
       const label = left > 0 ? String(n) : 'GO!', age = u.t - (g.countT ?? u.t), k = Math.min(1.1, u.pop(0, 0.45, age));
-      if (left > -0.7) { c.save(); c.translate(u.w / 2, ly + 130); c.scale(k, k); u.text(label, 0, 0, 110, GOLD); c.restore(); }
+      const nx = lx + lw2 + GAP + numW / 2;
+      c.translate(nx, yy + 30); c.scale(k, k); u.text(label, 0, 0, nsz, left > 0 ? GOLD : '#7dff8a');
+      c.restore();
     }
   } else if (u.st < 2.1) {
     const a = u.st > 1.6 ? 1 - (u.st - 1.6) / 0.5 : 1, k = u.pop(0, 0.4), txt = `${l.index + 1}. ${l.name}`, bw = u.measure(txt, 30) + 44, by = u.h * 0.22 - (u.st > 1.6 ? (u.st - 1.6) * 40 : 0);

@@ -694,6 +694,8 @@ export class Renderer {
       const dist = viewW / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * aspect);
       const zc = this.focusZ * 0.35;
       look = new THREE.Vector3(p.x + 2.6 + THREE.MathUtils.clamp(v.x * 0.15, -1, 2.5), p.y + 0.6 + THREE.MathUtils.clamp(v.y * 0.05, -1, 1), zc);
+      // short screens (16:9) show less height: shift the lanes down to keep room for the HUD and start lights
+      look.y += THREE.MathUtils.clamp((aspect - 0.46) * 20, 0, 2);
       pos = new THREE.Vector3(look.x + dist * 0.28, look.y + dist * 0.62, zc + dist * 0.8);
     } else {
       const viewW = aspect < 0.7 ? 11.5 : aspect < 1 ? 14 : aspect < 1.4 ? 19 : 24;
