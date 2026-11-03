@@ -195,6 +195,7 @@ function tick(dt) {
         if (e.type === 'win') r.finish = rs.finishTime;
         else if (e.type === 'land') r.car.squash = Math.min(1, e.v);
         else if (e.type === 'recover') R.carRecover(r.car, e);
+        else if (e.type === 'breakup') R.burst(rs.x, rs.chassis.getPosition().y + 0.5, 0x55565e, 8, 4, -9, 0.6, r.z);
         else if (e.type === 'wheelOff') { const q = rs.wheels[e.idx].getPosition(); R.burst(q.x, q.y, 0x55565e, 6, 3, -8, 0.5, r.z); }
         else if (e.type === 'bonk' && Math.random() < 0.3) R.burst(rs.x, rs.chassis.getPosition().y + 0.5, 0xffffff, 5, 3, -6, 0.4, r.z);
       }
@@ -261,7 +262,8 @@ function fx(e, sim, z = 0, car = null) {
       if (!game.race && !game.snap) { game.snap = R.snapshotCar(sim, z, 'splash'); R.burst(p.x, p.y, 0xffffff, 24, 6, -10, 0.9, z); }
       break;
     case 'wheelOff': { const q = sim.wheels[e.idx].getPosition(); R.burst(q.x, q.y, 0x55565e, 8, 4, -8, 0.6, z); R.popText('Wheel off!', q.x, q.y + 1.6, z, '#ffffff'); Audio.land(0.6); break; }
-    case 'recover': if (car) { R.carRecover(car, e); R.popText('Flip!', e.to.x, e.to.y + 2.6, z, '#ffffff'); } break;
+    case 'breakup': R.burst(p.x, p.y + 0.6, 0xffd21a, 10, 5, -9, 0.7, z); R.burst(p.x, p.y + 0.4, 0x55565e, 10, 4, -9, 0.7, z); break;
+    case 'recover': if (car) { R.carRecover(car, e); R.popText(e.to.x < e.from.x - 1 ? 'Back you go!' : 'Flip!', e.from.x, e.from.y + 2.6, z, '#ffffff'); } break;
     case 'win':
       for (const c of [0xffffff, 0xff3d6b, 0x2f7cf6, 0xffd21a]) R.burst(p.x + 1, p.y + 2, c, 14, 7, -5, 1.2, z);
       if (car) car.hop = 1.2;

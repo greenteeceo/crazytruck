@@ -42,7 +42,7 @@ for (let i = 0; i < 20; i++) {
     const l = genRace(w, seed);
     if (names.has(l.name)) continue;
     const res = [1, 0.85, 0.7].map((sk) => raced(l, sk));
-    if (res.some((x) => !x || x.t > 50 || x.resp > 4)) continue;
+    if (res.some((x) => !x || x.t > 50 || x.resp > 3)) continue;
     names.add(l.name); out.races.push({ w, seed });
     console.log('race', i + 1, WORLD_DEFS[w].id, seed, l.name.padEnd(18), res.map((x) => x.t.toFixed(1) + '(r' + x.resp + ')').join(' '));
     break;

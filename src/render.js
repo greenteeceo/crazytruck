@@ -411,11 +411,49 @@ export class Renderer {
     this.scene.add(sp); (this.pops ||= []).push({ sp, t: 0 });
   }
 
+  // Broken parts: the crane boom leaves the truck and follows its own physics body; chunks are small
+  // voxel cubes in the truck's colours that shrink away before the sim removes them.
+  syncDebris(car) {
+    const sim = car.sim, z = car.z;
+    car.debrisViews ||= new Map();
+    const live = new Set(sim.debris || []);
+    for (const [d, m] of car.debrisViews) {
+      if (live.has(d)) continue;
+      if (d.kind === 'boom') {
+        const b = car.parts.boom, c = car.spec.crane;
+        car.parts.group.add(b); b.position.set(c.pivot[0], c.pivot[1], 0); b.rotation.set(0, 0, c.angle);
+        if (car.parts.piston) car.parts.piston.visible = true;
+      } else this.scene.remove(m);
+      car.debrisViews.delete(d);
+    }
+    for (const d of live) {
+      let m = car.debrisViews.get(d);
+      if (!m) {
+        if (d.kind === 'boom') {
+          if (!car.parts.boom) continue;
+          m = car.parts.boom; this.scene.add(m);
+          if (car.parts.piston) car.parts.piston.visible = false;
+        } else {
+          m = new THREE.Group();
+          box(m, -d.size / 2, -d.size / 2, -d.size / 2, d.size / 2, d.size / 2, d.size / 2, d.color);
+          box(m, -d.size * 0.3, d.size / 2, -d.size * 0.3, d.size * 0.2, d.size * 0.62, d.size * 0.2, d.color);
+          m.userData.zoff = (Math.random() - 0.5) * 1.6;
+          this.scene.add(m);
+        }
+        car.debrisViews.set(d, m);
+      }
+      const q = d.body.getPosition();
+      m.position.set(q.x, q.y, z + (m.userData.zoff || 0)); m.rotation.set(0, 0, d.body.getAngle());
+      if (d.kind === 'chunk') m.scale.setScalar(Math.min(1, d.ttl / 0.8));
+    }
+  }
+
   // ------------------------------------------------------------ per-frame
   update(dt, focus, throttle = 0) {
     const t = performance.now() / 1000;
     for (const car of this.cars) {
       const { sim } = car;
+      this.syncDebris(car);
       const c = sim.chassis, al = this.alpha ?? 1, p = sim.pose(c, al);
       const z = car.z;
       // squash & stretch on landings, little hop on finish

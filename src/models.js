@@ -207,6 +207,7 @@ export function buildTruck(spec) {
       cbox(boom, c.length, 0, 0.21, 0.2, 0.2, 0.04, GL); cbox(boom, c.length, 0, -0.21, 0.2, 0.2, 0.04, GL);
       // ---- hydraulic cylinder: dark barrel from the deck, silver rod up to the boom
       const pis = new THREE.Group(); pis.position.set(-0.3, 0.72, 0); g.add(pis);
+      parts.boom = boom; parts.piston = pis;
       const tip = new THREE.Vector3(c.pivot[0] + Math.cos(c.angle) * 1.2, c.pivot[1] + Math.sin(c.angle) * 1.2 - 0.2, 0);
       const d = tip.clone().sub(pis.position); pis.rotation.z = Math.atan2(d.y, d.x);
       cbox(pis, 0.05, 0, 0, 0.22, 0.26, 0.26, GD);

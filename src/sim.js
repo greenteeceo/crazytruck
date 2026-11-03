@@ -26,6 +26,7 @@ export class Sim {
     this.headTime = 0;
     this.padCooldown = 0;
     this.freeze = 0;
+    this.debris = [];
     this.failPose = '';
     this.landed = 0;     // set when wheel lands after air; used for fx
     this.airTime = 0;
@@ -184,7 +185,8 @@ export class Sim {
       for (let i = 0; i < c.links; i++) {
         const b = w.createDynamicBody({ position: V(px, py - c.linkLen * (i + 0.5)), angularDamping: 0.4, linearDamping: 0.1 });
         b.createFixture(pl.Box(0.06, c.linkLen / 2), { density: 0.15, filterMaskBits: 0, filterCategoryBits: 0 });
-        w.createJoint(pl.RevoluteJoint({}, prev, b, V(px, py - c.linkLen * i)));
+        const j = w.createJoint(pl.RevoluteJoint({}, prev, b, V(px, py - c.linkLen * i)));
+        if (i === 0) this.hookJoint = j;
         this.hook.push(b); prev = b;
       }
     }
@@ -198,6 +200,59 @@ export class Sim {
   makeJoint(wb) {
     const s = this.spec;
     return this.world.createJoint(pl.WheelJoint({ enableMotor: true, maxMotorTorque: s.torque, motorSpeed: 0, frequencyHz: s.susHz, dampingRatio: s.susDamp }, this.chassis, wb, wb.getPosition(), V(0, 1)));
+  }
+
+  // Crash: the crane boom snaps off (hook still hanging from it) and a few body chunks fly out.
+  // Debris are real bodies that bounce on the terrain; chunks fade after a few seconds.
+  breakApart() {
+    const s = this.spec, w = this.world, ch = this.chassis, v = ch.getLinearVelocity(), a = ch.getAngle();
+    const L = s.look || {};
+    const chunk = (lx, ly, sz, color, kick) => {
+      const p = ch.getWorldPoint(V(lx, ly));
+      const b = w.createDynamicBody({ position: p, angle: Math.random() * 3, angularDamping: 0.2 });
+      b.createFixture(pl.Box(sz / 2, sz / 2), { density: 0.6, friction: 0.7, restitution: 0.3, filterCategoryBits: CAT_DYN, filterMaskBits: CAT_TERRAIN | CAT_DYN });
+      b.setLinearVelocity(V(v.x * 0.5 + kick[0], Math.max(0, v.y) * 0.5 + kick[1]));
+      b.setAngularVelocity((Math.random() - 0.5) * 16);
+      this.debris.push({ body: b, kind: 'chunk', size: sz, color, ttl: 4.5 + Math.random() });
+    };
+    chunk(1.4, 0.3, 0.32, L.body ?? 0xff9a14, [3 + Math.random() * 2, 5]);
+    chunk(-1.2, 0.5, 0.28, L.frame ?? 0x55565e, [-3, 6]);
+    chunk(0.6, 0.9, 0.24, 0x15161c, [1, 7]);
+    chunk(-0.2, 0.2, 0.36, L.bodyDark ?? 0xe07800, [-1.5, 4]);
+    if (s.crane && !this.debris.some((d) => d.kind === 'boom')) {
+      const c = s.crane, piv = ch.getWorldPoint(V(c.pivot[0], c.pivot[1]));
+      const b = w.createDynamicBody({ position: piv, angle: a + c.angle, angularDamping: 0.3 });
+      b.createFixture(pl.Box(c.length / 2, 0.2, V(c.length / 2, 0), 0), { density: 0.5, friction: 0.6, restitution: 0.2, filterCategoryBits: CAT_DYN, filterMaskBits: CAT_TERRAIN | CAT_DYN });
+      b.setLinearVelocity(V(v.x * 0.6 - 1.5, Math.max(v.y, 0) + 6));
+      b.setAngularVelocity(2.5 + Math.random() * 2);
+      this.debris.push({ body: b, kind: 'boom' });
+      if (this.hookJoint) { w.destroyJoint(this.hookJoint); this.hookJoint = null; }
+      this.hookBoomJoint = w.createJoint(pl.RevoluteJoint({}, b, this.hook[0], b.getWorldPoint(V(c.length, 0))));
+      for (const h of this.hook) h.getFixtureList().setFilterData({ groupIndex: 0, categoryBits: CAT_DYN, maskBits: CAT_TERRAIN });
+    }
+    this.events.push({ type: 'breakup' });
+  }
+
+  tickDebris() {
+    if (!this.debris.length) return;
+    this.debris = this.debris.filter((d) => {
+      if (d.kind !== 'chunk') return true;
+      d.ttl -= DT;
+      if (d.ttl > 0) return true;
+      this.world.destroyBody(d.body); return false;
+    });
+  }
+
+  holdPose() {
+    const p = this.recoverPose; if (!p) return;
+    const s = this.spec, zero = V(0, 0);
+    const place = (b, px, py) => { b.setTransform(V(px, py), 0); b.setLinearVelocity(zero); b.setAngularVelocity(0); };
+    place(this.chassis, p.x, p.y);
+    s.wheelX.forEach((wx, i) => place(this.wheels[i], p.x + wx, p.y + s.wheelY));
+    if (s.crane) {
+      const c = s.crane, tx = c.pivot[0] + Math.cos(c.angle) * c.length, ty = c.pivot[1] + Math.sin(c.angle) * c.length;
+      this.hook.forEach((b, i) => place(b, p.x + tx, p.y + ty - c.linkLen * (i + 0.5)));
+    }
   }
 
   // A crash knocks one wheel off; it rolls away as a loose body until recover() bolts it back on.
@@ -244,7 +299,13 @@ export class Sim {
 
   step(throttle) {
     const s = this.spec;
-    if (this.freeze > 0) { this.freeze -= DT; this.time += DT; if (this.freeze <= 0) { this.state = 'run'; this.events.push({ type: 'recovered' }); } return; }
+    if (this.freeze > 0) {
+      this.freeze -= DT; this.time += DT;
+      this.world.step(DT, 8, 3); this.tickDebris();
+      this.holdPose();
+      if (this.freeze <= 0) { this.state = 'run'; this.events.push({ type: 'recovered' }); }
+      return;
+    }
     const running = this.state === 'run';
     const t = running ? throttle : 0;
     for (const j of this.joints) {
@@ -286,6 +347,7 @@ export class Sim {
     for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
     this.world.step(DT, 8, 3);
     this.time += DT;
+    this.tickDebris();
 
     for (const e of this.events) {
       if ((e.type === 'pad' || e.type === 'boost') && this.padCooldown <= 0) {
@@ -321,7 +383,7 @@ export class Sim {
     if (this.state !== 'run') return;
     this.state = 'fail'; this.reason = reason;
     this.failPose = this.classifyPose(reason);
-    if (reason === 'crash') this.loseWheel();
+    if (reason === 'crash') { this.loseWheel(); this.breakApart(); }
     this.events.push({ type: 'fail', reason, pose: this.failPose });
   }
 
@@ -352,9 +414,9 @@ export class Sim {
     for (let i = 0; i < 80 && gy == null; i++) {
       const a = this.groundAt(gx - span), b = this.groundAt(gx + span), c = this.groundAt(gx);
       if (a != null && b != null && c != null && Math.abs(a - b) < 0.5 && c <= Math.max(a, b) + 0.3) gy = Math.max(a, b);
-      else gx += 0.5;
+      else gx -= 0.5;   // walk back towards the start: a respawn never skips an obstacle
     }
-    if (gy == null) { gx = this.startX; gy = this.level.start?.y || 0; }
+    if (gy == null || gx < this.startX) { gx = this.startX; gy = this.level.start?.y || 0; }
     const from = { x: this.x, y: this.chassis.getPosition().y, a: this.chassis.getAngle() };
     const cy = gy + s.wheelR - s.wheelY + 0.08;
     const zero = V(0, 0);
@@ -365,7 +427,16 @@ export class Sim {
     if (s.crane) {
       const c = s.crane, tx = c.pivot[0] + Math.cos(c.angle) * c.length, ty = c.pivot[1] + Math.sin(c.angle) * c.length;
       this.hook.forEach((b, i) => place(b, gx + tx, cy + ty - c.linkLen * (i + 0.5)));
+      // bolt the boom back on: drop the broken boom body, re-hang the hook from the truck
+      const boom = this.debris.find((d) => d.kind === 'boom');
+      if (boom) {
+        if (this.hookBoomJoint) { this.world.destroyJoint(this.hookBoomJoint); this.hookBoomJoint = null; }
+        this.world.destroyBody(boom.body); this.debris = this.debris.filter((d) => d !== boom);
+      }
+      if (!this.hookJoint) this.hookJoint = this.world.createJoint(pl.RevoluteJoint({}, this.chassis, this.hook[0], V(gx + tx, cy + ty)));
+      for (const h of this.hook) h.getFixtureList().setFilterData({ groupIndex: 0, categoryBits: 0, maskBits: 0 });
     }
+    this.recoverPose = { x: gx, y: cy };
     this.headTouch = 0; this.headProp = 0; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
     for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
     this.state = 'recover'; this.reason = ''; this.freeze = hold;

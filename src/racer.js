@@ -3,13 +3,20 @@ import { Sim, DT } from './sim.js';
 
 // Track a racer's progress and respawn it after a crash or when stuck.
 export function makeRacer(level, spec, opts = {}) {
-  return { level, spec, opts, sim: new Sim(level, spec, opts), failT: 0, stuckT: 0, bestX: -1e9, respawns: 0 };
+  return { level, spec, opts, sim: new Sim(level, spec, opts), failT: 0, stuckT: 0, bestX: -1e9, respawns: 0, safe: [], safeT: 0 };
 }
 
-// Flip the truck back upright a little behind where it got into trouble. Keeps the same simulation.
+// Last spot where the truck was driving upright on its wheels, at least `back` metres behind x.
+function checkpoint(r, x, back) {
+  for (let i = r.safe.length - 1; i >= 0; i--) if (r.safe[i] <= x - back) return r.safe[i];
+  return r.sim.startX;
+}
+
+// Flip the truck back upright behind where it got into trouble. Keeps the same simulation.
 export function respawnAt(r, x) {
   r.sim.recover(x);
-  r.failT = 0; r.stuckT = 0; r.respawns++;
+  r.safe = r.safe.filter((sx) => sx <= x + 0.01);
+  r.failT = 0; r.stuckT = 0; r.respawns++; r.bestX = -1e9;
   return r.sim;
 }
 
@@ -19,16 +26,24 @@ export function racerWatch(r) {
   if (s.state === 'win' || s.state === 'recover') return null;
   if (s.state === 'fail') {
     r.failT += DT;
-    if (r.failT > 0.9) { respawnAt(r, Math.max(s.startX, Math.min(s.x, s.maxX) - 3)); r.bestX = -1e9; return 'respawn'; }
+    // give the crash a moment to play out, then go back to a checkpoint before the obstacle
+    // a splash means the jump was too short: go further back for a proper run-up
+    if (r.failT > 1.3) { respawnAt(r, checkpoint(r, s.x, s.reason === 'splash' ? 9 : 5)); return 'respawn'; }
     return null;
+  }
+  // record checkpoints while driving upright with both wheels down
+  r.safeT += DT;
+  if (r.safeT > 0.25) {
+    r.safeT = 0;
+    let a = s.chassis.getAngle() % (Math.PI * 2); if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
+    if (s.wheelTouch[0] > 0 && s.wheelTouch[1] > 0 && Math.abs(a) < 0.35 && s.lostWheel == null) {
+      const last = r.safe[r.safe.length - 1];
+      if (last == null || s.x > last + 1) r.safe.push(s.x);
+    }
   }
   const x = s.x;
   if (x > r.bestX + 0.4) { r.bestX = x; r.stuckT = 0; } else r.stuckT += DT;
-  if (r.stuckT > (r.opts.stuckLimit ?? 3.5)) {
-    // first time: back up a little; stuck again at the same spot: hop past the obstacle
-    const again = Math.abs(s.maxX - (r.lastStuckX ?? -1e9)) < 4;
-    r.lastStuckX = s.maxX;
-    respawnAt(r, again ? s.maxX + 4 : s.maxX - 2); r.bestX = -1e9; return 'respawn';
-  }
+  // stuck (e.g. jammed against crates): back up for a run-up, never jump ahead
+  if (r.stuckT > (r.opts.stuckLimit ?? 3.5)) { respawnAt(r, checkpoint(r, x, 6)); return 'respawn'; }
   return null;
 }

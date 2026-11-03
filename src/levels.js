@@ -245,18 +245,18 @@ export const RACE_TRACKS = [
       .gem(15, 0.8).gem(37, 0.4).gem(56, 4.0).gem(77, 0.8);
   }, { ai: { zones: [[6, 45, 8], [68, 85, 8]] } }),
   race('Spin Cycle', 3, 'metal', (b) => {
-    b.ground(-8, 108, 0).spin(20, 0.0, 4.2, 0.4, 0.9).hammer(36, 0, -1.2).mover(52, 1.2, 3, 0.5, 0, 2.0, 2.4, 'metal')
+    b.ground(-8, 108, 0).spin(20, 0.0, 4.2, 0.4, 0.9).hammer(36, 0, -1.2).mover(52, 3.0, 3, 0.5, 0, 1.2, 2.4, 'metal')
       .wall(62, 2, 3, 0, 0.75, 'labcrate').hammer(74, 0, 1.2).pad(84, 0.02, 2.4, 11, 7).finish(100)
       .gem(28, 1.2).gem(44, 1.2).gem(68, 1.2).gem(88, 3.6);
   }),
   race('Moon Bounce', 3, 'metal', (b) => {
-    b.ground(-8, 14, 0).ramp(8, 0, 14, 1.0).ground(24, 34, 0.8).ball(30, 2.0, 0.9).pad(33, 0.82, 2.4, 9, 6).ground(48, 58, 0.5)
+    b.ground(-8, 14, 0).ramp(8, 0, 14, 1.0).ground(22, 34, 0.8).ball(30, 2.0, 0.9).pad(33, 0.82, 2.4, 9, 6).ground(48, 58, 0.5)
       .wall(52, 2, 3, 0.5, 0.75, 'labcrate').ramp(54, 0.5, 58, 1.4).ground(70, 100, 0).dominoes(76, 5, 1.6).finish(94)
       .gems(17, 4.0, 3, 2.2).gems(38, 5.0, 3, 2.6).gems(61, 4.6, 3, 2.4);
   }, { gravity: 5, ai: { airAngle: -0.05 } }),
   race('Rolling Thunder', 2, 'castle', (b) => {
     b.ground(-8, 10, 0, 'grass').ramp(10, 0, 40, 4.5).ground(40, 52, 4.5, 'castle', 7.5)
-      .ball(44, 5.6, 0.9, -2).ball(48, 5.6, 0.8, -3).ball(51, 5.6, 1.0, -1).ball(36, 4.0, 0.7, -2)
+      .ball(45, 5.5, 0.9, 0).ball(49, 5.5, 0.8, 0)
       .hammer(46, 4.5, 1.1).ramp(52, 4.5, 72, 0).ground(72, 106, 0, 'grass').ball(84, 1.0, 0.9).wall(90, 2, 3).finish(100)
       .gem(25, 3.4).gem(46, 5.6).gem(62, 3.4).gem(80, 1.2);
   }, { ai: { zones: [[8, 42, 8]] } }),
