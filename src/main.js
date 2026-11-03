@@ -235,6 +235,10 @@ function fx(e, sim, z = 0, car = null) {
         if (e.style === 'metal' || e.style === 'stone') { R.popText(e.style === 'metal' ? 'BONK!' : 'THUD!', p.x, p.y + 2.6, z, '#ff6b74'); R.shake = 0.25; }
       }
       break;
+    case 'dunk':
+      // photo at the moment the truck hits the water, before it sinks
+      if (!game.race && !game.snap) { game.snap = R.snapshotCar(sim, z, 'splash'); R.burst(p.x, p.y, 0xffffff, 24, 6, -10, 0.9, z); }
+      break;
     case 'recover': if (car) { R.carRecover(car, e); R.popText('Flip!', e.to.x, e.to.y + 2.6, z, '#ffffff'); } break;
     case 'win':
       for (const c of [0xffffff, 0xff3d6b, 0x2f7cf6, 0xffd21a]) R.burst(p.x + 1, p.y + 2, c, 14, 7, -5, 1.2, z);
@@ -243,7 +247,7 @@ function fx(e, sim, z = 0, car = null) {
     case 'fail':
       if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }
       else { R.burst(p.x, p.y, 0x9a9eab, 18, 5, -8, 0.8, z); Audio.crash(); R.shake = 0.35; }
-      if (!game.race) setTimeout(() => { if (game && !game.snap) game.snap = R.snapshotCar(sim, z); }, e.reason === 'splash' ? 120 : 420);
+      if (!game.race) setTimeout(() => { if (game && !game.snap) game.snap = R.snapshotCar(sim, z); }, 420);
       else R.popText(e.reason === 'splash' ? 'SPLASH!' : 'OOPS!', p.x, p.y + 2.4, z, '#ffffff');
       break;
     default: break;

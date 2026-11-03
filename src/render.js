@@ -485,12 +485,12 @@ export class Renderer {
   }
 
   // Close-up "crash photo": camera dives in with a tilted (dutch) angle, then everything is restored.
-  snapshotCar(sim, z = 0) {
+  snapshotCar(sim, z = 0, reason = sim.reason) {
     const p = sim.chassis.getPosition();
     const cam = this.camera, keep = { pos: cam.position.clone(), quat: cam.quaternion.clone(), up: cam.up.clone(), fov: cam.fov };
     const water = sim.level.water ?? -3;
     const target = new THREE.Vector3(p.x + 0.4, Math.max(p.y, water + 0.6) + 0.4, z);
-    const side = sim.reason === 'splash' ? 1 : -1;
+    const side = reason === 'splash' ? 1 : -1;
     cam.position.set(target.x + 6.5 * side, target.y + 4.2, z + 11);
     cam.up.set(Math.sin(0.28 * side), Math.cos(0.28 * side), 0);
     cam.fov = 38; cam.updateProjectionMatrix(); cam.lookAt(target);

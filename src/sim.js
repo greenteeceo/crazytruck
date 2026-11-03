@@ -280,6 +280,7 @@ export class Sim {
         this.headTime += DT;
         if (this.headTime > 0.6) this.fail('crash');
       } else this.headTime = 0;
+      if (!this.dunked && pos.y < (this.level.water ?? -4) + 0.5) { this.dunked = true; this.events.push({ type: 'dunk' }); }
       if (pos.y < (this.level.water ?? -4) - 1.2) this.fail('splash');
       if (pos.x < (this.level.minX ?? -12)) this.fail('lost');
     }
