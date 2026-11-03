@@ -30,14 +30,14 @@ export const VEHICLES = [
   },
   {
     ...base,
-    id: 'rubble', name: 'Rubble Rider', price: 300,
+    id: 'rubble', name: 'Rubble Rider', price: 2000,
     desc: 'Light red pickup. Fast but twitchy.',
     look: { type: 'pickup', body: 0xe8333c, bodyDark: 0xb31f2a, frame: 0x55565e, frameDark: 0x3c3d44 },
     speed: 24, torque: 25, density: 1.0, air: 8.5,
   },
   {
     ...base,
-    id: 'hauler', name: 'Block Hauler', price: 600,
+    id: 'hauler', name: 'Block Hauler', price: 3500,
     desc: 'Heavy blue hauler. Climbs anything.',
     look: { type: 'hauler', body: 0x2f7cf6, bodyDark: 0x1f58c0, frame: 0x55565e, frameDark: 0x3c3d44 },
     speed: 19, torque: 38, density: 1.5, grip: 1.9, air: 6.5,
@@ -45,7 +45,7 @@ export const VEHICLES = [
   },
   {
     ...base,
-    id: 'dozer', name: 'Dozer Dash', price: 900,
+    id: 'dozer', name: 'Dozer Dash', price: 5500,
     desc: 'Bulldozer blade up front. Pushes crates aside.',
     look: { type: 'dozer', body: 0xffd21a, bodyDark: 0xd9a800, frame: 0x4a4b52, frameDark: 0x333339 },
     speed: 20, torque: 36, density: 1.4, grip: 1.8,
@@ -54,7 +54,7 @@ export const VEHICLES = [
   },
   {
     ...base,
-    id: 'mixer', name: 'Mixer Max', price: 1300,
+    id: 'mixer', name: 'Mixer Max', price: 6500,
     desc: 'Spinning drum, low centre of gravity.',
     look: { type: 'mixer', body: 0xf2f2f2, bodyDark: 0xcfcfd6, accent: 0xff7a1a, frame: 0x55565e, frameDark: 0x3c3d44 },
     speed: 22, torque: 32, density: 1.3, air: 7,
@@ -62,21 +62,21 @@ export const VEHICLES = [
   },
   {
     ...base,
-    id: 'rover', name: 'Lab Rover', price: 1800,
+    id: 'rover', name: 'Lab Rover', price: 11000,
     desc: 'Science buggy with gyro: best air control.',
     look: { type: 'rover', body: 0x2ee6c8, bodyDark: 0x17b39a, accent: 0xffffff, frame: 0x3a4152, frameDark: 0x262b38 },
     speed: 24, torque: 30, density: 1.0, air: 11, wheelR: 0.66, susHz: 3.6,
   },
   {
     ...base,
-    id: 'knight', name: 'Iron Knight', price: 2500,
+    id: 'knight', name: 'Iron Knight', price: 15000,
     desc: 'Armoured medieval monster. Tanky and grippy.',
     look: { type: 'knight', body: 0x8a5cf0, bodyDark: 0x6438c9, accent: 0xffcf3a, frame: 0x8d93a3, frameDark: 0x646a7a },
     speed: 22, torque: 37, density: 1.4, grip: 2.0, air: 8,
   },
   {
     ...base,
-    id: 'titan', name: 'Gold Titan', price: 4000,
+    id: 'titan', name: 'Gold Titan', price: 22000,
     desc: 'The ultimate truck. Fast, strong, golden.',
     look: { type: 'pickup', body: 0xffc61a, bodyDark: 0xe09a00, accent: 0xffffff, frame: 0x2e2f36, frameDark: 0x1d1e23 },
     speed: 27, torque: 41, density: 1.2, grip: 2.0, air: 10, wheelR: 0.68,
@@ -84,7 +84,7 @@ export const VEHICLES = [
   // ---- added in 2.1
   {
     ...base,
-    id: 'icecream', name: 'Scoop Truck', price: 450,
+    id: 'icecream', name: 'Scoop Truck', price: 1500,
     desc: 'Ice-cream van with a giant cone on the roof.',
     look: { type: 'icecream', body: 0xffa8d0, bodyDark: 0xf07ab0, accent: 0xffffff, frame: 0x55565e, frameDark: 0x3c3d44 },
     speed: 21, torque: 27, density: 1.1, air: 7,
@@ -92,14 +92,14 @@ export const VEHICLES = [
   },
   {
     ...base,
-    id: 'taxi', name: 'Turbo Taxi', price: 700,
+    id: 'taxi', name: 'Turbo Taxi', price: 2500,
     desc: 'Checker-stripe cab. Quick and light.',
     look: { type: 'taxi', body: 0xffd21a, bodyDark: 0xe0a800, frame: 0x2e2f36, frameDark: 0x1d1e23 },
     speed: 23, torque: 28, density: 1.1, air: 8,
   },
   {
     ...base,
-    id: 'tractor', name: 'Farm Tractor', price: 1100,
+    id: 'tractor', name: 'Farm Tractor', price: 4500,
     desc: 'Slow, grippy farm muscle.',
     look: { type: 'tractor', body: 0x3fae4a, bodyDark: 0x2f8c3a, accent: 0xffd21a, frame: 0x3c3d44, frameDark: 0x2a2b31 },
     speed: 18, torque: 42, density: 1.5, grip: 2.1, air: 6.5,
@@ -107,14 +107,14 @@ export const VEHICLES = [
   },
   {
     ...base,
-    id: 'police', name: 'Patrol Monster', price: 1500,
+    id: 'police', name: 'Patrol Monster', price: 8000,
     desc: 'Black-and-white cruiser with flashing lights.',
     look: { type: 'police', body: 0x1d1e26, bodyDark: 0x0f1016, accent: 0xffffff, frame: 0x3c3d44, frameDark: 0x2a2b31 },
     speed: 25, torque: 31, air: 8.5,
   },
   {
     ...base,
-    id: 'garbage', name: 'Trash Titan', price: 1600,
+    id: 'garbage', name: 'Trash Titan', price: 9500,
     desc: 'Heavy garbage truck. Bulldozes anything.',
     look: { type: 'garbage', body: 0x2fae5a, bodyDark: 0x1f8a42, accent: 0xffffff, frame: 0x55565e, frameDark: 0x3c3d44 },
     speed: 20, torque: 40, density: 1.5, grip: 1.8, air: 6.5,
@@ -122,7 +122,7 @@ export const VEHICLES = [
   },
   {
     ...base,
-    id: 'fire', name: 'Blaze Engine', price: 2200,
+    id: 'fire', name: 'Blaze Engine', price: 13000,
     desc: 'Fire truck with a ladder and light bar.',
     look: { type: 'fire', body: 0xe8333c, bodyDark: 0xb31f2a, accent: 0xffffff, frame: 0x55565e, frameDark: 0x3c3d44 },
     speed: 21, torque: 36, density: 1.4, grip: 1.8, air: 7.5,
@@ -130,14 +130,14 @@ export const VEHICLES = [
   },
   {
     ...base,
-    id: 'dino', name: 'Dino Crusher', price: 3200,
+    id: 'dino', name: 'Dino Crusher', price: 18000,
     desc: 'A monster truck that is also a dinosaur.',
     look: { type: 'dino', body: 0x5ac84a, bodyDark: 0x3a9a32, accent: 0xff8a1a, frame: 0x3c3d44, frameDark: 0x2a2b31 },
     speed: 24, torque: 40, density: 1.3, grip: 1.9, air: 9,
   },
   {
     ...base,
-    id: 'rocket', name: 'Rocket Racer', price: 5000,
+    id: 'rocket', name: 'Rocket Racer', price: 28000,
     desc: 'Fins, a booster and the best air control.',
     look: { type: 'rocket', body: 0xf4f4f8, bodyDark: 0xc8c9d6, accent: 0xe8333c, frame: 0x3c3d44, frameDark: 0x2a2b31 },
     speed: 29, torque: 38, density: 1.0, air: 12,
@@ -153,7 +153,8 @@ export const UPGRADES = [
   { id: 'air', name: 'Air', key: 'air', pct: 0.07, lo: 5, hi: 17 },
 ];
 export const MAX_UPGRADE = 5;
-export const upgradeCost = (v, lvl) => Math.round(((60 + v.price * 0.06) * (lvl + 1)) / 10) * 10;
+// level 1 costs ~8% of the truck price (min 150), each further level costs more
+export const upgradeCost = (v, lvl) => Math.round((Math.max(150, v.price * 0.08) * (1 + lvl * 0.75)) / 10) * 10;
 export function withUpgrades(v, ups = {}) {
   const out = { ...v };
   for (const u of UPGRADES) out[u.key] = v[u.key] * (1 + u.pct * (ups[u.id] || 0));

@@ -53,7 +53,11 @@ function screen(cls, content) {
 }
 const fmt = (t) => { if (t == null) return '--:--.--'; const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s.toFixed(2).padStart(5, '0')}`; };
 const ord = (n) => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || 'th');
-const topbar = () => html`<div class="topbar"><div class="pill" id="dpill">${gemIcon}<b id="dcount">${save.diamonds}</b></div><div class="pill"><span class="ico gold">${I.trophy}</span><b>${save.trophies}</b></div></div>`;
+// dev option: infinite gems (purchases are free, counter shows ∞)
+const gemsText = () => (save.infinite ? '∞' : save.diamonds);
+const canAfford = (n) => save.infinite || save.diamonds >= n;
+const spend = (n) => { if (!save.infinite) save.diamonds -= n; };
+const topbar = () => html`<div class="topbar"><div class="pill" id="dpill">${gemIcon}<b id="dcount">${gemsText()}</b></div><div class="pill"><span class="ico gold">${I.trophy}</span><b>${save.trophies}</b></div></div>`;
 const navbar = (active) => html`<nav class="nav">${[['race', 'Race', I.trophy], ['worlds', 'Worlds', I.worlds], ['shop', 'Shop', I.shop], ['settings', 'Settings', I.settings]].map(([k, n, ic]) => `<button class="${active === k ? 'on' : ''}" data-act="tab" data-tab="${k}"><span class="ico">${ic}</span><span>${n}</span></button>`).join('')}</nav>`;
 
 // ------------------------------------------------------------ progress helpers
@@ -416,7 +420,7 @@ function flyGems(n, from) {
     document.body.appendChild(d);
     setTimeout(() => d.remove(), 1400 + i * 60);
   }
-  setTimeout(() => { target.textContent = save.diamonds; target.parentElement.classList.add('bump'); setTimeout(() => target.parentElement?.classList.remove('bump'), 300); }, 1100);
+  setTimeout(() => { target.textContent = gemsText(); target.parentElement.classList.add('bump'); setTimeout(() => target.parentElement?.classList.remove('bump'), 300); }, 1100);
 }
 
 function confetti(el) {
@@ -625,7 +629,7 @@ function showShop(sel) {
     const lvl = ups[u.id] || 0, baseP = pct(cur[u.key], u), upP = pct(cur[u.key] * (1 + u.pct * lvl), u);
     const cost = upgradeCost(cur, lvl);
     const btn = !own ? '' : lvl >= MAX_UPGRADE ? '<span class="upmax">MAX</span>'
-      : `<button class="upbtn ${save.diamonds >= cost ? '' : 'poor'}" data-act="upgrade" data-id="${cur.id}" data-u="${u.id}">▲ ${cost}</button>`;
+      : `<button class="upbtn ${canAfford(cost) ? '' : 'poor'}" data-act="upgrade" data-id="${cur.id}" data-u="${u.id}">▲ ${cost}</button>`;
     return `<div class="stat"><span>${u.name}</span><div class="bar"><i style="width:${baseP}%"></i><i class="up" style="left:${baseP}%;width:${upP - baseP}%"></i>
       <div class="pips">${Array.from({ length: MAX_UPGRADE }, (_, k) => `<em class="${k < lvl ? 'on' : ''}"></em>`).join('')}</div></div>${btn}</div>`;
   }).join('');
@@ -644,7 +648,7 @@ function showShop(sel) {
   }).join('')}</div>
     <div class="shopbtn">${save.car === cur.id ? '<button class="btn gray" disabled>Selected</button>'
       : own ? `<button class="btn blue" data-act="use" data-id="${cur.id}">Use truck</button>`
-        : `<button class="btn ${save.diamonds >= cur.price ? 'orange' : 'gray'}" data-act="buy" data-id="${cur.id}">Buy ${gemIcon} ${cur.price}</button>`}</div>
+        : `<button class="btn ${canAfford(cur.price) ? 'orange' : 'gray'}" data-act="buy" data-id="${cur.id}">Buy ${gemIcon} ${cur.price}</button>`}</div>
     ${navbar('shop')}`);
   const s2 = $('.card.sel'); if (s2) s2.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
@@ -660,6 +664,7 @@ function showSettings() {
       <button class="toggle ${save.shadows ? 'on' : ''}" data-act="shadows"><span class="ico">${I.settings}</span><span>Shadows (quality)</span><i></i></button>
       <div class="setlbl">Test tools</div>
       <button class="toggle ${save.autoplay ? 'on' : ''}" data-act="autoplay"><span class="ico">${I.play}</span><span>Autoplay (bot drives)</span><i></i></button>
+      <button class="toggle ${save.infinite ? 'on' : ''}" data-act="infinite"><span class="ico">${gemIcon}</span><span>Infinite gems (dev)</span><i></i></button>
       <button class="toggle ${save.unlockAll ? 'on' : ''}" data-act="unlockAll"><span class="ico">${I.lock}</span><span>Unlock all levels</span><i></i></button>
       <button class="btn gray wide" data-act="reset">Reset progress</button>
       <div class="sub">Controls: ◀ ▶ on screen, or Arrow keys / A D.<br>In the air, ▶ tilts back and ◀ tilts forward.<br>Levels cleared: ${totalDone()}/${WORLDS.reduce((a, w) => a + w.levels.length, 0)} · Race tracks: ${RACE_TRACKS.length}</div>
@@ -710,20 +715,21 @@ const actions = {
   testMenu: () => testMenu(),
   testStart: ({ mode }) => startTest(mode),
   testStop: () => endTest(true),
+  infinite: () => { save.infinite = !save.infinite; persist(); showSettings(); },
   unlockAll: () => { save.unlockAll = !save.unlockAll; persist(); showSettings(); },
   shopSel: ({ id }) => showShop(id),
   lanes: ({ n }) => { save.lanes = +n; persist(); showRace(); },
   buy: ({ id }) => {
     const v = vehicleById(id);
-    if (save.diamonds < v.price) { const p = $('#dpill'); p?.classList.add('shake'); setTimeout(() => p?.classList.remove('shake'), 400); Audio.crash(); return; }
-    save.diamonds -= v.price; save.owned.push(id); save.car = id; persist(); Audio.win(); showShop(id);
+    if (!canAfford(v.price)) { const p = $('#dpill'); p?.classList.add('shake'); setTimeout(() => p?.classList.remove('shake'), 400); Audio.crash(); return; }
+    spend(v.price); save.owned.push(id); save.car = id; persist(); Audio.win(); showShop(id);
   },
   upgrade: ({ id, u }) => {
     const v = vehicleById(id); save.upgrades ||= {}; const ups = save.upgrades[id] ||= {};
     const lvl = ups[u] || 0; if (lvl >= MAX_UPGRADE) return;
     const cost = upgradeCost(v, lvl);
-    if (save.diamonds < cost) { const p = $('#dpill'); p?.classList.add('shake'); setTimeout(() => p?.classList.remove('shake'), 400); Audio.crash(); return; }
-    save.diamonds -= cost; ups[u] = lvl + 1; persist(); Audio.star(lvl); showShop(id);
+    if (!canAfford(cost)) { const p = $('#dpill'); p?.classList.add('shake'); setTimeout(() => p?.classList.remove('shake'), 400); Audio.crash(); return; }
+    spend(cost); ups[u] = lvl + 1; persist(); Audio.star(lvl); showShop(id);
     const pip = document.querySelectorAll(`.stat`)[UPGRADES.findIndex((x) => x.id === u)]?.querySelectorAll('.pips em')[lvl]; pip?.classList.add('pop');
   },
   use: ({ id }) => { save.car = id; persist(); showShop(id); },

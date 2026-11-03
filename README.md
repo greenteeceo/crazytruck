@@ -9,7 +9,7 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 - **Stars**: finish, collect every gem, beat the par time
 - Fail screen with a close-up crash photo (roof / nose-dive / belly flop stickers and captions), level-complete and race-result animations, synthesized sound
 
-- **Test tools**: AUTO chip on the home screen and in the game HUD (bot drives), TEST button on the home screen runs automated sessions (tour of all 20 worlds, 20 random levels, every level of a world, 10 random races with 3–6 lanes) and shows a pass/fail report; Unlock all levels in Settings
+- **Test tools**: AUTO chip on the home screen and in the game HUD (bot drives), TEST button on the home screen runs automated sessions (tour of all 20 worlds, 20 random levels, every level of a world, 10 random races with 3–6 lanes) and shows a pass/fail report; Unlock all levels and Infinite gems (dev) in Settings
 
 ## Controls
 
@@ -19,12 +19,12 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 
 ## Download
 
-Android release build: [`release/CraneRush-2.1.apk`](release/CraneRush-2.1.apk) (signed, minSdk 23, targetSdk 36).
-A Play Store bundle is at [`release/CraneRush-2.1.aab`](release/CraneRush-2.1.aab).
+Android release build: [`release/CraneRush-2.2.apk`](release/CraneRush-2.2.apk) (signed, minSdk 23, targetSdk 36).
+A Play Store bundle is at [`release/CraneRush-2.2.aab`](release/CraneRush-2.2.aab).
 
 ## Google Play checklist
 
-- Upload `release/CraneRush-2.1.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
+- Upload `release/CraneRush-2.2.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
 - Enrol in Play App Signing; the local keystore then acts as the upload key. Keep `android/cranerush-release.keystore` + `keystore.properties` private.
 - Store assets in `store/`: 512×512 icon, 1024×500 feature graphic. Add at least 2 phone screenshots (1080×1920+).
 - Fill in the Data safety form (the app collects nothing; progress is stored on device), content rating questionnaire (IARC), and a privacy policy URL.
