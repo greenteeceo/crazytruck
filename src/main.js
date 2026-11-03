@@ -2,7 +2,7 @@
 import { Sim, DT } from './sim.js';
 import { WORLDS, RACE_TRACKS } from './levels.js';
 import { makeRacer, racerWatch } from './racer.js';
-import { VEHICLES, vehicleById } from './vehicles.js';
+import { VEHICLES, vehicleById, UPGRADES, MAX_UPGRADE, upgradeCost, withUpgrades } from './vehicles.js';
 import { makeBot } from './bot.js';
 import { Renderer } from './render.js';
 import { Audio } from './audio.js';
@@ -10,7 +10,7 @@ import PARS from './pars.json';
 
 // ------------------------------------------------------------ save
 const KEY = 'cranerush.save.v2';
-const defaults = { diamonds: 0, owned: ['crane'], car: 'crane', levels: {}, world: 0, cups: {}, cup: { idx: 0, race: 0, pts: null }, sound: true, shadows: true, trophies: 0 };
+const defaults = { upgrades: {}, diamonds: 0, owned: ['crane'], car: 'crane', levels: {}, world: 0, cups: {}, cup: { idx: 0, race: 0, pts: null }, sound: true, shadows: true, trophies: 0 };
 let save;
 try { save = { ...defaults, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { save = { ...defaults }; }
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch { /* ignore */ } };
@@ -74,6 +74,9 @@ let touchL = false, touchR = false;
 const throttleInput = () => { const r = keys.right || touchR, l = keys.left || touchL; return r && !l ? 1 : l && !r ? -1 : 0; };
 
 const RIVALS = [
+  { name: 'Blaze Engine', car: 'fire', color: '#ff8a8a' },
+  { name: 'Officer Bolt', car: 'police', color: '#9fc0ff' },
+  { name: 'Dino Crusher', car: 'dino', color: '#9aff8a' },
   { name: 'Rubble Rider', car: 'rubble', color: '#ff6b74' },
   { name: 'Block Hauler', car: 'hauler', color: '#7fb2ff' },
   { name: 'Dozer Dash', car: 'dozer', color: '#ffe066' },
@@ -98,7 +101,7 @@ function aiSpec(id) {
 }
 
 function startLevel(level, race = null) {
-  const spec = vehicleById(save.car);
+  const spec = withUpgrades(vehicleById(save.car), save.upgrades?.[save.car]);
   const theme = WORLDS[level.world].theme;
   R.buildLevel(level, theme, race ? { lanes: laneCount(), laneW: LANE_W } : {});
   const z0 = race ? laneZ(0) : 0;
@@ -615,25 +618,35 @@ function showShop(sel) {
   game = null; Audio.engineStop();
   const cur = vehicleById(sel || save.car);
   R.showGarage(cur);
-  const stat = (v, k, lo, hi) => Math.round(((v[k] - lo) / (hi - lo)) * 100);
+  const own = save.owned.includes(cur.id);
+  const ups = save.upgrades?.[cur.id] || {};
+  const pct = (val, u) => Math.max(6, Math.min(100, ((val - u.lo) / (u.hi - u.lo)) * 100));
+  const stats = UPGRADES.map((u) => {
+    const lvl = ups[u.id] || 0, baseP = pct(cur[u.key], u), upP = pct(cur[u.key] * (1 + u.pct * lvl), u);
+    const cost = upgradeCost(cur, lvl);
+    const btn = !own ? '' : lvl >= MAX_UPGRADE ? '<span class="upmax">MAX</span>'
+      : `<button class="upbtn ${save.diamonds >= cost ? '' : 'poor'}" data-act="upgrade" data-id="${cur.id}" data-u="${u.id}">▲ ${cost}</button>`;
+    return `<div class="stat"><span>${u.name}</span><div class="bar"><i style="width:${baseP}%"></i><i class="up" style="left:${baseP}%;width:${upP - baseP}%"></i>
+      <div class="pips">${Array.from({ length: MAX_UPGRADE }, (_, k) => `<em class="${k < lvl ? 'on' : ''}"></em>`).join('')}</div></div>${btn}</div>`;
+  }).join('');
+  const list = [...VEHICLES].sort((a, b) => a.price - b.price);
   screen('shop', html`
     ${topbar()}
     <div class="shopinfo">
       <div class="sname">${cur.name}</div>
       <div class="sdesc">${cur.desc}</div>
-      <div class="stats">
-        ${[['Speed', stat(cur, 'speed', 16, 28)], ['Power', stat(cur, 'torque', 20, 44)], ['Grip', stat(cur, 'grip', 1.2, 2.1)], ['Air', stat(cur, 'air', 5, 11.5)]].map(([n, p]) => `<div class="stat"><span>${n}</span><div class="bar"><i style="width:${Math.max(8, Math.min(100, p))}%"></i></div></div>`).join('')}
-      </div>
+      <div class="stats ${own ? 'owned' : ''}">${stats}</div>
     </div>
-    <div class="cards">${VEHICLES.map((v) => {
-    const own = save.owned.includes(v.id), on = save.car === v.id;
-    return `<button class="card ${v.id === cur.id ? 'sel' : ''} ${on ? 'using' : ''}" data-act="shopSel" data-id="${v.id}"><img src="${thumb(v)}" alt=""><span class="cn">${v.name}</span>${on ? `<span class="tag ok">${I.check}</span>` : own ? '' : `<span class="tag price">${gemIcon}${v.price}</span>`}</button>`;
+    <div class="cards">${list.map((v) => {
+    const o = save.owned.includes(v.id), on = save.car === v.id;
+    const lv = Object.values(save.upgrades?.[v.id] || {}).reduce((a, b) => a + b, 0);
+    return `<button class="card ${v.id === cur.id ? 'sel' : ''} ${on ? 'using' : ''}" data-act="shopSel" data-id="${v.id}"><img src="${thumb(v)}" alt=""><span class="cn">${v.name}</span>${on ? `<span class="tag ok">${I.check}</span>` : o ? '' : `<span class="tag price">${gemIcon}${v.price}</span>`}${o && lv ? `<span class="tag lvl">+${lv}</span>` : ''}</button>`;
   }).join('')}</div>
     <div class="shopbtn">${save.car === cur.id ? '<button class="btn gray" disabled>Selected</button>'
-      : save.owned.includes(cur.id) ? `<button class="btn blue" data-act="use" data-id="${cur.id}">Use truck</button>`
+      : own ? `<button class="btn blue" data-act="use" data-id="${cur.id}">Use truck</button>`
         : `<button class="btn ${save.diamonds >= cur.price ? 'orange' : 'gray'}" data-act="buy" data-id="${cur.id}">Buy ${gemIcon} ${cur.price}</button>`}</div>
     ${navbar('shop')}`);
-  const s = $('.card.sel'); if (s) s.scrollIntoView({ inline: 'center', block: 'nearest' });
+  const s2 = $('.card.sel'); if (s2) s2.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 
 function showSettings() {
@@ -704,6 +717,14 @@ const actions = {
     const v = vehicleById(id);
     if (save.diamonds < v.price) { const p = $('#dpill'); p?.classList.add('shake'); setTimeout(() => p?.classList.remove('shake'), 400); Audio.crash(); return; }
     save.diamonds -= v.price; save.owned.push(id); save.car = id; persist(); Audio.win(); showShop(id);
+  },
+  upgrade: ({ id, u }) => {
+    const v = vehicleById(id); save.upgrades ||= {}; const ups = save.upgrades[id] ||= {};
+    const lvl = ups[u] || 0; if (lvl >= MAX_UPGRADE) return;
+    const cost = upgradeCost(v, lvl);
+    if (save.diamonds < cost) { const p = $('#dpill'); p?.classList.add('shake'); setTimeout(() => p?.classList.remove('shake'), 400); Audio.crash(); return; }
+    save.diamonds -= cost; ups[u] = lvl + 1; persist(); Audio.star(lvl); showShop(id);
+    const pip = document.querySelectorAll(`.stat`)[UPGRADES.findIndex((x) => x.id === u)]?.querySelectorAll('.pips em')[lvl]; pip?.classList.add('pop');
   },
   use: ({ id }) => { save.car = id; persist(); showShop(id); },
   sound: () => { save.sound = !save.sound; Audio.setEnabled(save.sound); persist(); showSettings(); },

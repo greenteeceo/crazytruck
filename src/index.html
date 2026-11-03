@@ -230,7 +230,18 @@ em.auto { font-style: normal; padding: 0 6px; border-radius: 6px; background: #4
 .stat { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; text-shadow: 0 1px 0 var(--ink); }
 .stat span { width: 46px; text-align: left; }
 .stat .bar { height: 14px; border-width: 2px; box-shadow: none; }
-.stat .bar i { background: linear-gradient(#ffd84a, #ff9a14); }
+.stat .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(#ffd84a, #ff9a14); }
+.stat .bar i.up { background: linear-gradient(#7aff8a, #2fc85a); }
+.stat .bar { position: relative; }
+.pips { position: absolute; inset: 0; display: flex; justify-content: flex-end; gap: 2px; padding: 2px 3px; pointer-events: none; }
+.pips em { width: 6px; height: 100%; border-radius: 2px; background: rgba(255,255,255,.25); }
+.pips em.on { background: #fff; box-shadow: 0 0 4px #7aff8a; }
+.pips em.pop { animation: pop .4s; }
+.upbtn { flex: none; min-width: 54px; padding: 2px 6px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #fff; background: linear-gradient(#5ae06a, #2fae4a); border: 2px solid var(--ink); text-shadow: 0 1px 0 var(--ink); }
+.upbtn.poor { background: linear-gradient(#9aa2b8, #7a829a); }
+.upmax { flex: none; min-width: 54px; text-align: center; font-size: 12px; color: var(--gold); }
+.stats.owned { grid-template-columns: 1fr; gap: 5px; width: min(100%, 330px); }
+.tag.lvl { left: 4px; right: auto; background: #2fae4a; }
 .cards { position: absolute; left: 0; right: 0; bottom: calc(176px + var(--safe-b)); display: flex; gap: 12px; overflow-x: auto; padding: 10px 16px; scroll-snap-type: x mandatory; touch-action: pan-x; }
 .card { flex: none; width: 128px; height: 112px; position: relative; border-radius: 16px; background: linear-gradient(#2f9bff, #0a6fe6); border: 3px solid var(--ink); box-shadow: 0 0 0 3px rgba(255,255,255,.6), inset 0 -6px 0 rgba(0,0,0,.2); scroll-snap-align: center; overflow: hidden; }
 .card img { width: 100%; height: 76px; object-fit: contain; display: block; margin-top: 2px; }

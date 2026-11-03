@@ -247,6 +247,108 @@ export function buildTruck(spec) {
       headlights(g, 1.4);
       break;
     }
+    case 'icecream': {
+      box(g, -1.8, 0.06, -0.68, 1.3, 0.62, 0.68, L.accent);                // white lower body
+      box(g, -1.8, 0.62, -0.68, 1.0, 1.4, 0.68, L.body);                   // pink box
+      box(g, 1.0, 0.62, -0.68, 1.3, 1.05, 0.68, L.body);
+      box(g, 1.3, 0.06, -0.62, 1.85, 0.62, 0.62, L.body);                  // nose
+      box(g, 1.0, 0.68, -0.56, 1.32, 1.02, 0.56, GLASS);                   // windshield
+      zbox(g, -1.4, 0.72, 0.68, -0.2, 1.22, 0.7, GLASS);                   // serving window
+      for (let i = 0; i < 6; i++) zbox(g, -1.45 + i * 0.22, 1.24, 0.68, -1.23 + i * 0.22, 1.34, 0.86, i % 2 ? 0xffffff : 0xff5a8a); // awning
+      box(g, -1.85, 1.4, -0.7, 1.05, 1.48, 0.7, L.bodyDark);
+      // giant cone
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.0, 4), mat(0xe8b062, { flatShading: true }));
+      cone.rotation.x = Math.PI; cone.rotation.y = Math.PI / 4; cone.position.set(-0.5, 1.98, 0); cone.castShadow = true; g.add(cone);
+      cbox(g, -0.5, 2.62, 0, 0.62, 0.42, 0.62, 0xff7ab8); cbox(g, -0.5, 2.94, 0, 0.44, 0.3, 0.44, 0xfff0d8); cbox(g, -0.5, 3.15, 0, 0.14, 0.14, 0.14, 0xe8333c);
+      headlights(g, 1.85);
+      break;
+    }
+    case 'taxi': {
+      cab(g, L, -0.4, 0.9, 1.0, 1.8);
+      zbox(g, 0.5, 0.0, 0.62, 1.7, 0.12, 0.8, L.bodyDark);
+      box(g, -1.75, 0.06, -0.66, -0.4, 0.6, 0.66, L.body);
+      for (let i = 0; i < 16; i++) zbox(g, -1.7 + i * 0.22, 0.42, 0.66, -1.48 + i * 0.22, 0.53, 0.68, i % 2 ? 0x1d1e23 : 0xffffff);   // checker stripe
+      box(g, -0.05, 1.06, -0.34, 0.5, 1.32, 0.34, 0xffffff); box(g, 0.0, 1.1, -0.35, 0.45, 1.28, 0.35, 0xffd21a);                    // TAXI sign
+      box(g, 0.1, 1.15, -0.36, 0.35, 1.22, 0.36, 0x1d1e23);
+      break;
+    }
+    case 'tractor': {
+      box(g, 0.2, 0.06, -0.48, 1.8, 0.78, 0.48, L.body);                   // long hood
+      box(g, 0.2, 0.78, -0.42, 1.74, 0.86, 0.42, L.bodyDark);
+      zbox(g, 0.4, 0.3, 0.48, 1.6, 0.42, 0.5, 0x1d1e23);                   // grille vents
+      box(g, 1.8, 0.1, -0.4, 1.86, 0.7, 0.4, 0x8d91a0);                    // radiator
+      box(g, 1.2, 0.86, -0.06, 1.32, 1.6, 0.06, 0x2a2b31); cbox(g, 1.26, 1.66, 0, 0.18, 0.08, 0.18, 0x2a2b31);   // exhaust stack
+      box(g, -1.0, 0.06, -0.66, 0.2, 0.6, 0.66, L.body);                   // cab base
+      for (const [x, z] of [[-0.95, -0.6], [-0.95, 0.6], [0.15, -0.6], [0.15, 0.6]]) box(g, x - 0.05, 0.6, z - 0.05, x + 0.05, 1.45, z + 0.05, 0x2a2b31);   // cab posts
+      box(g, -0.9, 0.62, -0.58, 0.1, 1.4, 0.58, 0x9fd8ff, { transparent: true, opacity: 0.45 });
+      box(g, -1.05, 1.45, -0.7, 0.25, 1.56, 0.7, L.accent);                // roof
+      zbox(g, -1.75, 0.5, 0.6, -0.5, 0.62, 0.95, L.accent);                // rear fenders
+      box(g, 1.86, -0.1, -0.3, 2.06, 0.2, 0.3, 0x55565e);                  // front weight
+      headlights(g, 1.86);
+      break;
+    }
+    case 'police': {
+      cab(g, L, -0.35, 0.75, 1.0, 1.8);
+      zbox(g, -0.3, 0.12, 0.62, 0.7, 0.62, 0.64, L.accent);                // white doors
+      zbox(g, 0.5, 0.0, 0.62, 1.7, 0.12, 0.8, L.bodyDark);
+      box(g, -1.75, 0.06, -0.66, -0.35, 0.55, 0.66, L.body);
+      zbox(g, -1.75, 0.12, 0.66, -0.35, 0.5, 0.68, L.accent);
+      box(g, -0.1, 1.06, -0.5, 0.5, 1.14, 0.5, 0x2a2b31);                  // light bar
+      { const rL = cbox(g, 0.2, 1.22, -0.26, 0.5, 0.16, 0.42, 0xff2a3a, { emissive: 0xaa0010 }); rL.userData.flicker = true; }
+      { const bL = cbox(g, 0.2, 1.22, 0.26, 0.5, 0.16, 0.42, 0x2a7aff, { emissive: 0x0030aa }); bL.userData.flicker = true; }
+      box(g, 1.9, -0.25, -0.5, 2.06, 0.4, -0.38, SILVER); box(g, 1.9, -0.25, 0.38, 2.06, 0.4, 0.5, SILVER); box(g, 1.98, 0.3, -0.5, 2.06, 0.4, 0.5, SILVER);   // push bar
+      break;
+    }
+    case 'garbage': {
+      cab(g, L, 0.75, 1.3, 1.05, 1.85);
+      box(g, -1.8, 0.06, -0.72, 0.7, 1.3, 0.72, L.body);                   // compactor box
+      for (let x = -1.6; x < 0.6; x += 0.45) zbox(g, x, 0.2, 0.72, x + 0.12, 1.2, 0.74, L.bodyDark);   // ribs
+      zbox(g, -1.4, 0.55, 0.74, 0.4, 0.75, 0.76, L.accent);                // white stripe
+      box(g, -1.95, 0.0, -0.6, -1.8, 1.1, 0.6, 0x55565e);                  // rear hopper
+      box(g, -2.0, 0.85, -0.5, -1.9, 1.05, 0.5, 0xffd21a);
+      cbox(g, -0.6, 1.42, 0.25, 0.3, 0.24, 0.3, 0x8d91a0); cbox(g, -0.1, 1.38, -0.2, 0.36, 0.16, 0.24, 0x5a3a22); cbox(g, -1.1, 1.4, -0.1, 0.24, 0.2, 0.3, 0x3a9aff);  // trash bits
+      break;
+    }
+    case 'fire': {
+      cab(g, L, 0.6, 1.25, 1.05, 1.85);
+      box(g, -1.8, 0.06, -0.7, 0.55, 1.0, 0.7, L.body);                    // body
+      for (let x = -1.65; x < 0.4; x += 0.55) zbox(g, x, 0.18, 0.7, x + 0.45, 0.9, 0.72, 0xff5a62);   // compartment doors
+      zbox(g, -1.8, 0.42, 0.72, 1.85, 0.5, 0.74, L.accent);                // white stripe
+      // ladder on top
+      const lad = new THREE.Group(); lad.position.set(-1.7, 1.12, 0); lad.rotation.z = 0.05; g.add(lad);
+      for (const z of [-0.32, 0.32]) box(lad, 0, -0.05, z - 0.05, 3.1, 0.05, z + 0.05, SILVER);
+      for (let x = 0.15; x < 3.1; x += 0.3) box(lad, x - 0.03, -0.03, -0.3, x + 0.03, 0.03, 0.3, 0xc9ccd6);
+      cbox(g, -1.75, 1.08, 0, 0.3, 0.16, 0.5, 0x55565e);
+      cbox(g, -0.3, 0.75, 0.74, 0.5, 0.5, 0.06, 0xffd21a); cbox(g, -0.3, 0.75, 0.78, 0.26, 0.26, 0.04, 0xe8a800);   // hose reel
+      { const l1 = cbox(g, 0.85, 1.18, -0.3, 0.3, 0.14, 0.3, 0xff2a3a, { emissive: 0xaa0010 }); l1.userData.flicker = true; }
+      { const l2 = cbox(g, 0.85, 1.18, 0.3, 0.3, 0.14, 0.3, 0xff2a3a, { emissive: 0xaa0010 }); l2.userData.flicker = true; }
+      break;
+    }
+    case 'dino': {
+      box(g, -1.6, 0.06, -0.62, 1.2, 0.95, 0.62, L.body);                  // body
+      box(g, -1.5, 0.06, -0.5, 1.1, 0.4, 0.5, 0xd8f0a8);                   // belly
+      box(g, 0.9, 0.5, -0.5, 2.0, 1.15, 0.5, L.body);                      // head
+      box(g, 1.3, 0.3, -0.45, 2.05, 0.55, 0.45, L.bodyDark);               // jaw
+      for (let i = 0; i < 5; i++) zbox(g, 1.35 + i * 0.13, 0.52, 0.35, 1.42 + i * 0.13, 0.62, 0.42, 0xffffff);   // teeth
+      zbox(g, 1.5, 0.85, 0.5, 1.72, 1.05, 0.52, 0xffffff); zbox(g, 1.6, 0.88, 0.52, 1.7, 0.98, 0.54, 0x1d1e23);   // eyes
+      box(g, 0.3, 0.75, -0.5, 0.85, 1.15, 0.5, GLASS);                     // cockpit window
+      for (let i = 0; i < 5; i++) { const sp = cbox(g, -1.3 + i * 0.5, 1.05, 0, 0.28, 0.28, 0.12, L.accent); sp.rotation.z = Math.PI / 4; }   // back spikes
+      box(g, -2.4, 0.4, -0.25, -1.6, 0.75, 0.25, L.body); box(g, -2.8, 0.45, -0.15, -2.4, 0.65, 0.15, L.bodyDark);   // tail
+      break;
+    }
+    case 'rocket': {
+      box(g, -1.75, 0.06, -0.6, 1.5, 0.45, 0.6, L.body);                   // body
+      box(g, 1.5, 0.06, -0.5, 2.0, 0.32, 0.5, L.body); box(g, 2.0, 0.08, -0.36, 2.15, 0.26, 0.36, L.accent);   // nose
+      zbox(g, -1.75, 0.2, 0.6, 2.0, 0.3, 0.62, L.accent);                  // stripe
+      box(g, -0.3, 0.45, -0.42, 0.75, 0.8, 0.42, 0x7ad8ff, { transparent: true, opacity: 0.7 });   // canopy
+      box(g, -0.4, 0.45, -0.46, -0.3, 0.75, 0.46, L.bodyDark);
+      for (const z of [-0.55, 0.55]) box(g, -1.75, 0.45, z - 0.04, -1.2, 1.25, z + 0.04, L.accent);   // fins
+      box(g, -1.75, 0.45, -0.04, -1.25, 1.35, 0.04, L.accent);
+      const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 0.35, 8), mat(0x55565e, { flatShading: true })); noz.rotation.z = Math.PI / 2; noz.position.set(-1.9, 0.3, 0); g.add(noz);
+      { const fl = cbox(g, -2.2, 0.3, 0, 0.3, 0.26, 0.26, 0xffb21a, { emissive: 0xff6a00 }); fl.userData.flicker = true; fl.userData.noOutline = true; }
+      headlights(g, 2.0);
+      break;
+    }
     case 'mixer': {
       cab(g, L, 0.62, 1.4, 1.0, 1.85);
       box(g, -1.75, 0.06, -0.62, 0.55, 0.28, 0.62, L.frame);

@@ -5,7 +5,7 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 
 - **20 worlds × 20 levels (400)**: Classic, Construction, Medieval, Science, Desert Dunes, Snow Peaks, Jungle Ruins, Lava Land, Candy Land, Sunny Beach, Night City, Pirate Docks, Moon Base (low gravity), Red Planet, Coral Reef, Autumn Woods, Ice Cave, Toy Box, Neon Grid, Sky Islands. Worlds 1–4 have 10 hand-made levels each; everything else comes from a seeded generator and every shipped seed is verified by the bot. Worlds 11–20 are locked behind a star total (60 → 330).
 - **Race mode**: 3–6 lane races (pick before each cup race) on 32 tracks (12 hand-made + 20 seeded random, themed across the new worlds), plus a Random track quick race (dominoes, swinging hammers, rolling boulders, crate walls, seesaws, bounce pads), 4 cups × 3 races vs 4 AI trucks, in-place flip-back recovery, points table, trophies
-- **Shop**: 8 trucks with different speed / power / grip / air control, bought with gems
+- **Shop**: 16 trucks (crane, pickup, hauler, dozer, mixer, lab rover, knight, gold titan, ice-cream van, taxi, tractor, police, garbage, fire engine, dino, rocket) bought with gems; every owned truck has 4 upgradeable stats (speed, power, grip, air), 5 levels each
 - **Stars**: finish, collect every gem, beat the par time
 - Fail screen with a close-up crash photo (roof / nose-dive / belly flop stickers and captions), level-complete and race-result animations, synthesized sound
 
@@ -19,12 +19,12 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 
 ## Download
 
-Android release build: [`release/CraneRush-2.0.apk`](release/CraneRush-2.0.apk) (signed, minSdk 23, targetSdk 36).
-A Play Store bundle is at [`release/CraneRush-2.0.aab`](release/CraneRush-2.0.aab).
+Android release build: [`release/CraneRush-2.1.apk`](release/CraneRush-2.1.apk) (signed, minSdk 23, targetSdk 36).
+A Play Store bundle is at [`release/CraneRush-2.1.aab`](release/CraneRush-2.1.aab).
 
 ## Google Play checklist
 
-- Upload `release/CraneRush-2.0.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
+- Upload `release/CraneRush-2.1.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
 - Enrol in Play App Signing; the local keystore then acts as the upload key. Keep `android/cranerush-release.keystore` + `keystore.properties` private.
 - Store assets in `store/`: 512×512 icon, 1024×500 feature graphic. Add at least 2 phone screenshots (1080×1920+).
 - Fill in the Data safety form (the app collects nothing; progress is stored on device), content rating questionnaire (IARC), and a privacy policy URL.

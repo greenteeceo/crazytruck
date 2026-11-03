@@ -512,7 +512,7 @@ export class Renderer {
       }
     }
     if (this.finish) this.finish.traverse((o) => { if (o.userData.wave) o.rotation.y = Math.sin(t * 6 + o.position.z) * 0.25; });
-    this.scene.traverse((o) => { if (o.userData.flicker) o.scale.y = 0.28 * (0.85 + Math.sin(t * 20 + o.id) * 0.15); });
+    this.scene.traverse((o) => { if (o.userData.flicker) { o.userData.sy ??= o.scale.y; o.scale.y = o.userData.sy * (0.85 + Math.sin(t * 20 + o.id) * 0.15); } });
     for (const c of this.clouds || []) c.position.x += dt * 0.4;
     for (const p of this.smokes || []) {
       if (p.life <= 0) continue;
