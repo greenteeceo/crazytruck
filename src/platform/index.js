@@ -9,9 +9,12 @@ const can = (name) => { try { return !!T && typeof T[name] === 'function' && (!T
 
 function sysInfo() {
   if (isTT && T.getSystemInfoSync) {
-    const i = T.getSystemInfoSync();
-    const sa = i.safeArea || {};
-    return { w: i.windowWidth, h: i.windowHeight, dpr: i.pixelRatio || 2, top: sa.top || i.statusBarHeight || 0, bottom: sa.bottom ? Math.max(0, i.windowHeight - sa.bottom) : 0 };
+    // pixelRatio is documented on getWindowInfo; safeArea may be missing on some devices
+    const i = T.getSystemInfoSync() || {};
+    let wi = {}; try { wi = T.getWindowInfo ? T.getWindowInfo() || {} : {}; } catch { /* old base library */ }
+    const w = wi.windowWidth || i.windowWidth || 360, h = wi.windowHeight || i.windowHeight || 640;
+    const sa = wi.safeArea || i.safeArea || null;
+    return { w, h, dpr: wi.pixelRatio || i.pixelRatio || 2, top: sa ? sa.top : (wi.statusBarHeight || i.statusBarHeight || 0), bottom: sa && sa.bottom ? Math.max(0, h - sa.bottom) : 0 };
   }
   const css = (v) => { try { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0; } catch { return 0; } };
   return { w: g.innerWidth, h: g.innerHeight, dpr: g.devicePixelRatio || 1, top: css('--sat'), bottom: css('--sab') };
@@ -42,7 +45,10 @@ export const P = {
   // ---------------------------------------------------------------- input: normalized touches in CSS px
   onTouch({ start, move, end }) {
     if (isTT) {
-      const map = (fn) => (e) => { for (const t of e.changedTouches || []) fn({ id: t.identifier, x: t.clientX, y: t.clientY }); };
+      // Touch fields are not spelled out in TikTok's docs: accept the usual names
+      const map = (fn) => (e) => {
+        (e.changedTouches || []).forEach((t, k) => fn({ id: t.identifier ?? t.id ?? k, x: t.clientX ?? t.pageX ?? t.x ?? 0, y: t.clientY ?? t.pageY ?? t.y ?? 0 }));
+      };
       T.onTouchStart?.(map(start)); T.onTouchMove?.(map(move)); T.onTouchEnd?.(map(end)); T.onTouchCancel?.(map(end));
       return;
     }
@@ -92,7 +98,8 @@ export const P = {
   vibrate() { try { if (isTT) T.vibrateShort?.({ type: 'light' }); else g.navigator?.vibrate?.(15); } catch { /* not supported */ } },
 
   // ---------------------------------------------------------------- TikTok startup
-  setLoadingProgress(p) { try { if (isTT) T.setLoadingProgress?.({ progress: Math.min(1, p) }); } catch { /* old base library */ } },
+  // documented for the legacy HTML SDK; harmless no-op where the native runtime lacks it
+  setLoadingProgress(p) { try { if (isTT && can('setLoadingProgress')) T.setLoadingProgress({ progress: Math.min(1, p) }); } catch { /* not available */ } },
   silentLogin() {
     // silent login: returns a code for a game server; kept for when a backend exists
     return new Promise((res) => { if (!can('login')) return res(null); T.login({ success: (r) => res(r?.code || null), fail: () => res(null) }); });
@@ -147,11 +154,13 @@ export const P = {
   },
   // 3. Share
   canShare() { return can('shareAppMessage') || (!isTT && !!g.navigator?.share); },
+  // TikTok takes title / subTitle / image from the share settings in the Developer Portal;
+  // only `query` (read back via getLaunchOptionsSync / onShow) is set by the game.
   share({ title, desc, query }) {
     if (isTT) {
       return new Promise((res) => {
         if (!can('shareAppMessage')) return res(false);
-        T.shareAppMessage({ title, desc, query, success: () => res(true), fail: () => res(false) });
+        T.shareAppMessage({ title, subTitle: desc, query, success: () => res(true), fail: () => res(false) });
       });
     }
     if (g.navigator?.share) return g.navigator.share({ title, text: desc }).then(() => true, () => false);

@@ -1,6 +1,11 @@
 import { P } from './platform/index.js';
 // Tiny synthesized sound engine (no asset files).
 let ctx, master, engine, engGain, engFilter, enabled = true;
+const t0 = Date.now();
+// TikTok's WebAudioContext does not document currentTime: fall back to wall-clock seconds
+const now = () => (ctx && typeof ctx.currentTime === 'number' ? ctx.currentTime : (Date.now() - t0) / 1000);
+// sound must never break the game: every call is guarded
+const safe = (fn) => function (...a) { try { return fn.apply(this, a); } catch { return undefined; } };
 
 function ensure() {
   if (ctx) return ctx;
@@ -10,14 +15,14 @@ function ensure() {
   return ctx;
 }
 
-export const Audio = {
+const AudioImpl = {
   unlock() { const c = ensure(); if (c && c.state === 'suspended') c.resume(); },
   setEnabled(v) { enabled = v; if (master) master.gain.value = v ? 0.55 : 0; if (!v) this.engineStop(); },
   get enabled() { return enabled; },
 
   tone(freq, dur = 0.12, type = 'square', vol = 0.18, slide = 0, delay = 0) {
     const c = ensure(); if (!c || !enabled) return;
-    const t = c.currentTime + delay;
+    const t = now() + delay;
     const o = c.createOscillator(), g = c.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
     if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
@@ -26,7 +31,7 @@ export const Audio = {
   },
   noise(dur = 0.25, vol = 0.3, freq = 800, delay = 0) {
     const c = ensure(); if (!c || !enabled) return;
-    const t = c.currentTime + delay;
+    const t = now() + delay;
     const b = c.createBuffer(1, Math.max(1, (c.sampleRate * dur) | 0), c.sampleRate);
     const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
     const s = c.createBufferSource(); s.buffer = b;
@@ -57,7 +62,7 @@ export const Audio = {
   },
   engineSet(rpm, throttle) {
     if (!engine) return;
-    const t = ctx.currentTime;
+    const t = now();
     const f = 42 + rpm * 3.2 + (throttle ? 12 : 0);
     engine[0].frequency.setTargetAtTime(f, t, 0.05); engine[1].frequency.setTargetAtTime(f * 0.5 + 1, t, 0.05);
     engFilter.frequency.setTargetAtTime(300 + rpm * 25 + (throttle ? 300 : 0), t, 0.05);
@@ -65,7 +70,10 @@ export const Audio = {
   },
   engineStop() {
     if (!engine) return;
-    try { engGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05); const e = engine; setTimeout(() => e.forEach((o) => o.stop()), 300); } catch { /* ignore */ }
+    try { engGain.gain.setTargetAtTime(0, now(), 0.05); const e = engine; setTimeout(() => e.forEach((o) => o.stop()), 300); } catch { /* ignore */ }
     engine = null;
   },
 };
+
+export const Audio = Object.fromEntries(Object.entries(Object.getOwnPropertyDescriptors(AudioImpl)).filter(([, d]) => typeof d.value === 'function').map(([k, d]) => [k, safe(d.value)]));
+Object.defineProperty(Audio, 'enabled', { get: () => enabled });
