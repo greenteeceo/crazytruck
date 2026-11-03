@@ -59,7 +59,10 @@ const navbar = (active) => html`<nav class="nav">${[['race', 'Race', I.trophy], 
 // ------------------------------------------------------------ progress helpers
 const lvlSave = (l) => save.levels[l.id] || null;
 const worldDone = (w) => WORLDS[w].levels.filter((l) => lvlSave(l)?.time != null).length;
-const worldUnlocked = (w) => save.unlockAll || w === 0 || worldDone(w - 1) >= 5;
+const totalStars = () => Object.values(save.levels).reduce((a, v) => a + (v?.stars || 0), 0);
+const starsNeeded = (w) => Math.max(0, (WORLDS[w].starsReq || 0) - totalStars());
+const worldUnlocked = (w) => save.unlockAll || !!testRun || w === 0 || (worldDone(w - 1) >= 5 && starsNeeded(w) === 0);
+let testRun = null;   // active automated test session (see startTest)
 const levelUnlocked = (l) => save.unlockAll || l.index === 0 || lvlSave(WORLDS[l.world].levels[l.index - 1])?.time != null;
 const par = (l) => Math.ceil((PARS[l.id] ?? 10) * 1.25 * 2) / 2;
 const totalDone = () => WORLDS.reduce((a, _, i) => a + worldDone(i), 0);
@@ -124,14 +127,15 @@ function hud() {
   const g = game, l = g.level, w = WORLDS[l.world];
   const el = screen('hud', html`
     <div class="hud-top">
-      <button class="btn sq blue" data-act="pause">${I.pause}</button>
+      <div class="hudl"><button class="btn sq blue" data-act="pause">${I.pause}</button><button class="autochip ${save.autoplay || testRun ? 'on' : ''}" data-act="autoplay">AUTO</button></div>
       <div class="hud-mid">
-        <div class="lvname">${save.autoplay ? '<em class="auto">AUTO</em> ' : ''}${g.race ? (g.race.random ? `Random · ${l.name}` : `${g.race.cup.name} · Race ${g.race.idx + 1}/3`) : `${w.name} ${l.index + 1}. ${l.name}`}</div>
+        <div class="lvname">${g.race ? (g.race.random ? `Random · ${l.name}` : `${g.race.cup.name} · Race ${g.race.idx + 1}/3`) : `${w.name} ${l.index + 1}. ${l.name}`}</div>
         <div class="timer" id="timer">0:00.00</div>
       </div>
       ${g.race ? '<div class="pos" id="pos">1st</div>' : `<div class="pill small">${gemIcon}<b id="gcount">0/${g.sim.gems.length}</b></div>`}
     </div>
     ${g.race ? '<div class="track"><div class="trackbar" id="trackbar"></div></div>' : ''}
+    ${testRun ? `<div class="testbar"><b>TEST</b><span>${testRun.i + 1}/${testRun.queue.length}</span><span class="ok">✓ ${testRun.pass}</span><span class="bad">✗ ${testRun.fails.length}</span><button data-act="testStop">Stop</button></div>` : ''}
     <div class="ctrl left" id="cl">${I.left}</div>
     <div class="ctrl right" id="cr">${I.right}</div>
     ${g.race ? '<div class="lights" id="lights"><i></i><i></i><i></i></div><div class="count" id="count"></div>' : `<div class="banner" id="banner">${l.index + 1}. ${l.name}</div>`}
@@ -169,7 +173,7 @@ function tick(dt) {
     return;
   }
   g.acc += Math.min(dt, 0.1);
-  const t = save.autoplay ? g.autoBot(g.sim) : throttleInput();
+  const t = save.autoplay || testRun ? g.autoBot(g.sim) : throttleInput();
   while (g.acc >= DT) {
     g.acc -= DT;
     g.sim.step(t);
@@ -205,6 +209,14 @@ function tick(dt) {
     document.querySelectorAll('#trackbar .dot').forEach((d) => { const o = all[+d.dataset.i]; const p = o.fin != null ? 1 : Math.max(0, Math.min(1, (o.x - sx) / (finishX - sx))); d.style.left = `${p * 100}%`; });
   }
   const st = g.sim.state;
+  if (testRun && !g.over) {
+    // test mode: record the result and move on without touching save data
+    const limit = g.race ? 100 : 75;
+    if (st === 'fail' && !g.race) { g.failT += dt; if (g.failT > 0.9) { g.over = true; testResult(false, g.sim.failPose || g.sim.reason); } return; }
+    if (st === 'win') { g.winT = (g.winT || 0) + dt; if (g.winT > 0.9) { g.over = true; testResult(true, fmt(g.sim.finishTime)); } return; }
+    if (g.sim.time > limit) { g.over = true; testResult(false, 'timeout'); }
+    return;
+  }
   if (st === 'fail' && !g.over) {
     g.failT += dt;
     if (!g.race && g.failT > 0.85) { g.over = true; onFail(); }
@@ -437,6 +449,78 @@ function cupStandings() {
   if (won) confetti(el);
 }
 
+// ------------------------------------------------------------ test mode
+function testMenu() {
+  const ov = document.createElement('div'); ov.className = 'overlay';
+  const w = WORLDS[save.world];
+  ov.innerHTML = html`<div class="panel testp"><div class="ribbon" style="background:#46d35c">Test mode</div>
+    <div class="sub">The bot drives. Results are not saved.</div>
+    <button class="btn blue wide" data-t="tour"><span>Tour: level 1 of all ${WORLDS.length} worlds</span></button>
+    <button class="btn blue wide" data-t="random"><span>20 random levels (any world)</span></button>
+    <button class="btn blue wide" data-t="world"><span>All ${w.levels.length} levels of ${w.name}</span></button>
+    <button class="btn orange wide" data-t="races"><span>10 random races (3–6 lanes)</span></button>
+    <button class="btn gray wide" data-t="close"><span>Close</span></button></div>`;
+  ov.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-t]'); if (!b) return;
+    Audio.unlock(); Audio.click(); ov.remove();
+    if (b.dataset.t !== 'close') startTest(b.dataset.t);
+  });
+  ui.appendChild(ov);
+}
+
+function startTest(mode) {
+  const pickLevel = () => { const w = WORLDS[(Math.random() * WORLDS.length) | 0]; return { level: w.levels[(Math.random() * w.levels.length) | 0] }; };
+  let queue;
+  if (mode === 'tour') queue = WORLDS.map((w) => ({ level: w.levels[0] }));
+  else if (mode === 'random') queue = Array.from({ length: 20 }, pickLevel);
+  else if (mode === 'world') queue = WORLDS[save.world].levels.map((level) => ({ level }));
+  else queue = Array.from({ length: 10 }, () => ({ level: RACE_TRACKS[(Math.random() * RACE_TRACKS.length) | 0], lanes: 3 + ((Math.random() * 4) | 0) }));
+  testRun = { mode, queue, i: -1, pass: 0, fails: [], times: [] };
+  testNext();
+}
+
+function testNext() {
+  if (!testRun) return;
+  testRun.i++;
+  if (testRun.i >= testRun.queue.length) { endTest(false); return; }
+  const item = testRun.queue[testRun.i];
+  if (item.lanes) {
+    const n = item.lanes - 1, prevLanes = save.lanes; save.lanes = item.lanes;
+    const rivals = Array.from({ length: n }, (_, i) => ({ ...RIVALS[i % RIVALS.length], skill: 0.7 + Math.random() * 0.3 }));
+    startLevel(item.level, { cup: { name: 'Test', reward: 0, color: '#46d35c' }, idx: 0, rivals, random: true });
+    save.lanes = prevLanes;
+  } else startLevel(item.level);
+}
+
+function testResult(ok, info) {
+  const item = testRun.queue[testRun.i], l = item.level;
+  const label = l.race ? `Race · ${l.name} (${item.lanes} lanes)` : `${WORLDS[l.world].name} ${l.index + 1}. ${l.name}`;
+  if (ok) { testRun.pass++; testRun.times.push(`${label}: ${info}`); } else testRun.fails.push(`${label}: ${info}`);
+  Audio.engineStop();
+  setTimeout(testNext, 500);
+}
+
+function endTest(stopped) {
+  const t = testRun; if (!t) return;
+  testRun = null; game = null; Audio.engineStop();
+  R.showDiorama(WORLDS[save.world], vehicleById(save.car));
+  const done = t.pass + t.fails.length;
+  screen('results', html`
+    <div class="panel resp testsum">
+      <div class="ribbon" style="background:${t.fails.length ? '#ff5a6e' : '#46d35c'}">Test ${stopped ? 'stopped' : 'finished'}</div>
+      <div class="rows">
+        <div class="row"><span>Run</span><b>${done} / ${t.queue.length}</b></div>
+        <div class="row"><span>Passed</span><b>${t.pass}</b></div>
+        <div class="row"><span>Failed</span><b>${t.fails.length}</b></div>
+      </div>
+      <div class="testlog">${t.fails.length ? t.fails.map((f) => `<div class="bad">✗ ${f}</div>`).join('') : '<div class="ok">Every run reached the finish.</div>'}${t.times.map((f) => `<div class="ok">✓ ${f}</div>`).join('')}</div>
+    </div>
+    <div class="barbtns">
+      <button class="btn gray" data-act="home"><span class="ico">${I.home}</span><span>Home</span></button>
+      <button class="btn blue big" data-act="testStart" data-mode="${t.mode}"><span class="ico">${I.retry}</span><span>Run again</span></button>
+    </div>`);
+}
+
 function startRandomRace() {
   const level = RACE_TRACKS[(Math.random() * RACE_TRACKS.length) | 0];
   const n = laneCount() - 1, start = (Math.random() * RIVALS.length) | 0;
@@ -469,14 +553,15 @@ function showWorlds() {
   screen('home', html`
     ${topbar()}
     <div class="logo"><span>CRANE</span><span class="r">RUSH</span></div>
-    <div class="wtitle">${w.name}</div>
+    <div class="wtitle">${unlocked ? '' : `<span class="wlock">${I.lock}</span>`}${w.name}</div>
     <div class="prog"><span class="flagi">${I.flag}</span><div class="bar"><i style="width:${(done / w.levels.length) * 100}%"></i></div><b>${done}/${w.levels.length}</b></div>
     <button class="arrow l" data-act="world" data-d="-1" ${wi === 0 ? 'disabled' : ''}>${I.left}</button>
     <button class="arrow r" data-act="world" data-d="1" ${wi === WORLDS.length - 1 ? 'disabled' : ''}>${I.right}</button>
     <div class="wsub">${w.sub}</div>
-    <div class="dots">${WORLDS.map((_, i) => `<i class="${i === wi ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="wcount">${wi + 1} / ${WORLDS.length}${w.starsReq ? ` · ${I.star} ${w.starsReq}` : ''}</div>
+    <div class="topleft"><button class="autochip ${save.autoplay ? 'on' : ''}" data-act="autoplay">AUTO</button><button class="testbtn" data-act="testMenu">TEST</button></div>
     ${unlocked ? `<button class="btn blue play" data-act="levels" data-w="${wi}"><span class="ico">${I.play}</span><span>Play</span></button>`
-      : `<button class="btn gray play locked" disabled><span class="ico">${I.lock}</span><span>Clear 5 in ${WORLDS[wi - 1].name}</span></button>`}
+      : `<button class="btn gray play locked" disabled><span class="ico">${I.lock}</span><span>${worldDone(wi - 1) < 5 ? `Clear 5 in ${WORLDS[wi - 1].name}` : `Need ${starsNeeded(wi)} more stars`}</span></button>`}
     ${navbar('worlds')}`);
   swipe((d) => actions.world({ d }));
 }
@@ -603,7 +688,15 @@ const actions = {
   race: () => startRace(),
   raceNext: () => { if (game?.race?.random) startRandomRace(); else if ((save.cup.race || 0) >= 3) cupStandings(); else showRace(); },
   randomRace: () => startRandomRace(),
-  autoplay: () => { save.autoplay = !save.autoplay; persist(); (ui.firstElementChild?.classList.contains('levels') ? showLevels(save.world) : showSettings()); },
+  autoplay: (_, btn) => {
+    save.autoplay = !save.autoplay; persist();
+    const cls = ui.firstElementChild?.classList;
+    if (cls?.contains('hud') || cls?.contains('home')) { btn.classList.toggle('on', save.autoplay); return; }
+    if (cls?.contains('levels')) showLevels(save.world); else showSettings();
+  },
+  testMenu: () => testMenu(),
+  testStart: ({ mode }) => startTest(mode),
+  testStop: () => endTest(true),
   unlockAll: () => { save.unlockAll = !save.unlockAll; persist(); showSettings(); },
   shopSel: ({ id }) => showShop(id),
   lanes: ({ n }) => { save.lanes = +n; persist(); showRace(); },
@@ -647,6 +740,6 @@ function loop(now) {
 }
 
 // expose a tiny debug/test hook
-window.__crane = { icon: (n) => R.thumbnail(VEHICLES[0], n, n), views: (id) => R.views(vehicleById(id || 'crane')), get game() { return game; }, save: () => save, actions, startLevel: (w, l) => startLevel(WORLDS[w].levels[l]), keys };
+window.__crane = { get testRun() { return testRun; }, startTest, worlds: WORLDS, icon: (n) => R.thumbnail(VEHICLES[0], n, n), views: (id) => R.views(vehicleById(id || 'crane')), get game() { return game; }, save: () => save, actions, startLevel: (w, l) => startLevel(WORLDS[w].levels[l]), keys };
 
 document.fonts?.load('700 20px Fredoka').finally(() => { showWorlds(); requestAnimationFrame(loop); $('#boot')?.remove(); });

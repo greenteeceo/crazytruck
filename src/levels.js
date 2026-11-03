@@ -3,6 +3,7 @@
 import { B, lvl } from './builder.js';
 import { genLevel, genRace } from './gen.js';
 import SEEDS from './genseeds.json';
+import { WORLD_DEFS } from './worlds.js';
 
 // ---------------------------------------------------------------- CLASSIC
 const classic = [
@@ -270,27 +271,15 @@ export const RACE_TRACKS = [
 for (const { w, seed } of SEEDS.races || []) RACE_TRACKS.push(genRace(w, seed));
 RACE_TRACKS.forEach((l, i) => { l.world = l.raceWorld; l.index = i; l.id = `race-${i + 1}`; l.race = true; });
 
-export const WORLDS = [
-  {
-    id: 'classic', name: 'Classic', sub: 'A timeless grassy adventure.', levels: classic,
-    theme: { skyTop: '#2fb6ff', skyBottom: '#bff0ff', mount: [0x1f8bff, 0x0f74f0, 0x45a8ff], water: 0x16c3ff, waterDeep: 0x0a8fe6, fog: 0x9fe2ff, ui: '#1d8cff', deco: ['tree', 'bush', 'rock'], cloud: 0xffffff },
-  },
-  {
-    id: 'construction', name: 'Construction', sub: 'Industrial platforms and site hazards.', levels: construction,
-    theme: { skyTop: '#ff4b3a', skyBottom: '#ffae6b', mount: [0xff7a5c, 0xe95a45, 0xffa07a], water: 0xffd2b0, waterDeep: 0xf2a77e, fog: 0xffb88f, ui: '#ff5a3c', deco: ['cone', 'barrier', 'crateDeco'], cloud: 0xfff1e6 },
-  },
-  {
-    id: 'medieval', name: 'Medieval', sub: 'Castles, bridges and royal challenges.', levels: medieval,
-    theme: { skyTop: '#2b54d9', skyBottom: '#7aa2ff', mount: [0x284fc9, 0x1d3aa0, 0x3d66e6], water: 0x2aa9ff, waterDeep: 0x1b6fd6, fog: 0x6f8ff0, ui: '#3557e0', deco: ['tree', 'torch', 'rock'], cloud: 0xe9efff },
-  },
-  {
-    id: 'science', name: 'Science', sub: 'A high-tech lab with energy mechanics.', levels: science,
-    theme: { skyTop: '#1d2a5a', skyBottom: '#45d98a', mount: [0x2a3a6e, 0x223060, 0x34508a], water: 0x5cf2a0, waterDeep: 0x24b46a, fog: 0x3f9a8a, ui: '#14a37a', deco: ['tank', 'lamp', 'labcrateDeco'], cloud: 0xcaf7ff },
-  },
-];
+const HANDMADE = { classic, construction, medieval, science };
+export const WORLDS = WORLD_DEFS.map((d) => ({ ...d, levels: [...(HANDMADE[d.id] || [])] }));
 
 // levels 11-20 of each world: seeded generator, difficulty ramps up (validated by tools/gensel.mjs)
-export const genDiff = (k) => 0.4 + (0.6 * k) / 9;
-for (const w of WORLDS) (SEEDS.levels?.[w.id] || []).forEach((seed, k) => w.levels.push(genLevel(w.id, seed, genDiff(k))));
+// worlds 1-4: levels 11-20; worlds 5-20: all 20 levels, starting easier
+export const genDiff = (k, fresh = false) => (fresh ? 0.15 + (0.85 * k) / 19 : 0.4 + (0.6 * k) / 9);
+for (const w of WORLDS) {
+  const fresh = !HANDMADE[w.id];
+  (SEEDS.levels?.[w.id] || []).forEach((seed, k) => w.levels.push(genLevel(w.id, seed, genDiff(k, fresh))));
+}
 WORLDS.forEach((w, wi) => w.levels.forEach((l, li) => { l.world = wi; l.index = li; l.id = `${w.id}-${li + 1}`; }));
 export const allLevels = () => WORLDS.flatMap((w) => w.levels);

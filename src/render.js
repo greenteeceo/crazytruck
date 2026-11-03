@@ -6,7 +6,23 @@ import { mat, box, cbox, buildTruck, buildWheel, buildHookLink, buildGem, buildF
 const D = 4; // terrain depth (z)
 
 const STYLE = {
-  grass: { top: 'grassTop', side: 'dirt', cap: true },
+  grass: { top: 'grassTop', side: 'dirt', cap: ['grassTop', 'grassSide'] },
+  desert: { top: 'desertTop', side: 'sandstone' },
+  snow: { top: 'snowTop', side: 'frozenDirt', cap: ['snowTop', 'snowSide'] },
+  jungle: { top: 'jungleTop', side: 'mud', cap: ['jungleTop', 'jungleSide'] },
+  basalt: { top: 'basaltTop', side: 'basalt', emissive: 0x220800 },
+  candy: { top: 'candyTop', side: 'candy', cap: ['candyTop', 'candySide'] },
+  beach: { top: 'beachTop', side: 'sandstone' },
+  asphalt: { top: 'asphaltTop', side: 'asphalt' },
+  docks: { top: 'docksTop', side: 'wood' },
+  moon: { top: 'moonTop', side: 'moon' },
+  mars: { top: 'marsTop', side: 'mars' },
+  coral: { top: 'coralTop', side: 'coral', cap: ['coralTop', 'coralSide'] },
+  autumn: { top: 'autumnTop', side: 'dirt', cap: ['autumnTop', 'autumnSide'] },
+  icecave: { top: 'iceTop', side: 'ice' },
+  toy: { top: 'toyTop', side: 'toy' },
+  neon: { top: 'neonTop', side: 'neon', emissive: 0x140628 },
+  cloudgrass: { top: 'grassTop', side: 'cloudTop', cap: ['grassTop', 'grassSide'] },
   dirt: { top: 'dirt', side: 'dirt' },
   sand: { top: 'sand', side: 'sand' },
   wood: { top: 'plank', side: 'wood' },
@@ -66,8 +82,9 @@ function piecePoly(p) {
   return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => [p.x + x * c - y * s, p.y + x * s + y * c]);
 }
 
+const capMats = {};
 // grass cap along a top edge
-function capMesh(x0, y0, x1, y1, depth = D + 0.08) {
+function capMesh(x0, y0, x1, y1, depth = D + 0.08, cap = ['grassTop', 'grassSide']) {
   const len = Math.hypot(x1 - x0, y1 - y0), ang = Math.atan2(y1 - y0, x1 - x0);
   const h = 0.42;
   const geo = new THREE.BoxGeometry(len + 0.04, h, depth);
@@ -78,8 +95,8 @@ function capMesh(x0, y0, x1, y1, depth = D + 0.08) {
     else if (f === 4 || f === 5) uv.setXY(i, uv.getX(i) * len, uv.getY(i));
     else uv.setXY(i, uv.getX(i) * depth, uv.getY(i));
   }
-  const side = new THREE.MeshLambertMaterial({ map: tex('grassSide'), transparent: true, alphaTest: 0.5 });
-  const top = tmat('grassTop');
+  const side = capMats[cap[1]] ||= new THREE.MeshLambertMaterial({ map: tex(cap[1]), transparent: true, alphaTest: 0.5 });
+  const top = tmat(cap[0]);
   const m = new THREE.Mesh(geo, [side, side, top, top, side, side]);
   m.position.set((x0 + x1) / 2 - Math.sin(ang) * -0.0, (y0 + y1) / 2 - h / 2 + 0.06, 0);
   m.rotation.z = ang; m.receiveShadow = true; m.castShadow = false;
@@ -184,7 +201,12 @@ export class Renderer {
       c.position.set(x, 20 + srand() * 12, -70 - srand() * 40); c.scale.setScalar(1.6); s.add(c); this.clouds.push(c);
     }
     // water / floor
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ color: theme.water, transparent: true, opacity: 0.78 }));
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ color: theme.water, transparent: true, opacity: theme.lava ? 0.95 : 0.78, ...(theme.lava ? { emissive: 0xc83a00 } : {}) }));
+    if (theme.stars) {
+      const pts = []; for (let i = 0; i < 500; i++) pts.push((srand() - 0.3) * 900 + x0, 30 + srand() * 220, -200 - srand() * 150);
+      const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      s.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: true, fog: false })));
+    }
     water.rotation.x = -Math.PI / 2; water.position.y = waterY; water.receiveShadow = true; s.add(water);
     const deep = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshBasicMaterial({ color: theme.waterDeep, fog: true }));
     deep.rotation.x = -Math.PI / 2; deep.position.set(0, waterY + 0.01, -1500 - 30); s.add(deep);
@@ -232,7 +254,7 @@ export class Renderer {
             const cx = xs.reduce((u, v) => u + v) / xs.length, cy = ys.reduce((u, v) => u + v) / ys.length;
             const cross = (b[0] - a[0]) * (cy - a[1]) - (b[1] - a[1]) * (cx - a[0]);
             if (cross > 0) continue;
-            s.add(capMesh(a[0], a[1], b[0], b[1], Dd + 0.08));
+            s.add(capMesh(a[0], a[1], b[0], b[1], Dd + 0.08, STYLE[p.s].cap));
           }
           // auto decoration on wide flat grass
           if (p.t === 'box' && p.w > 5) this.autoDeco(s, theme, bx0 + 1, bx1 - 1, by1);
@@ -598,9 +620,10 @@ export class Renderer {
     const wb = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 6.4), new THREE.MeshLambertMaterial({ color: th.water, transparent: true, opacity: 0.92 }));
     wb.position.y = -0.8; wb.receiveShadow = true; g.add(wb);
     box(g, -4.5, -0.02, -3.2, 4.5, 0.02, 3.2, 0xffffff).material = mat(th.waterDeep);
-    const styleOf = { classic: 'grass', construction: 'concrete', medieval: 'castle', science: 'metal' }[world.id];
+    const styleOf = world.ground || 'grass';
     const isl = new THREE.Mesh(prismGeo([[-3.6, -1.2], [2.4, -1.2], [2.4, 1.3], [-3.6, 1.3]], 3.4), styleMats(styleOf)); g.add(isl); isl.castShadow = isl.receiveShadow = true;
-    if (styleOf === 'grass') g.add(capMesh(-3.6, 1.3, 2.4, 1.3, 3.48));
+    if (STYLE[styleOf]?.cap) g.add(capMesh(-3.6, 1.3, 2.4, 1.3, 3.48, STYLE[styleOf].cap));
+    if (th.lava) wb.material.emissive = new THREE.Color(0x8a2200);
     rseed = 5 + world.id.length;
     if (world.id === 'classic') {
       for (let i = 0; i < 5; i++) { const pl = texturedBox(0.75, 0.2, 2.6, 'wood'); pl.position.set(2.9 + i * 0.8, 1.1 - i * 0.28, 0); pl.rotation.z = -0.32; g.add(pl); }
@@ -619,6 +642,12 @@ export class Renderer {
       for (let i = 0; i < 4; i++) { const pl = texturedBox(0.75, 0.25, 2.6, 'wood'); pl.position.set(2.8 + i * 0.78, 1.15, 0); g.add(pl); }
       const tr = buildDeco('torch'); tr.position.set(-3, 1.3, 1.2); g.add(tr);
       const bn = buildDeco('banner'); bn.position.set(1.6, 1.3, -1.2); g.add(bn);
+    } else if (world.id !== 'science') {
+      // generic diorama for worlds 5-20: themed props + a little bridge and some gems
+      const d = th.deco;
+      [[-2.8, -1.1, d[0]], [1.6, -1.1, d[1]], [-2.9, 1.1, d[2] || d[0]], [1.8, 1.1, d[0]]].forEach(([x, z, k]) => { const o = buildDeco(k, srand); o.position.set(x, 1.3, z); g.add(o); });
+      for (let i = 0; i < 4; i++) { const pl = texturedBox(0.75, 0.22, 2.6, world.plank === 'wood' ? 'wood' : world.plank); pl.position.set(2.85 + i * 0.8, 1.15 - i * 0.18, 0); pl.rotation.z = -0.2; g.add(pl); }
+      for (let i = 0; i < 3; i++) { const gm = buildGem(); gm.position.set(-1 + i * 0.9, 3.5, 0); gm.scale.setScalar(0.7); g.add(gm); }
     } else {
       for (const [x, z] of [[-3, -1.1], [1.8, -1.1]]) { const t = buildDeco('tank'); t.position.set(x, 1.3, z); g.add(t); }
       const pad = texturedBox(1.6, 0.12, 1.6, 'pad'); pad.position.set(1.2, 1.36, 0.9); g.add(pad);

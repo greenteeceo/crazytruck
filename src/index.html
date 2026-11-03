@@ -113,13 +113,13 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .pos small { font-size: 18px; color: #fff; }
 .pos.popk { animation: pop .35s; }
 @keyframes fadeout { to { opacity: 0; transform: translateY(-20px); } }
-.track { position: absolute; top: calc(78px + var(--safe-t)); left: 0; right: 0; margin: auto; width: min(70vw, 360px); height: 10px; border-radius: 6px; background: rgba(10,30,80,.5); border: 2px solid var(--ink); }
+.track { position: absolute; top: calc(78px + var(--safe-t)); left: 76px; right: 76px; margin: auto; max-width: 360px; height: 10px; border-radius: 6px; background: rgba(10,30,80,.5); border: 2px solid var(--ink); }
 .trackbar { position: absolute; inset: 0; }
 .trackbar .dot { position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid var(--ink); transition: left .15s linear; }
 .trackbar .dot:first-child { z-index: 2; width: 20px; height: 20px; margin: -10px 0 0 -10px; }
 
 /* overlays & panels */
-.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8, 30, 80, .45); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); animation: fadein .2s; }
+.overlay { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(8, 30, 80, .45); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); animation: fadein .2s; }
 .panel { position: relative; width: min(90vw, 400px); padding: 44px 20px 22px; border-radius: 22px; background: linear-gradient(#2f8cff, #155fd8); border: 3px solid var(--ink); box-shadow: 0 0 0 4px #fff, 0 10px 0 4px rgba(0,0,0,.25); animation: pop .4s; }
 .ribbon { position: absolute; top: -26px; left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 8px 26px; font-size: 28px; border-radius: 14px; background: linear-gradient(#ff5a6e, #e8334a); border: 3px solid var(--ink); box-shadow: 0 0 0 3px #fff; }
 .fail, .win, .results { background: rgba(10, 60, 170, .35); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 46px; }
@@ -154,6 +154,20 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .autochip.on { background: #46d35c; color: #fff; text-shadow: 0 2px 0 var(--ink); animation: pulse 1.2s infinite; }
 em.auto { font-style: normal; padding: 0 6px; border-radius: 6px; background: #46d35c; animation: pulse 1.2s infinite; }
 @keyframes pulse { 50% { opacity: .55; } }
+.topleft { position: absolute; top: calc(10px + var(--safe-t)); left: 12px; display: flex; gap: 8px; }
+.testbtn { padding: 4px 10px; border-radius: 12px; font-size: 15px; font-weight: 700; background: linear-gradient(#ffb02e, #ff7a0a); border: 3px solid var(--ink); color: #fff; text-shadow: 0 2px 0 var(--ink); }
+.hudl { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.hudl .autochip { margin: 0; font-size: 13px; padding: 2px 8px; }
+.wcount { position: absolute; bottom: calc(210px + var(--safe-b)); left: 0; right: 0; text-align: center; font-size: 17px; font-weight: 700; text-shadow: 0 2px 0 var(--ink); }
+.wcount svg { display: inline-block; width: 16px; height: 16px; vertical-align: -2px; color: var(--gold); }
+.wlock { display: inline-block; width: 34px; height: 34px; margin-right: 6px; vertical-align: -3px; color: #c7cde0; }
+.testbar { position: absolute; top: calc(104px + var(--safe-t)); left: 0; right: 0; margin: auto; width: fit-content; display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-radius: 14px; background: rgba(10,30,80,.72); border: 3px solid var(--ink); font-size: 15px; font-weight: 700; }
+.testbar b { color: #46d35c; } .testbar .ok { color: #7aff8a; } .testbar .bad { color: #ff8a9a; }
+.testbar button { padding: 4px 10px; border-radius: 10px; background: #ff5a6e; border: 2px solid var(--ink); font-weight: 700; }
+.testp .btn.wide { min-height: 48px; font-size: 17px; margin-top: 10px; }
+.testsum { max-height: 70vh; display: flex; flex-direction: column; }
+.testlog { margin-top: 10px; overflow-y: auto; font-size: 13px; font-weight: 600; line-height: 1.5; touch-action: pan-y; }
+.testlog .ok { color: #b8ffc0; } .testlog .bad { color: #ffb8c2; }
 .lanesel { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px; font-size: 16px; font-weight: 700; }
 .lanesel span { margin-right: 6px; }
 .lanesel button { width: 40px; height: 40px; border-radius: 12px; background: rgba(0,0,0,.25); border: 3px solid var(--ink); font-size: 20px; font-weight: 700; color: #fff; }
@@ -250,7 +264,7 @@ em.auto { font-style: normal; padding: 0 6px; border-radius: 6px; background: #4
   .polaroid { width: min(42vh, 340px); } .caption { font-size: 20px; padding: 14px 6px 18px; }
 }
 @media (max-height: 700px) and (max-aspect-ratio: 1/1) {
-  .wsub { display: none; } .dots { bottom: calc(200px + var(--safe-b)); }
+  .wsub { display: none; } .wcount { bottom: calc(184px + var(--safe-b)); }
   .play, .btn.race { height: 66px; bottom: calc(104px + var(--safe-b)); }
   .btn.rnd { bottom: calc(180px + var(--safe-b)); }
   .setp { top: calc(78px + var(--safe-t)); padding: 34px 16px 12px; } .setp .toggle { padding: 6px 12px; margin-top: 6px; font-size: 16px; } .setp .btn.wide { min-height: 44px; margin-top: 8px; font-size: 18px; } .setp .sub { font-size: 12px; } .setlbl { margin-top: 8px; }

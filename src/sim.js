@@ -5,7 +5,7 @@ const V = pl.Vec2;
 export const DT = 1 / 60;
 const CAT_TERRAIN = 0x0001, CAT_CAR = 0x0002, CAT_DYN = 0x0004;
 
-const FRICTION = { grass: 0.9, dirt: 0.9, wood: 0.95, stone: 0.85, concrete: 0.85, girder: 0.8, metal: 0.75, castle: 0.85, ice: 0.08, sand: 0.9, pad: 0.8 };
+const FRICTION = { snow: 0.75, icecave: 0.6, asphalt: 0.95, docks: 0.95, toy: 0.9, grass: 0.9, dirt: 0.9, wood: 0.95, stone: 0.85, concrete: 0.85, girder: 0.8, metal: 0.75, castle: 0.85, ice: 0.08, sand: 0.9, pad: 0.8 };
 
 export class Sim {
   constructor(level, spec, opts = {}) {

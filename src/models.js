@@ -395,6 +395,105 @@ export function buildDeco(kind, rnd = Math.random) {
       break;
     }
     case 'lamp': box(g, -0.06, 0, -0.06, 0.06, 2.4, 0.06, 0x3b4766); box(g, -0.06, 2.3, -0.06, 0.6, 2.4, 0.06, 0x3b4766); cbox(g, 0.55, 2.25, 0, 0.3, 0.12, 0.3, 0xcaffff, { emissive: 0x66ffff }); break;
+    case 'cactus': {
+      const c = 0x3fae4a, d = 0x2f8c3a, h = 1.4 + rnd() * 0.8;
+      box(g, -0.18, 0, -0.18, 0.18, h, 0.18, c);
+      box(g, 0.18, h * 0.45, -0.12, 0.5, h * 0.45 + 0.22, 0.12, c); box(g, 0.36, h * 0.45, -0.12, 0.54, h * 0.8, 0.12, c);
+      box(g, -0.48, h * 0.6, -0.12, -0.18, h * 0.6 + 0.2, 0.12, d); box(g, -0.5, h * 0.6, -0.12, -0.32, h * 0.9, 0.12, d);
+      cbox(g, 0, h + 0.06, 0, 0.14, 0.12, 0.14, 0xff6a9a); break;
+    }
+    case 'pine': {
+      const h = 0.5 + rnd() * 0.3;
+      box(g, -0.15, 0, -0.15, 0.15, h, 0.15, 0x7a4a2a);
+      [[1.5, 0.6], [1.15, 0.55], [0.8, 0.5], [0.45, 0.45]].forEach(([w, hh], i) => { const y = h + i * 0.48; cbox(g, 0, y + hh / 2, 0, w, hh, w, 0x2f8a5a); cbox(g, 0, y + hh - 0.04, 0, w * 0.9, 0.1, w * 0.9, 0xffffff); });
+      break;
+    }
+    case 'snowman':
+      cbox(g, 0, 0.35, 0, 0.7, 0.7, 0.7, 0xffffff); cbox(g, 0, 0.95, 0, 0.5, 0.5, 0.5, 0xffffff); cbox(g, 0, 1.4, 0, 0.36, 0.36, 0.36, 0xffffff);
+      cbox(g, 0.22, 1.4, 0, 0.18, 0.06, 0.06, 0xff8a1a); cbox(g, 0, 1.64, 0, 0.42, 0.06, 0.42, 0x2a2b31); cbox(g, 0, 1.78, 0, 0.26, 0.24, 0.26, 0x2a2b31);
+      cbox(g, 0, 1.15, 0, 0.54, 0.1, 0.54, 0xe8333c); break;
+    case 'palm': {
+      const h = 2.2 + rnd() * 0.8;
+      for (let i = 0; i < 6; i++) cbox(g, i * 0.06, i * (h / 6) + h / 12, 0, 0.26, h / 6, 0.26, i % 2 ? 0xb07a4a : 0x9a6638);
+      const tx = 0.36;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, -0.7]]) {
+        const leaf = new THREE.Group(); leaf.position.set(tx, h, 0); leaf.rotation.y = Math.atan2(-dz, dx); g.add(leaf);
+        box(leaf, 0, -0.06, -0.14, 0.9, 0.06, 0.14, 0x3cc85a); box(leaf, 0.7, -0.3, -0.12, 1.1, -0.06, 0.12, 0x2fae4a);
+      }
+      cbox(g, tx, h - 0.12, 0.14, 0.16, 0.16, 0.16, 0x7a4a2a); break;
+    }
+    case 'umbrella': {
+      box(g, -0.04, 0, -0.04, 0.04, 1.8, 0.04, 0xeeeeee);
+      const cols = [0xff4a5a, 0xffffff];
+      for (let i = 0; i < 4; i++) cbox(g, 0, 1.8 - i * 0.08, 0, 1.6 - i * 0.3, 0.1, 1.6 - i * 0.3, cols[i % 2]);
+      cbox(g, 0.6, 0.12, 0.3, 1.0, 0.1, 0.6, 0x3ab8ff); break;
+    }
+    case 'lollipop': {
+      box(g, -0.05, 0, -0.05, 0.05, 1.6, 0.05, 0xffffff);
+      const c = [0xff4a8a, 0x4ac8ff, 0xffd23a][(rnd() * 3) | 0];
+      cbox(g, 0, 1.9, 0, 0.8, 0.8, 0.16, c); cbox(g, 0, 1.9, 0.02, 0.5, 0.5, 0.16, 0xffffff); cbox(g, 0, 1.9, 0.04, 0.26, 0.26, 0.16, c); break;
+    }
+    case 'candycane': {
+      for (let i = 0; i < 7; i++) cbox(g, 0, 0.12 + i * 0.24, 0, 0.18, 0.24, 0.18, i % 2 ? 0xffffff : 0xff3a5a);
+      cbox(g, 0.18, 1.78, 0, 0.18, 0.18, 0.18, 0xff3a5a); cbox(g, 0.36, 1.66, 0, 0.18, 0.2, 0.18, 0xffffff); cbox(g, 0.36, 1.48, 0, 0.18, 0.18, 0.18, 0xff3a5a); break;
+    }
+    case 'ember': {
+      cbox(g, 0, 0.3, 0, 0.9, 0.6, 0.8, 0x2e2934); cbox(g, 0.3, 0.2, 0.2, 0.5, 0.4, 0.5, 0x3a3340);
+      const f = cbox(g, 0, 0.66, 0, 0.3, 0.14, 0.3, 0xff8a2a, { emissive: 0xff4a00 }); f.userData.flicker = true;
+      cbox(g, -0.3, 0.45, 0.41, 0.24, 0.06, 0.02, 0xff6a1a, { emissive: 0xff3a00 }); break;
+    }
+    case 'building': {
+      const h = 3 + rnd() * 3, w = 1.4 + rnd() * 0.6, c = [0x2a3060, 0x3a2a60, 0x202a4a][(rnd() * 3) | 0];
+      box(g, -w / 2, 0, -0.6, w / 2, h, 0.6, c);
+      for (let y = 0.5; y < h - 0.4; y += 0.6) for (let x = -w / 2 + 0.25; x < w / 2 - 0.2; x += 0.45) if (rnd() < 0.7) box(g, x, y, 0.6, x + 0.24, y + 0.3, 0.62, rnd() < 0.5 ? 0xffe27a : 0x7ae8ff, { emissive: 0x6a5a20 });
+      box(g, -w / 2 - 0.05, h, -0.65, w / 2 + 0.05, h + 0.12, 0.65, 0x161a36); break;
+    }
+    case 'barrelDeco': {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.9, 10), mat(0x9a6638, { flatShading: true })); m.position.y = 0.45; m.castShadow = true; g.add(m);
+      for (const y of [0.18, 0.72]) { const r2 = new THREE.Mesh(new THREE.CylinderGeometry(0.37, 0.37, 0.08, 10), mat(0x55565e, { flatShading: true })); r2.position.y = y; g.add(r2); }
+      break;
+    }
+    case 'flag':
+      box(g, -0.05, 0, -0.05, 0.05, 2.8, 0.05, 0x5b3a1e);
+      { const f = box(g, 0.05, 2.0, -0.03, 0.95, 2.7, 0.03, 0x1d1d22); f.userData.wave = true; }
+      cbox(g, 0.5, 2.35, 0.04, 0.24, 0.24, 0.02, 0xffffff); break;
+    case 'antenna':
+      box(g, -0.08, 0, -0.08, 0.08, 1.6, 0.08, 0xc9ccd6); cbox(g, 0, 1.8, 0, 0.9, 0.08, 0.9, 0xdfe2ea);
+      box(g, -0.03, 1.8, -0.03, 0.03, 2.3, 0.03, 0x8d91a0); { const l = cbox(g, 0, 2.35, 0, 0.12, 0.12, 0.12, 0xff3a3a, { emissive: 0xaa0000 }); l.userData.flicker = true; }
+      break;
+    case 'crystal': {
+      const c = [0x7ae8ff, 0xb48aff, 0xff7ab8][(rnd() * 3) | 0];
+      [[0, 0, 0.36, 1.4, 0], [0.32, 0.1, 0.26, 0.9, 0.35], [-0.28, 0.05, 0.24, 0.8, -0.4]].forEach(([x, z, w, h, a]) => {
+        const m = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), mat(c, { flatShading: true, emissive: 0x224466, transparent: true, opacity: 0.9 }));
+        m.scale.set(w, h, w); m.position.set(x, h * 0.75, z); m.rotation.z = a; m.castShadow = true; g.add(m);
+      });
+      break;
+    }
+    case 'coral': {
+      const c = [0xff6a8a, 0xffa04a, 0xb47aff][(rnd() * 3) | 0];
+      box(g, -0.12, 0, -0.12, 0.12, 1.1, 0.12, c); box(g, 0.12, 0.4, -0.1, 0.5, 0.6, 0.1, c); box(g, 0.32, 0.6, -0.1, 0.5, 1.0, 0.1, c);
+      box(g, -0.5, 0.6, -0.1, -0.12, 0.78, 0.1, c); box(g, -0.5, 0.78, -0.1, -0.32, 1.3, 0.1, c);
+      cbox(g, 0, 1.16, 0, 0.3, 0.12, 0.3, 0xffffff); break;
+    }
+    case 'autumnTree': {
+      const h = 1.2 + rnd() * 1.0;
+      box(g, -0.2, 0, -0.2, 0.2, h, 0.2, 0x7a4a2a);
+      const c = [0xf28a2a, 0xe8562a, 0xffc23a][(rnd() * 3) | 0];
+      cbox(g, 0, h + 0.4, 0, 1.6, 0.9, 1.6, c); cbox(g, 0, h + 1.1, 0, 1.1, 0.7, 1.1, c); cbox(g, 0.2, h + 1.6, 0.1, 0.6, 0.45, 0.6, c); break;
+    }
+    case 'pumpkin':
+      cbox(g, 0, 0.3, 0, 0.8, 0.6, 0.7, 0xff8a1a); cbox(g, 0, 0.3, 0, 0.6, 0.62, 0.72, 0xf07a10); cbox(g, 0, 0.68, 0, 0.12, 0.18, 0.12, 0x4a7a2a); break;
+    case 'toyblock': {
+      const c = [0xff4a4a, 0x3a9aff, 0xffd23a, 0x4ac85a][(rnd() * 4) | 0], w = 0.8 + rnd() * 0.6;
+      cbox(g, 0, 0.4, 0, w, 0.8, 0.8, c);
+      for (let x = -w / 2 + 0.2; x < w / 2; x += 0.4) for (const z of [-0.2, 0.2]) { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.12, 10), mat(c)); st.position.set(x, 0.86, z); g.add(st); }
+      break;
+    }
+    case 'neonpost':
+      box(g, -0.06, 0, -0.06, 0.06, 2.6, 0.06, 0x24104a);
+      cbox(g, 0, 2.7, 0, 0.18, 0.5, 0.18, [0xff3fd0, 0x3af0ff][(rnd() * 2) | 0], { emissive: 0xaa2a99 }); break;
+    case 'cloudpuff':
+      cbox(g, 0, 0.5, 0, 1.6, 0.6, 1.0, 0xffffff); cbox(g, 0.3, 0.9, 0, 0.9, 0.5, 0.8, 0xffffff); cbox(g, -0.4, 0.8, 0.1, 0.7, 0.4, 0.7, 0xf2f6ff); break;
     default: break;
   }
   return g;
