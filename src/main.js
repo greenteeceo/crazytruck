@@ -656,23 +656,41 @@ function showShop(sel) {
   const s2 = $('.card.sel'); if (s2) s2.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 
+// Settings are edited as a draft: toggles only change the draft, Save applies it, Cancel throws it away.
+const SETTING_KEYS = ['sound', 'shadows', 'autoplay', 'infinite', 'unlockAll'];
+let setDraft = null;
 function showSettings() {
   game = null; Audio.engineStop();
   if (R.mode !== 'menu') R.showDiorama(WORLDS[save.world], vehicleById(save.car));
+  setDraft = Object.fromEntries(SETTING_KEYS.map((k) => [k, !!save[k]]));
+  const tg = (k, icon, label) => `<button class="toggle ${setDraft[k] ? 'on' : ''}" data-act="setToggle" data-k="${k}"><span class="ico ${k === 'infinite' ? 'gold' : ''}">${icon}</span><span>${label}</span><i></i></button>`;
   screen('settings', html`
     ${topbar()}
     <div class="panel setp">
       <div class="ribbon">Settings</div>
-      <button class="toggle ${save.sound ? 'on' : ''}" data-act="sound"><span class="ico">${I.sound}</span><span>Sound</span><i></i></button>
-      <button class="toggle ${save.shadows ? 'on' : ''}" data-act="shadows"><span class="ico">${I.settings}</span><span>Shadows (quality)</span><i></i></button>
-      <div class="setlbl">Test tools</div>
-      <button class="toggle ${save.autoplay ? 'on' : ''}" data-act="autoplay"><span class="ico">${I.play}</span><span>Autoplay (bot drives)</span><i></i></button>
-      <button class="toggle ${save.infinite ? 'on' : ''}" data-act="infinite"><span class="ico gold">${I.gem}</span><span>Infinite gems (dev)</span><i></i></button>
-      <button class="toggle ${save.unlockAll ? 'on' : ''}" data-act="unlockAll"><span class="ico">${I.lock}</span><span>Unlock all levels</span><i></i></button>
-      <button class="btn gray wide" data-act="reset">Reset progress</button>
-      <div class="sub">Controls: ◀ ▶ on screen, or Arrow keys / A D.<br>In the air, ▶ tilts back and ◀ tilts forward.<br>Levels cleared: ${totalDone()}/${WORLDS.reduce((a, w) => a + w.levels.length, 0)} · Race tracks: ${RACE_TRACKS.length}</div>
+      <div class="setbody">
+        ${tg('sound', I.sound, 'Sound')}
+        ${tg('shadows', I.settings, 'Shadows (quality)')}
+        <div class="setlbl">Test tools</div>
+        ${tg('autoplay', I.play, 'Autoplay (bot drives)')}
+        ${tg('infinite', I.gem, 'Infinite gems (dev)')}
+        ${tg('unlockAll', I.lock, 'Unlock all levels')}
+        <button class="btn gray wide" data-act="reset">Reset progress</button>
+        <div class="sub">Controls: ◀ ▶ on screen, or Arrow keys / A D.<br>In the air, ▶ tilts back and ◀ tilts forward.<br>Levels cleared: ${totalDone()}/${WORLDS.reduce((a, w) => a + w.levels.length, 0)} · Race tracks: ${RACE_TRACKS.length}</div>
+      </div>
+      <div class="setfoot">
+        <button class="btn gray" data-act="setCancel">Cancel</button>
+        <button class="btn blue" data-act="setSave" id="setsave" disabled>Save</button>
+      </div>
     </div>
     ${navbar('settings')}`);
+}
+
+function settingsDirty() { return SETTING_KEYS.some((k) => setDraft[k] !== !!save[k]); }
+
+function toast(text) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = text;
+  ui.appendChild(t); setTimeout(() => t.remove(), 1600);
 }
 
 function pauseMenu() {
@@ -713,13 +731,21 @@ const actions = {
     save.autoplay = !save.autoplay; persist();
     const cls = ui.firstElementChild?.classList;
     if (cls?.contains('hud') || cls?.contains('home')) { btn.classList.toggle('on', save.autoplay); return; }
-    if (cls?.contains('levels')) showLevels(save.world); else showSettings();
+    if (cls?.contains('levels')) showLevels(save.world);
   },
   testMenu: () => testMenu(),
   testStart: ({ mode }) => startTest(mode),
   testStop: () => endTest(true),
-  infinite: () => { save.infinite = !save.infinite; persist(); showSettings(); },
-  unlockAll: () => { save.unlockAll = !save.unlockAll; persist(); showSettings(); },
+  setToggle: ({ k }, btn) => {
+    setDraft[k] = !setDraft[k]; btn.classList.toggle('on', setDraft[k]);
+    const sv = $('#setsave'); if (sv) sv.disabled = !settingsDirty();
+  },
+  setSave: () => {
+    for (const k of SETTING_KEYS) save[k] = setDraft[k];
+    Audio.setEnabled(save.sound); R.setShadows(save.shadows); persist();
+    showWorlds(); toast('Settings saved');
+  },
+  setCancel: () => { setDraft = null; showWorlds(); toast('Changes discarded'); },
   shopSel: ({ id }) => showShop(id),
   lanes: ({ n }) => { save.lanes = +n; persist(); showRace(); },
   buy: ({ id }) => {
@@ -736,8 +762,6 @@ const actions = {
     const pip = document.querySelectorAll(`.stat`)[UPGRADES.findIndex((x) => x.id === u)]?.querySelectorAll('.pips em')[lvl]; pip?.classList.add('pop');
   },
   use: ({ id }) => { save.car = id; persist(); showShop(id); },
-  sound: () => { save.sound = !save.sound; Audio.setEnabled(save.sound); persist(); showSettings(); },
-  shadows: () => { save.shadows = !save.shadows; R.setShadows(save.shadows); persist(); showSettings(); },
   reset: (_, btn) => {
     if (!btn.classList.contains('confirm')) { btn.classList.add('confirm', 'red'); btn.textContent = 'Tap again to erase everything'; return; }
     save = { ...defaults, levels: {}, cups: {}, owned: ['crane'], cup: { idx: 0, race: 0, pts: null } }; persist(); showWorlds();
