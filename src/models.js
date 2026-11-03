@@ -51,49 +51,61 @@ const BLACK = 0x1c1c22, TIRE = 0x26262c, TIRE2 = 0x34343b, SILVER = 0xc9ccd6, SI
 // Chunky voxel monster-truck tyre: knobby cube treads around a thick rim, inset hub cap.
 // Geometry is merged per colour so a 6-truck race stays cheap.
 const wheelCache = new Map();
+const RIM = 0xd5d8e0, RIM_D = 0x9a9fad, BOLT = 0x6b6f7c;
 export function buildWheel(r, look) {
   const key = r.toFixed(2);
   if (!wheelCache.has(key)) wheelCache.set(key, makeWheelGeo(r));
-  const { dark, light, hub, hub2 } = wheelCache.get(key);
+  const { dark, light, rim, rimD, bolt } = wheelCache.get(key);
   const g = new THREE.Group();
-  for (const [geo, c] of [[dark, TIRE], [light, TIRE2], [hub, SILVER], [hub2, SILVER2]]) {
-    const m = new THREE.Mesh(geo, mat(c, { flatShading: true })); m.castShadow = true; m.receiveShadow = true; g.add(m);
+  for (const [geo, c, flat] of [[dark, TIRE, true], [light, TIRE2, true], [rim, RIM, false], [rimD, RIM_D, false], [bolt, BOLT, false]]) {
+    const m = new THREE.Mesh(geo, mat(c, { flatShading: flat })); m.castShadow = true; m.receiveShadow = true; g.add(m);
   }
   addOutline(g);
   return g;
 }
 
+// Monster tyre like the reference: thick drum, 12 big block lugs alternating across the tread,
+// round silver rim with a recessed lip, 8 bolts and a centre cap.
 function makeWheelGeo(r) {
-  const W = 0.62;            // tyre width
-  const dark = [], light = [], hub = [], hub2 = [];
+  const W = 0.64;
+  const dark = [], light = [], rim = [], rimD = [], bolt = [];
   const bx = (arr, x0, y0, z0, x1, y1, z1, rot = 0) => {
     const geo = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0);
     geo.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
     if (rot) geo.rotateZ(rot);
     arr.push(geo);
   };
+  const disc = (arr, rad, z0, z1, seg = 24) => {
+    const geo = new THREE.CylinderGeometry(rad, rad, Math.abs(z1 - z0), seg);
+    geo.rotateX(Math.PI / 2); geo.translate(0, 0, (z0 + z1) / 2); arr.push(geo);
+  };
   for (const side of [-1, 1]) {
-    const zc = side * 0.86;
-    // rim body: 14-sided drum
-    const drum = new THREE.CylinderGeometry(r * 0.8, r * 0.8, W, 14); drum.rotateX(Math.PI / 2); drum.translate(0, 0, zc); dark.push(drum);
-    // knobby treads: two staggered rows of cubes
-    const n = 14, cube = r * 0.24;
+    const zc = side * 0.86, out = zc + side * W / 2;
+    // tyre body
+    const drum = new THREE.CylinderGeometry(r * 0.8, r * 0.8, W, 16); drum.rotateX(Math.PI / 2); drum.translate(0, 0, zc); dark.push(drum);
+    // big block lugs: each lug covers ~60% of the width, alternating left/right, plus a centre bridge
+    const n = 16, lw = r * 0.3;
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2, even = i % 2 === 0;
-      const rowZ = even ? [-W / 2 + cube * 0.55, 0] : [0, W / 2 - cube * 0.55];
-      for (const dz of rowZ) bx(even ? dark : light, r * 0.76, -cube / 2, zc + dz - cube / 2 - (dz === 0 ? cube * 0.05 : 0), r, cube / 2, zc + dz + cube / 2, a);
-      // side-wall nubs
-      bx(light, r * 0.56, -cube * 0.35, zc + side * (W / 2 - 0.02), r * 0.78, cube * 0.35, zc + side * (W / 2 + 0.05), a + Math.PI / n);
+      const a = (i / n) * Math.PI * 2, left = i % 2 === 0;
+      const z0 = left ? zc - W / 2 - 0.02 : zc - W * 0.08, z1 = left ? zc + W * 0.08 : zc + W / 2 + 0.02;
+      bx(left ? dark : light, r * 0.74, -lw / 2, z0, r * 1.0, lw / 2, z1, a);
+      bx(light, r * 0.74, -lw * 0.32, zc - W * 0.2, r * 0.9, lw * 0.32, zc + W * 0.2, a + Math.PI / n);
     }
-    // hub cap (outer side) + axle plate (inner side)
-    const hz = zc + side * (W / 2 + 0.01);
-    bx(hub, -r * 0.5, -r * 0.5, Math.min(hz, hz + side * 0.07), r * 0.5, r * 0.5, Math.max(hz, hz + side * 0.07));
-    bx(hub2, -r * 0.3, -r * 0.3, Math.min(hz + side * 0.07, hz + side * 0.12), r * 0.3, r * 0.3, Math.max(hz + side * 0.07, hz + side * 0.12));
-    bx(hub, -r * 0.14, -r * 0.14, Math.min(hz + side * 0.12, hz + side * 0.17), r * 0.14, r * 0.14, Math.max(hz + side * 0.12, hz + side * 0.17));
-    bx(hub2, -r * 0.5, -r * 0.5, Math.min(zc - side * W / 2, zc - side * (W / 2 + 0.04)), r * 0.5, r * 0.5, Math.max(zc - side * W / 2, zc - side * (W / 2 + 0.04)));
+    // rim: dark lip, silver face, bolt ring, centre cap
+    disc(rimD, r * 0.56, out - side * 0.02, out + side * 0.03);
+    disc(rim, r * 0.5, out + side * 0.02, out + side * 0.07);
+    disc(rimD, r * 0.2, out + side * 0.06, out + side * 0.1, 16);
+    disc(rim, r * 0.15, out + side * 0.09, out + side * 0.13, 16);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2, rr = r * 0.34;
+      const b = new THREE.CylinderGeometry(0.035, 0.035, 0.04, 8); b.rotateX(Math.PI / 2);
+      b.translate(Math.cos(a) * rr, Math.sin(a) * rr, out + side * 0.08); bolt.push(b);
+    }
+    // inner side: plain dark-silver plate
+    disc(rimD, r * 0.42, zc - side * (W / 2 + 0.03), zc - side * W / 2);
   }
   const merge = (arr) => mergeGeometries(arr, false);
-  return { dark: merge(dark), light: merge(light), hub: merge(hub), hub2: merge(hub2) };
+  return { dark: merge(dark), light: merge(light), rim: merge(rim), rimD: merge(rimD), bolt: merge(bolt) };
 }
 
 // ---------------------------------------------------------------- trucks

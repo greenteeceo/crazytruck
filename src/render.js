@@ -340,6 +340,43 @@ export class Renderer {
     p.m.scale.setScalar(size);
   }
 
+  // Soft voxel exhaust puff: grows, rises and fades.
+  smoke(x, y, z, size = 0.3, vx = 0) {
+    this.smokes ||= [];
+    let p = this.smokes.find((q) => q.life <= 0);
+    if (!p) {
+      if (this.smokes.length > 90) return;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x9a9a9a, transparent: true, opacity: 0.7, depthWrite: false }));
+      m.renderOrder = 2; p = { m, life: 0 }; this.smokes.push(p);
+    }
+    if (p.m.parent !== this.scene) this.scene.add(p.m);
+    p.m.visible = true; p.m.position.set(x, y, z); p.m.rotation.set(Math.random(), Math.random(), Math.random());
+    p.v = new THREE.Vector3(vx + (Math.random() - 0.5) * 0.4, 0.7 + Math.random() * 0.5, (Math.random() - 0.5) * 0.3);
+    p.life = p.max = 1.1 + Math.random() * 0.5; p.s0 = size; p.s1 = size * (2.4 + Math.random());
+  }
+
+  // Faint tread mark on the ground, fades out over a few seconds.
+  track(x, y, z, ang) {
+    this.tracks ||= [];
+    if (!this.trackGeo) {
+      const c = document.createElement('canvas'); c.width = 16; c.height = 16; const g = c.getContext('2d');
+      g.fillStyle = 'rgba(40,28,20,0.9)'; for (let i = 0; i < 16; i += 5) g.fillRect(1, i, 14, 3);
+      const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter;
+      this.trackTex = t; this.trackGeo = new THREE.PlaneGeometry(0.5, 0.52);
+    }
+    let p = this.tracks.find((q) => q.life <= 0);
+    if (!p) {
+      if (this.tracks.length > 220) { p = this.tracks.reduce((a, b) => (a.life < b.life ? a : b)); }
+      else {
+        const m = new THREE.Mesh(this.trackGeo, new THREE.MeshLambertMaterial({ map: this.trackTex, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
+        m.receiveShadow = true; m.renderOrder = 1; p = { m, life: 0 }; this.tracks.push(p);
+      }
+    }
+    if (p.m.parent !== this.scene) this.scene.add(p.m);
+    p.m.visible = true; p.m.position.set(x, y, z); p.m.rotation.set(-Math.PI / 2, 0, ang, 'ZYX');
+    p.life = p.max = 3.2;
+  }
+
   burst(x, y, color, n = 16, speed = 5, grav = -9, life = 0.9, z = 0) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, s = speed * (0.4 + Math.random() * 0.6);
@@ -392,6 +429,31 @@ export class Renderer {
       sim.hook.forEach((b, i) => { const q = sim.pose(b, al); car.hook[i].position.set(q.x, q.y + hopY, z); car.hook[i].rotation.z = q.a; });
       for (const sp of car.parts.spin) sp.obj.rotation[sp.axis] += sp.speed * dt;
       if (car.tag) car.tag.position.set(p.x, p.y + 3.2, z);
+      // tyre tracks: drop a mark pair every ~0.45 m a grounded wheel travels
+      if (sim.state !== 'fail') {
+        car.trk ||= sim.wheels.map(() => ({ x: null }));
+        const ang = p.a, sn = Math.sin(ang), cs = Math.cos(ang), r = sim.spec.wheelR;
+        sim.wheels.forEach((w, i) => {
+          if (sim.lostWheel === i) return;
+          const q = sim.pose(w, al), tk = car.trk[i];
+          if (sim.wheelTouch[i] <= 0) { tk.x = null; return; }
+          if (tk.x == null) { tk.x = q.x; return; }
+          if (Math.abs(q.x - tk.x) >= 0.45) {
+            tk.x = q.x;
+            const gx = q.x + sn * r, gy = q.y - cs * r + 0.03;
+            for (const dz of [-0.86, 0.86]) this.track(gx, gy, z + dz, ang);
+          }
+        });
+      }
+      // exhaust smoke from the back of the truck: thick under throttle, a light wisp when idling
+      car.smokeT = (car.smokeT ?? 0) - dt;
+      if (car.smokeT <= 0 && (sim.state === 'run' || sim.state === 'win')) {
+        const thr = car === this.cars[0] ? throttle !== 0 : Math.abs(sim.chassis.getLinearVelocity().x) > 2;
+        const ang = p.a, lx = -1.95, ly = 0.55;
+        const ex = p.x + lx * Math.cos(ang) - ly * Math.sin(ang), ey = p.y + lx * Math.sin(ang) + ly * Math.cos(ang);
+        this.smoke(ex, ey, z + 0.45, thr ? 0.28 : 0.16, thr ? -1.2 : -0.2);
+        car.smokeT = thr ? (car === this.cars[0] ? 0.06 : 0.12) : 0.32;
+      }
       // dust from spinning wheels on ground
       car.dustT -= dt;
       if (car === this.cars[0] && car.dustT <= 0 && sim.state === 'run' && throttle !== 0) {
@@ -430,6 +492,19 @@ export class Renderer {
     if (this.finish) this.finish.traverse((o) => { if (o.userData.wave) o.rotation.y = Math.sin(t * 6 + o.position.z) * 0.25; });
     this.scene.traverse((o) => { if (o.userData.flicker) o.scale.y = 0.28 * (0.85 + Math.sin(t * 20 + o.id) * 0.15); });
     for (const c of this.clouds || []) c.position.x += dt * 0.4;
+    for (const p of this.smokes || []) {
+      if (p.life <= 0) continue;
+      p.life -= dt; const k = 1 - p.life / p.max;
+      p.m.position.addScaledVector(p.v, dt); p.v.multiplyScalar(1 - dt * 0.8);
+      p.m.scale.setScalar(p.s0 + (p.s1 - p.s0) * Math.sqrt(k)); p.m.rotation.y += dt;
+      p.m.material.opacity = 0.72 * (1 - k) * Math.min(1, k * 8);
+      if (p.life <= 0) p.m.visible = false;
+    }
+    for (const p of this.tracks || []) {
+      if (p.life <= 0) continue;
+      p.life -= dt; p.m.material.opacity = 0.32 * Math.min(1, p.life / 1.2);
+      if (p.life <= 0) p.m.visible = false;
+    }
     this.pops = (this.pops || []).filter((q) => {
       q.t += dt; q.sp.position.y += dt * 1.6;
       const k = q.t < 0.15 ? q.t / 0.15 : 1; q.sp.scale.set(2.4 * k, 0.6 * k, 1);
@@ -641,7 +716,7 @@ export class Renderer {
   }
 
   dispose() {
-    this.cars = []; this.particles = []; this.finish = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.punch = 0;
+    this.cars = []; this.particles = []; this.smokes = []; this.tracks = []; this.finish = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.punch = 0;
     this.clouds = []; this.dioramaRoot = null; this.menuSpin = []; this.garage = false;
     this.snapCam = true;
   }
