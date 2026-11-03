@@ -1,0 +1,192 @@
+// Seeded procedural levels and race tracks built from proven obstacle segments.
+// Every seed that ships is validated by tools/gensel.mjs (bot must finish).
+import { B } from './builder.js';
+
+function rng(seed) {
+  let s = (seed * 2654435761) >>> 0 || 1;
+  return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+}
+
+const STYLE = {
+  classic: { ground: 'grass', accent: 'wood', alt: 'grass' },
+  construction: { ground: 'concrete', accent: 'girder', alt: 'concrete' },
+  medieval: { ground: 'castle', accent: 'wood', alt: 'grass' },
+  science: { ground: 'metal', accent: 'metal', alt: 'metal' },
+};
+
+const POOLS = {
+  classic: ['hill', 'hill', 'stepUp', 'rampDown', 'gap', 'gap', 'bridge', 'bridge', 'seesaw', 'crates', 'logs', 'bigJump'],
+  construction: ['hill', 'stepUp', 'rampDown', 'gap', 'girderGap', 'girderGap', 'mover', 'mover', 'crates', 'seesaw', 'bigJump', 'bumps'],
+  medieval: ['hill', 'stepUp', 'rampDown', 'gap', 'bridge', 'bridge', 'drawbridge', 'drawbridge', 'seesaw', 'bumps', 'bigJump', 'logs'],
+  science: ['pad', 'pad', 'mover', 'stepUp', 'rampDown', 'gap', 'crates', 'seesaw', 'pad', 'bumps', 'bigJump'],
+};
+const RACE_EXTRA = ['dominoes', 'hammer', 'boulders', 'wall', 'dominoes', 'hammer', 'wall', 'boulders'];
+
+const WORDS = {
+  classic: [['Meadow', 'Clover', 'Pebble', 'Sunny', 'Lagoon', 'Mossy', 'Breezy', 'Puddle', 'Daisy', 'Willow', 'Coral', 'Sandy'], ['Run', 'Hop', 'Dash', 'Leap', 'Crossing', 'Bend', 'Climb', 'Drift', 'Shore', 'Skip']],
+  construction: [['Rebar', 'Crane', 'Cement', 'Girder', 'Rivet', 'Scaffold', 'Bolt', 'Gravel', 'Hardhat', 'Asphalt', 'Steel', 'Brick'], ['Yard', 'Lift', 'Zone', 'Stack', 'Rush', 'Works', 'Site', 'Drop', 'Climb', 'Run']],
+  medieval: [['Knight', 'Dragon', 'Moat', 'Tower', 'Banner', 'Royal', 'Squire', 'Rampart', 'Crown', 'Keep', 'Joust', 'Gate'], ['Charge', 'Crossing', 'Path', 'Leap', 'Run', 'Quest', 'March', 'Siege', 'Bridge', 'Gallop']],
+  science: [['Quantum', 'Plasma', 'Laser', 'Ion', 'Neutron', 'Photon', 'Fusion', 'Vector', 'Gamma', 'Proton', 'Orbit', 'Turbo'], ['Lab', 'Leap', 'Loop', 'Drift', 'Pulse', 'Jump', 'Test', 'Field', 'Core', 'Boost']],
+};
+const RACE_WORDS = [['Mega', 'Wild', 'Crazy', 'Turbo', 'Wacky', 'Bumpy', 'Chaos', 'Super', 'Hyper', 'Rowdy', 'Loopy', 'Zany'], ['Derby', 'Rally', 'Rumble', 'Scramble', 'Dash', 'Mayhem', 'Circuit', 'Run', 'Brawl', 'Frenzy']];
+
+function nameFor(words, r) { return `${words[0][(r() * words[0].length) | 0]} ${words[1][(r() * words[1].length) | 0]}`; }
+
+// Build a track from segments. Returns a level object (same shape as hand-made levels).
+function build(worldId, seed, diff, { race = false, length } = {}) {
+  const r = rng(seed);
+  const st = STYLE[worldId];
+  const b = new B(st.ground);
+  const zones = [];
+  const pick = (a) => a[(r() * a.length) | 0];
+  const rr = (a, c) => a + r() * (c - a);
+  let x = 6, top = 0;
+  const water = -3;
+  const ground = (x0, x1, t = top, s = st.ground) => b.ground(x0, x1, t, s, t - water);
+  b.ground(-8, x, 0, worldId === 'medieval' ? 'grass' : st.ground, 3);
+  const pool = race ? [...POOLS[worldId], ...RACE_EXTRA] : POOLS[worldId];
+  const nSeg = length ?? (race ? 8 : 3 + Math.round(diff * 4));
+  let last = '';
+  for (let i = 0; i < nSeg; i++) {
+    let seg = pick(pool);
+    if (seg === last) seg = pick(pool);
+    last = seg;
+    // keep the track inside a sensible height band
+    if (seg === 'stepUp' && top > 2.2) seg = 'rampDown';
+    if (seg === 'rampDown' && top < 0.6) seg = 'hill';
+    if ((seg === 'seesaw' || seg === 'drawbridge') && top < -0.2) seg = 'hill';
+    const lead = rr(3, 5);
+    ground(x, x + lead); x += lead;
+    switch (seg) {
+      case 'hill': {
+        const L = rr(7, 10), h = rr(0.8, 1.1 + diff * 0.6);
+        ground(x, x + L); b.hill(x + 0.5, x + L - 0.5, h, top, worldId === 'medieval' ? 'castle' : st.ground);
+        b.gem(x + L / 2, top + h + 1.3); x += L; break;
+      }
+      case 'bumps': {
+        const n = 3 + ((r() * 3) | 0);
+        ground(x, x + n * 4 + 2);
+        for (let k = 0; k < n; k++) b.block(x + 2 + k * 4, top + 0.22, 2, 0.44, worldId === 'construction' ? 'girder' : st.ground);
+        b.gem(x + 2 + 2 * 4, top + 1.5); x += n * 4 + 2; break;
+      }
+      case 'stepUp': {
+        const n = 2 + ((r() * 3) | 0), dx = 2.6;
+        b.steps(x, top, n, dx, 0.42, worldId === 'construction' ? 'girder' : st.ground, top - water);
+        b.gem(x + n * dx - 1.3, top + n * 0.42 + 1.3);
+        x += n * dx; top += n * 0.42;
+        ground(x, x + 3); x += 3; break;
+      }
+      case 'rampDown': {
+        const drop = Math.min(top + 0.2, rr(1.2, 2.4)), L = drop * 3.4 + 2;
+        b.ramp(x, top, x + L, top - drop, st.ground, top - drop - 1.5);
+        b.gem(x + L / 2, top - drop / 2 + 1.3);
+        x += L; top -= drop; break;
+      }
+      case 'gap': {
+        const gap = rr(3.5, 4.5 + diff * 1.5), K = 6;
+        ground(x, x + K); b.ramp(x, top, x + K, top + 1.3, st.ground, top - 0.5);
+        b.gem(x + K + gap / 2, top + 2.8);
+        x += K + gap; ground(x, x + 6); x += 6; break;
+      }
+      case 'bigJump': {
+        const gap = rr(8, 10);
+        ground(x, x + 8); b.ramp(x, top, x + 8, top + 2.0, st.ground, top - 0.5);
+        const lx = x + 8 + gap;
+        b.ramp(lx, top + 1.2, lx + 12, top, st.ground, top - 2);
+        b.gems(x + 10, top + 4.2, 3, 2.4);
+        zones.push(['air']);
+        x = lx + 12; ground(x, x + 4); x += 4; break;
+      }
+      case 'bridge': {
+        const L = rr(10, 14);
+        b.bridge(x, top, x + L, top, 'wood');
+        b.gem(x + L / 2, top + 0.7);
+        zones.push([x - 2, x + L + 1, 9]);
+        x += L; ground(x, x + 5); x += 5; break;
+      }
+      case 'girderGap': {
+        const L = rr(9, 12);
+        b.block(x + L / 2, top - 0.2, L, 0.4, 'girder');
+        b.gem(x + L / 2, top + 1.0);
+        x += L; ground(x, x + 4); x += 4; break;
+      }
+      case 'seesaw': {
+        // left ground at top, pivot top+0.3, right ground top-0.8
+        const px = x + 4.6;
+        b.block(px, top - 1.6 - (top - 0) / 2, 0.8, 3.6 + top, worldId === 'classic' ? 'wood' : st.accent);
+        b.seesaw(px, top + 0.3, 9.2, 0.2, 0.2, worldId === 'construction' ? 'girder' : worldId === 'science' ? 'metal' : 'wood');
+        b.gem(px, top + 2.0);
+        zones.push([x - 4, px + 5, 6]);
+        x = px + 4.6; top -= 0.8; ground(x, x + 6); x += 6; break;
+      }
+      case 'drawbridge': {
+        // ground already ends at x; hinge a little after it
+        const L = rr(9, 11);
+        b.p[b.p.length - 1].w -= 0.4; b.p[b.p.length - 1].x -= 0.2;
+        b.hinge(x, top - 0.18, L, 1.25, -0.02, 1.3, 'wood');
+        b.block(x + L + 0.4, top - 0.5, 0.8, 0.6, 'castle');
+        b.gem(x + L / 2, top + 1.0);
+        x += L + 0.8; ground(x, x + 5); x += 5; break;
+      }
+      case 'mover': {
+        b.mover(x + 4.5, top - 0.3, 6.5, 0.6, 1.6, 0, rr(2.2, 2.8), worldId === 'science' ? 'metal' : 'girder', rr(0, 3));
+        b.gem(x + 4.5, top + 1.0);
+        x += 9; ground(x, x + 5); x += 5; break;
+      }
+      case 'pad': {
+        b.pad(x - 2, top + 0.02, 2.4, 11, 8);
+        const gap = rr(8, 10);
+        b.gems(x + 2, top + 3.6, 3, 2.2);
+        x += gap; ground(x, x + 6); x += 6; break;
+      }
+      case 'crates': {
+        ground(x, x + 9);
+        b.stack(x + 3, top, 3, 2, 0.85, worldId === 'science' ? 'labcrate' : 'crate');
+        b.gem(x + 7.5, top + 1.2); x += 9; break;
+      }
+      case 'logs': {
+        ground(x, x + 8);
+        b.dyn(x + 3, top + 0.3, 0.6, 0.6, 'log', 0.2).dyn(x + 3.8, top + 0.3, 0.6, 0.6, 'log', 0.2).dyn(x + 3.4, top + 0.9, 0.6, 0.6, 'log', 0.2);
+        b.gem(x + 6.5, top + 1.2); x += 8; break;
+      }
+      // ---- race-only chaos
+      case 'dominoes': {
+        const n = 4 + ((r() * 4) | 0);
+        ground(x, x + n * 1.6 + 3); b.dominoes(x + 1.5, n, 1.6, top, 2.2, worldId === 'construction' ? 'girder' : 'wood');
+        x += n * 1.6 + 3; break;
+      }
+      case 'hammer': {
+        ground(x, x + 8); b.hammer(x + 4, top, r() < 0.5 ? 1.2 : -1.2);
+        b.gem(x + 4, top + 1.2); x += 8; break;
+      }
+      case 'wall': {
+        ground(x, x + 7); b.wall(x + 3, 1 + ((r() * 2) | 0), 2 + ((r() * 2) | 0), top, 0.75, worldId === 'science' ? 'labcrate' : 'crate');
+        x += 7; break;
+      }
+      case 'boulders': {
+        const L = 14, h = 2.4;
+        b.ramp(x, top, x + L, top + h, st.ground, top - 0.5);
+        ground(x, x + L);
+        ground(x + L, x + L + 8, top + h);
+        b.ball(x + L + 3, top + h + 1.2, 0.8, -3).ball(x + L + 6, top + h + 1.2, 0.9, -2);
+        b.ramp(x + L + 8, top + h, x + L + 18, top, st.ground, top - 0.5);
+        zones.push([x - 1, x + L + 2, 8]);
+        x += L + 18; ground(x, x + 3); x += 3; break;
+      }
+      default: break;
+    }
+  }
+  ground(x, x + 14, top, worldId === 'medieval' ? 'grass' : st.ground);
+  b.finish(x + 8, top);
+  const ai = { zones: zones.filter((z) => z.length === 3) };
+  if (zones.some((z) => z[0] === 'air')) ai.airAngle = -0.1;
+  const words = race ? RACE_WORDS : WORDS[worldId];
+  const nr = rng(seed * 7 + 3);
+  const opts = { water, ai, name: nameFor(words, nr), gen: seed };
+  if (worldId === 'science' && rng(seed + 11)() < 0.3) { opts.gravity = 5.5; ai.airAngle = -0.05; }
+  return { pieces: b.p, start: { x: 0, y: 0 }, ...opts };
+}
+
+export const WORLD_IDS = ['classic', 'construction', 'medieval', 'science'];
+export const genLevel = (worldId, seed, diff) => build(worldId, seed, diff);
+export const genRace = (worldIdx, seed) => ({ ...build(WORLD_IDS[worldIdx], seed, 0.9, { race: true }), raceWorld: worldIdx });

@@ -146,6 +146,14 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 @keyframes rise { 0% { transform: translateY(0) scale(.4); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-160px) scale(1); opacity: 0; } }
 .stk.fish { left: 8%; bottom: 14%; font-size: 22px; font-weight: 700; color: #ffd21a; text-shadow: 0 2px 0 var(--ink); animation: swim 3s ease-in-out infinite alternate; }
 @keyframes swim { to { transform: translateX(120px); } }
+.btn.rnd { position: absolute; left: 0; right: 0; margin: auto; width: fit-content; bottom: calc(204px + var(--safe-b)); min-height: 44px; font-size: 17px; padding: 0 16px; }
+.btn.rnd .ico { width: 22px; height: 22px; }
+.toggle > span:nth-child(2) { flex: 1; text-align: left; }
+.setlbl { margin-top: 16px; font-size: 14px; font-weight: 700; opacity: .8; text-transform: uppercase; letter-spacing: .08em; }
+.autochip { margin-left: 6px; padding: 4px 10px; border-radius: 12px; font-size: 15px; font-weight: 700; background: rgba(0,0,0,.3); border: 3px solid var(--ink); color: #c7cde0; }
+.autochip.on { background: #46d35c; color: #fff; text-shadow: 0 2px 0 var(--ink); animation: pulse 1.2s infinite; }
+em.auto { font-style: normal; padding: 0 6px; border-radius: 6px; background: #46d35c; animation: pulse 1.2s infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
 .lanesel { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px; font-size: 16px; font-weight: 700; }
 .lanesel span { margin-right: 6px; }
 .lanesel button { width: 40px; height: 40px; border-radius: 12px; background: rgba(0,0,0,.25); border: 3px solid var(--ink); font-size: 20px; font-weight: 700; color: #fff; }
@@ -222,7 +230,7 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .shopbtn .gemi { width: 22px; height: 22px; }
 
 /* settings */
-.setp { position: absolute; top: 22%; left: 0; right: 0; margin: auto; }
+.setp { position: absolute; top: max(12%, calc(64px + var(--safe-t))); left: 0; right: 0; margin: auto; }
 .toggle { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; margin-top: 10px; border-radius: 14px; background: rgba(0,0,0,.18); font-size: 20px; font-weight: 700; }
 .toggle .ico { width: 28px; height: 28px; }
 .toggle i { margin-left: auto; width: 54px; height: 30px; border-radius: 15px; background: #8e97b0; border: 3px solid var(--ink); position: relative; }
@@ -244,6 +252,8 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 @media (max-height: 700px) and (max-aspect-ratio: 1/1) {
   .wsub { display: none; } .dots { bottom: calc(200px + var(--safe-b)); }
   .play, .btn.race { height: 66px; bottom: calc(104px + var(--safe-b)); }
+  .btn.rnd { bottom: calc(180px + var(--safe-b)); }
+  .setp { top: calc(78px + var(--safe-t)); padding: 34px 16px 12px; } .setp .toggle { padding: 6px 12px; margin-top: 6px; font-size: 16px; } .setp .btn.wide { min-height: 44px; margin-top: 8px; font-size: 18px; } .setp .sub { font-size: 12px; } .setlbl { margin-top: 8px; }
   .nav button { height: 66px; font-size: 14px; } .nav button .ico { width: 28px; height: 28px; }
   .sname { font-size: 26px; } .sdesc { font-size: 13px; } .stats { margin-top: 6px; }
   .cards { bottom: calc(146px + var(--safe-b)); padding: 8px 14px; } .card { width: 108px; height: 94px; } .card img { height: 60px; }
