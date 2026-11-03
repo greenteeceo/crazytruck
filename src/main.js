@@ -18,6 +18,11 @@ const defaults = { upgrades: {}, diamonds: 0, owned: ['crane'], car: 'crane', le
 let save;
 try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save = { ...defaults }; }
 save.tt ||= {};
+save.tut ||= {};   // tutorial steps already shown
+// dev tools (AUTO, TEST, infinite gems, unlock all) are hidden in release; tap the version line in Settings 5 times
+const VERSION = '3.0';
+if (!save.dev) { save.autoplay = false; save.infinite = false; save.unlockAll = false; }
+const dev = () => !!save.dev;
 // leaderboard: per-device seed for the simulated players, and when this player joined
 if (!save.lb) save.lb = { seed: (Math.random() * 2 ** 31) | 0, start: Date.now() };
 const persist = () => P.save(KEY, JSON.stringify(save));
@@ -26,7 +31,8 @@ const persist = () => P.save(KEY, JSON.stringify(save));
 const glCanvas = P.mainCanvas();
 const uiCanvas = P.isTT ? P.createCanvas(2, 2) : document.getElementById('ui');
 const R = new Renderer(glCanvas);
-R.setQuality(save.quality ?? 0);
+// a slow moment last session should not make the game blurry forever: retry one tier sharper each launch
+R.setQuality(Math.max(0, (save.quality ?? 0) - 1));
 R.setShadows(save.shadows);
 R.onQuality = (q) => { save.quality = q; persist(); };
 if (P.isTT) R.setOverlay(uiCanvas);
@@ -73,8 +79,50 @@ const par = (l) => Math.ceil((PARS[l.id] ?? 10) * 1.25 * 2) / 2;
 const totalDone = () => WORLDS.reduce((a, _, i) => a + worldDone(i), 0);
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
 
+// ------------------------------------------------------------ lives: a crash in a level costs one, they come back over time
+// or all at once for a rewarded video. Races never cost lives (something to do while waiting).
+const LIVES_MAX = 5, LIFE_MS = 8 * 60 * 1000;
+if (!save.lives) save.lives = { n: LIVES_MAX, t: Date.now() };
+const freeLives = () => save.infinite || save.autoplay || !!testRun;
+function livesNow() {
+  const L = save.lives, now = Date.now();
+  if (L.n >= LIVES_MAX) { L.t = now; return L.n; }
+  const k = Math.floor((now - L.t) / LIFE_MS);
+  if (k > 0) { L.n = Math.min(LIVES_MAX, L.n + k); L.t = L.n >= LIVES_MAX ? now : L.t + k * LIFE_MS; persist(); }
+  return L.n;
+}
+const nextLifeIn = () => { const ms = Math.max(0, LIFE_MS - (Date.now() - save.lives.t)); const s = Math.ceil(ms / 1000); return `${(s / 60) | 0}:${String(s % 60).padStart(2, '0')}`; };
+function loseLife() { if (freeLives()) return; const n = livesNow(); if (n >= LIVES_MAX) save.lives.t = Date.now(); save.lives.n = Math.max(0, n - 1); persist(); }
+function addLives(k) { livesNow(); save.lives.n = Math.min(LIVES_MAX, save.lives.n + k); if (save.lives.n >= LIVES_MAX) save.lives.t = Date.now(); persist(); }
+function livesPill(u, x, y, h, right = false, compact = false) {
+  const n = livesNow(), txt = n >= LIVES_MAX || freeLives() || compact ? (freeLives() ? '∞' : `${n}`) : `${n}  ${nextLifeIn()}`;
+  const w = Math.max(64, u.measure(txt, h * 0.5) + h * 0.9 + 18), x0 = right ? x - w : x;
+  u.pill(x0, y, h, { icon: 'heart', iconColor: '#ff4d6a', text: txt }, { minW: w });
+  u.hit(x0, y, w, h, { id: 'lives', onTap: tap(() => { if (livesNow() < LIVES_MAX && !freeLives()) noLivesMenu(); }) });
+  if (n < LIVES_MAX) u.request(1);
+  return w;
+}
+// Out of lives (or tapping the heart counter): refill with a video, wait, or go race.
+function noLivesMenu(retry) {
+  ui.overlay((u, age) => {
+    const n = livesNow();
+    if (retry && n > 0) { u.closeOverlay(); retry(); return false; }
+    const pw = Math.min(u.w - PAD * 2, 360), ph = 330, px = u.w / 2 - pw / 2, py = u.h / 2 - ph / 2;
+    u.panel(px, py, pw, ph, { ribbon: n ? 'Lives' : 'Out of lives', ribbonColor: 'red', scale: u.pop(0, 0.3, age) });
+    const hk = 1 + Math.sin(u.t * 4) * 0.06;
+    for (let i = 0; i < LIVES_MAX; i++) { const hx = u.w / 2 + (i - 2) * 46; u.ctx.save(); u.ctx.translate(hx, py + 76); u.ctx.scale(hk, hk); u.icon('heart', -20, -20, 40, i < n ? '#ff4d6a' : 'rgba(255,255,255,0.25)'); u.ctx.restore(); }
+    u.text(`Next life in ${nextLifeIn()}`, u.w / 2, py + 124, 18, '#fff', { maxW: pw - 30 });
+    u.button('refill', px + PAD, py + 150, pw - PAD * 2, 56, { color: 'green', parts: [{ icon: 'video', size: 26 }, 'Refill', { icon: 'heart', size: 24, color: '#ff4d6a' }, `${LIVES_MAX}`], size: 22, onTap: tap(() => watchAd(() => { addLives(LIVES_MAX); u.closeOverlay(); Audio.win(); ui.toast('Lives refilled!'); if (retry) retry(); })) });
+    u.button('lrace', px + PAD, py + 150 + 56 + GAP, pw - PAD * 2, 48, { color: 'orange', icon: 'flag', label: 'Race meanwhile (free)', size: 17, onTap: tap(() => { u.closeOverlay(); game = null; showRace(); }) });
+    u.button('lclose', px + PAD, py + ph - PAD - 44, pw - PAD * 2, 44, { color: 'gray', label: 'Close', size: 18, onTap: tap(() => u.closeOverlay()) });
+    u.request(1);
+    return age < 0.4;
+  });
+}
+
 // ------------------------------------------------------------ game session
 let game = null;
+let trialCar = null;
 const keys = { left: false, right: false };
 let touchL = false, touchR = false;
 const throttleInput = () => { const r = keys.right || touchR, l = keys.left || touchL; return r && !l ? 1 : l && !r ? -1 : 0; };
@@ -103,8 +151,11 @@ const laneZ = (i) => ((laneCount() - 1) / 2 - i) * LANE_W;
 
 function aiSpec(id) { const base = VEHICLES[0], v = vehicleById(id); return { ...base, look: v.look, crane: null, blade: false }; }
 
-function startLevel(level, race = null) {
-  const spec = withUpgrades(vehicleById(save.car), save.upgrades?.[save.car]);
+function startLevel(level, race = null, opts = {}) {
+  if (!race && !opts.hint && !freeLives() && livesNow() <= 0) { noLivesMenu(() => startLevel(level, race, opts)); return; }
+  // a truck tried from the shop (rewarded video) drives the next level or race, once
+  const carId = trialCar || save.car; if (trialCar) trialCar = null;
+  const spec = withUpgrades(vehicleById(carId), save.upgrades?.[carId]);
   const theme = WORLDS[level.world].theme;
   R.buildLevel(level, theme, race ? { lanes: laneCount(), laneW: LANE_W } : {});
   const z0 = race ? laneZ(0) : 0;
@@ -113,7 +164,7 @@ function startLevel(level, race = null) {
   const lane = R.attachSim(sim, { z: z0 });
   const player = R.addCar(sim, spec, race ? { label: 'You', color: '#ffe14d', z: z0 } : {});
   R.focusZ = z0;
-  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makeBot(1, 11), t0: ui.t, continued: false };
+  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makeBot(1, 11), t0: ui.t, continued: false, hint: !!opts.hint };
   if (race) {
     race.rivals.forEach((rv, i) => {
       const s2 = aiSpec(rv.car);
@@ -124,9 +175,24 @@ function startLevel(level, race = null) {
       game.racers.push({ ...rv, r, lane: ln, car, z, bot: makeBot(rv.skill, i + 3), spec: s2, finish: null });
     });
   }
+  if (!race && !testRun && !save.autoplay && !opts.hint && !save.tut.drive) game.tut = 'drive';
+  if (opts.hint) tip(game, 'Hint: watch how it is done!', 3);
   R.snapCam = true;
   showHud();
   Audio.engineStart();
+}
+// tutorial: hold ▶ to drive (first level), then a one-off tip for braking and for tilting in the air
+const tip = (g, text, sec = 3) => { g.tip = { text, t0: ui.t, sec }; ui.request(sec + 0.5); };
+function tutorialTick(g, dt, input) {
+  if (save.autoplay || testRun || g.hint || g.race) return;
+  if (g.tut === 'drive') {
+    if (input > 0) g.tutT = (g.tutT || 0) + dt;
+    if (g.tutT > 0.8) { g.tut = null; save.tut.drive = true; persist(); tip(g, 'Nice! Hold ◀ to brake and reverse', 2.6); }
+  }
+  if (!save.tut.tilt) {
+    g.airT = g.sim.airborne ? (g.airT || 0) + dt : 0;
+    if (g.airT > 0.3) { save.tut.tilt = true; persist(); tip(g, 'In the air: ▶ tilts back, ◀ tilts forward', 3.2); }
+  }
 }
 
 let hudT = 0;
@@ -144,7 +210,8 @@ function tick(dt) {
   // keep counting below zero so the lights and GO! fade out, then stop
   if (g.countdown > -1) { g.countdown = Math.max(-1, g.countdown - dt); ui.request(0.1); }
   g.acc += Math.min(dt, 0.1);
-  const t = save.autoplay || testRun ? g.autoBot(g.sim) : throttleInput();
+  const t = save.autoplay || testRun || g.hint ? g.autoBot(g.sim) : throttleInput();
+  tutorialTick(g, dt, t);
   while (g.acc >= DT) {
     g.acc -= DT;
     g.sim.step(t);
@@ -426,8 +493,10 @@ function drawHome(u) {
   topbar(u);
   // dev chips under the gem counter (right)
   const tw0 = u.measure('TEST', 15) + 22, chipY = topY(u) + pillH() + 10;
-  chip(u, 'test', u.w - PAD - tw0, chipY, 'TEST', true, () => testMenu(), 'orange');
-  chip(u, 'auto', u.w - PAD - 8 - tw0 - (u.measure('AUTO', 15) + 22), chipY, 'AUTO', !!save.autoplay, () => { save.autoplay = !save.autoplay; persist(); u.request(); });
+  if (dev()) {
+    chip(u, 'test', u.w - PAD - tw0, chipY, 'TEST', true, () => testMenu(), 'orange');
+    chip(u, 'auto', u.w - PAD - 8 - tw0 - (u.measure('AUTO', 15) + 22), chipY, 'AUTO', !!save.autoplay, () => { save.autoplay = !save.autoplay; persist(); u.request(); });
+  }
   // TikTok capability buttons (top-left row): Add to Home Screen, Profile sidebar, Share
   const bs = sh ? 40 : 44; let bx = PAD; const by0 = topY(u) + 3;   // +3: white ring
   roundBtn(u, 'tt_add', bx, by0, bs, 'addhome', 'Add', 'orange', ttButtons.addhome, missionReady('shortcut')); bx += bs + 16;
@@ -468,12 +537,14 @@ function drawHome(u) {
     u.rr(u.w / 2 - sw / 2, sy, sw, sh2, 14); c.fillStyle = 'rgba(10,30,80,0.45)'; c.fill();
     u.text(w.sub, u.w / 2, sy + sh2 / 2 + 1, 17, '#fff', { maxW: sw - 20 });
   }
-  const wc = `${wi + 1} / ${WORLDS.length}` + (w.starsReq ? `   ★ ${w.starsReq}` : '');
+  const nLv = WORLDS.reduce((a, x) => a + x.levels.length, 0);
+  const wc = `World ${wi + 1} / ${WORLDS.length} · ${nLv} levels` + (w.starsReq ? `   ★ ${w.starsReq}` : '');
   u.text(wc, u.w / 2, countY, 17);
   const bob = Math.sin(u.t * 3.9) * 3;
   if (unlocked) {
     const pw2 = 180;
     u.button('play', u.w / 2 - pw2 / 2, playY - playH + bob, pw2, playH, { label: 'Play', icon: 'play', size: 32, scale: u.pop(0.1, 0.4), onTap: tap(() => showLevels(wi)) });
+    livesPill(u, u.w / 2 + pw2 / 2 + 8, playY - playH / 2 - 17 + bob, 34, false, true);
   } else {
     const msg = worldDone(wi - 1) < 5 ? `Clear 5 in ${WORLDS[wi - 1].name}` : `Need ${starsNeeded(wi)} more stars`;
     const pw2 = Math.min(u.w - 60, u.measure(msg, 17) + 70);
@@ -496,11 +567,13 @@ function drawLevels(u, wi, firstOpen) {
   const g = c.createLinearGradient(0, 0, 0, u.h); g.addColorStop(0, 'rgba(29,140,255,0.55)'); g.addColorStop(1, 'rgba(10,60,160,0.8)');
   c.fillStyle = g; c.fillRect(0, 0, u.w, u.h);
   u.button('back', PAD, topY(u), 50, 50, { color: 'gray', icon: 'left', iconSize: 28, radius: 14, onTap: tap(showWorlds) });
-  u.text(w.name, PAD + 50 + GAP, topY(u) + 26, 28, '#fff', { align: 'left', maxW: u.w - 240 });
   const stars = w.levels.reduce((a, l) => a + (lvlSave(l)?.stars || 0), 0);
   const label = `${stars}/${w.levels.length * 3}`, pw = u.measure(label, 17) + 50;
   u.pill(u.w - PAD - pw, topY(u) + 8, 34, { icon: 'star', text: label }, { minW: pw });
-  chip(u, 'auto', u.w - PAD - 10 - pw - (u.measure('AUTO', 15) + 22), topY(u) + 10, 'AUTO', !!save.autoplay, () => { save.autoplay = !save.autoplay; persist(); u.request(); });
+  let rx = u.w - PAD - pw - 10;
+  rx -= livesPill(u, rx, topY(u) + 8, 34, true) + 10;
+  if (dev()) { const aw = u.measure('AUTO', 15) + 22; rx -= aw; chip(u, 'auto', rx, topY(u) + 10, 'AUTO', !!save.autoplay, () => { save.autoplay = !save.autoplay; persist(); u.request(); }); rx -= 10; }
+  u.text(w.name, PAD + 50 + GAP, topY(u) + 26, 28, '#fff', { align: 'left', maxW: rx - (PAD + 50 + GAP) });
   const top = topY(u) + 50 + GAP, rowH = 70, gap = GAP, lw = Math.min(u.w - PAD * 2, 460), lx = (u.w - lw) / 2;
   const size = w.levels.length * (rowH + gap) + 30;
   u.scroll('lv', 0, top, u.w, u.h - top, size, () => {
@@ -532,7 +605,7 @@ function drawHud(u) {
   const l = g.level, w = WORLDS[l.world], T = u.safeTop, B = u.safeBottom, c = u.ctx;
   // pause + auto
   u.button('pause', PAD, topY(u), 50, 50, { icon: 'pause', iconSize: 28, radius: 14, onTap: tap(pauseMenu) });
-  chip(u, 'auto', PAD + 2, topY(u) + 50 + 10, 'AUTO', !!(save.autoplay || testRun), () => { save.autoplay = !save.autoplay; persist(); u.request(); });
+  if (dev() || testRun || g.hint) chip(u, 'auto', PAD + 2, topY(u) + 50 + 10, g.hint ? 'HINT' : 'AUTO', !!(save.autoplay || testRun || g.hint), () => { if (g.hint) return; save.autoplay = !save.autoplay; persist(); u.request(); });
   const name = g.race ? (g.race.random ? `Random · ${l.name}` : `${g.race.cup.name} · Race ${g.race.idx + 1}/3`) : `${w.name} ${l.index + 1}. ${l.name}`;
   u.text(name, u.w / 2, topY(u) + 10, 15, '#fff', { maxW: u.w - 180 });
   u.text(fmt(g.sim.state === 'win' ? g.sim.finishTime : g.sim.time), u.w / 2, topY(u) + 38, 30);
@@ -570,6 +643,24 @@ function drawHud(u) {
     u.icon(ic, x + cs * 0.06, cy + cs * 0.06, cs * 0.88, '#fff', false);
     c.restore();
     u.hit(side === 'L' ? 0 : half, u.h * 0.45, half, u.h * 0.55, { id, hold: (v) => { if (side === 'L') touchL = v; else touchR = v; Audio.unlock(); u.request(); } });
+  }
+  // tutorial: hand on the ▶ control, then short tips
+  if (g.tut === 'drive') {
+    const x = u.w * 0.96 - cs, k = 0.5 + 0.5 * Math.sin(u.t * 5);
+    c.save(); c.globalAlpha = 0.35 + 0.35 * k; c.beginPath(); c.arc(x + cs / 2, cy + cs / 2, cs * (0.55 + 0.08 * k), 0, Math.PI * 2); c.lineWidth = 6; c.strokeStyle = GOLD; c.stroke(); c.restore();
+    const hs = cs * 0.62, hx = x + cs / 2 - hs * 0.4, hy = cy + cs * 0.45 + k * 10;
+    u.icon('hand', hx, hy, hs, '#fff');
+    const txt = 'Hold to drive!', bw = u.measure(txt, 22) + 36, bx = Math.min(u.w - PAD - bw, x + cs / 2 - bw / 2), byy = cy - 58;
+    u.rr(bx, byy, bw, 46, 16); c.fillStyle = 'rgba(10,30,80,0.8)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+    u.text(txt, bx + bw / 2, byy + 24, 22, GOLD);
+    u.request(0.1);
+  }
+  if (g.tip && u.t - g.tip.t0 < g.tip.sec) {
+    const a = Math.min(1, (u.t - g.tip.t0) / 0.2, (g.tip.sec - (u.t - g.tip.t0)) / 0.3), ty = u.h * 0.3, tw3 = Math.min(u.w - PAD * 2, u.measure(g.tip.text, 18) + 40);
+    c.save(); c.globalAlpha = Math.max(0, a);
+    u.rr(u.w / 2 - tw3 / 2, ty - 24, tw3, 48, 16); c.fillStyle = 'rgba(10,30,80,0.8)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+    u.text(g.tip.text, u.w / 2, ty + 1, 18, '#fff', { maxW: tw3 - 24 });
+    c.restore(); u.request(0.1);
   }
   // race start lights + countdown, or level banner
   if (g.race) {
@@ -615,13 +706,16 @@ const QUIPS = {
 };
 const STICKERS = { roof: 'stars', nose: 'bang', backflip: 'spin', crash: 'bang', splash: 'bubbles', splashSpin: 'bubbles', splashRoof: 'bubbles', splashShort: 'bubbles', lost: 'bang' };
 
+const failCount = {};   // this session: crashes per level (the Hint offer appears after 2)
 function onFail() {
-  Audio.engineStop(); Audio.fail();
   const g = game, l = g.level;
+  if (g.hint) { R.popText('Again!', g.sim.x, 3, g.z, '#fff'); setTimeout(() => { if (game === g) startLevel(l, null, { hint: true }); }, 600); return; }
+  Audio.engineStop(); Audio.fail();
+  loseLife(); failCount[l.id] = (failCount[l.id] || 0) + 1;
   const snap = g.snap || R.snapshotCar(g.sim, g.z);
   const pose = g.sim.failPose || g.sim.reason || 'crash';
   const q = QUIPS[pose] || QUIPS.crash;
-  const st = { snap, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l };
+  const st = { snap, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l, lives: livesNow(), hint: failCount[l.id] >= 2 && !save.autoplay };
   ui.show('fail', (u) => drawFail(u, st));
 }
 function drawSticker(u, kind, x, y, w, h, t) {
@@ -651,10 +745,19 @@ function drawFail(u, st) {
   const c = u.ctx, T = u.safeTop, B = u.safeBottom, t = u.st;
   c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
   const canContinue = !st.continued && game && !game.race;
-  const barH = short() ? 72 : 82, contH = canContinue ? 64 : 0;
-  const avail = u.h - T - B - barH - contH - 90;
+  const barH = short() ? 72 : 82, contH = canContinue || st.hint ? 64 : 0, heartsH = 44;
+  const avail = u.h - T - B - barH - contH - 90 - heartsH;
   const pw = Math.min(u.w * 0.78, 360, avail / 1.33), ph = pw * 1.05, frameH = ph + 16 + 64;
-  const px = u.w / 2 - pw / 2, py = T + 30 + (avail - frameH) / 2 + 10;
+  const px = u.w / 2 - pw / 2, py = T + 30 + heartsH + (avail - frameH) / 2 + 10;
+  // lives left (the one just lost pops out)
+  if (!freeLives()) {
+    const hy = topY(u) + 6, hs = 30;
+    for (let i = 0; i < LIVES_MAX; i++) {
+      const hx = u.w / 2 + (i - (LIVES_MAX - 1) / 2) * (hs + 8) - hs / 2, lost = i === st.lives, k = lost ? Math.min(1, t / 0.6) : 0;
+      c.save(); c.globalAlpha = lost ? 1 - k * 0.75 : 1; c.translate(hx + hs / 2, hy + hs / 2 - k * 14); c.scale(1 + k * 0.4, 1 + k * 0.4);
+      u.icon('heart', -hs / 2, -hs / 2, hs, i < st.lives ? '#ff4d6a' : 'rgba(255,255,255,0.3)'); c.restore();
+    }
+  }
   // drop-in animation
   const k = u.slide(0, 0.55), drop = (1 - k) * -u.h * 0.6, rot = st.tilt + (1 - k) * 0.4;
   c.save(); c.translate(u.w / 2, py + frameH / 2 + drop); c.rotate(rot);
@@ -676,9 +779,13 @@ function drawFail(u, st) {
   c.restore();
   // buttons
   const by = u.h - B - 24 - barH;
-  if (canContinue) {
-    const cw = Math.min(u.w - 60, 280);
-    u.button('continue', u.w / 2 - cw / 2, by - 66, cw, 52, { color: 'green', icon: 'video', label: 'Continue here', size: 20, scale: u.pop(0.6, 0.4), onTap: tap(() => watchAd(() => continueAfterCrash(st))) });
+  // rewarded offers: continue from the checkpoint, and after 2 crashes on this level a hint (the bot shows the way)
+  const offers = [];
+  if (canContinue) offers.push({ id: 'continue', color: 'green', parts: [{ icon: 'video', size: 22 }, 'Continue'], fn: () => continueAfterCrash(st) });
+  if (st.hint) offers.push({ id: 'hint', color: 'purple', parts: [{ icon: 'video', size: 22 }, 'Hint', { icon: 'bulb', size: 22, color: GOLD }], fn: () => startLevel(st.l, null, { hint: true }) });
+  if (offers.length) {
+    const ow = Math.min(u.w - PAD * 2, offers.length > 1 ? 360 : 280), bw = (ow - GAP * (offers.length - 1)) / offers.length;
+    offers.forEach((o, i) => u.button(o.id, u.w / 2 - ow / 2 + i * (bw + GAP), by - 66, bw, 52, { color: o.color, parts: o.parts, size: 20, scale: u.pop(0.6, 0.4), onTap: tap(() => watchAd(o.fn)) }));
   }
   barButtons(u, [
     { id: 'home', label: 'Home', icon: 'home', onTap: () => adBreak(showWorlds) },
@@ -690,7 +797,7 @@ function drawFail(u, st) {
 // Rewarded "continue": flip the truck back on its wheels at the last checkpoint and keep going.
 function continueAfterCrash(st) {
   const g = game; if (!g) return;
-  st.continued = true;
+  st.continued = true; addLives(1);   // the crash did not end the run after all
   const back = g.sim.reason === 'splash' ? 9 : 5;
   const cp = [...g.me.safe].reverse().find((x) => x <= g.sim.x - back) ?? g.sim.startX;
   respawnAt(g.me, cp);
@@ -703,7 +810,8 @@ function onWin() {
   Audio.engineStop();
   const g = game, l = g.level, sim = g.sim;
   const t = sim.finishTime, prev = lvlSave(l), allGems = sim.gemsTaken >= sim.gems.length;
-  const stars = 1 + (allGems ? 1 : 0) + (t <= par(l) ? 1 : 0);
+  // a hint run (the bot drove) clears the level with 1 star; drive it yourself for more
+  const stars = g.hint ? 1 : 1 + (allGems ? 1 : 0) + (t <= par(l) ? 1 : 0);
   let earn = sim.gemsTaken * 5;
   if (!prev || prev.time == null) earn += 20 + l.world * 5;   // first clear: coins to buy trucks
   if (stars === 3 && (!prev || (prev.stars || 0) < 3)) earn += 30;
@@ -712,7 +820,7 @@ function onWin() {
   const newBest = !prev || prev.time == null || t < prev.time;
   persist();
   const next = WORLDS[l.world].levels[l.index + 1];
-  const st = { l, t, best, newBest, stars, earn, gems: `${sim.gemsTaken}/${sim.gems.length}`, next, mult: 1 };
+  const st = { l, t, best, newBest, stars, earn, gems: `${sim.gemsTaken}/${sim.gems.length}`, next, mult: 1, hint: g.hint };
   [0, 1, 2].forEach((i) => { if (i < stars) setTimeout(() => Audio.star(i), 300 + i * 250); });
   ui.show('win', (u) => drawWin(u, st), { anim: 2.6 });
   setTimeout(() => earnGems(earn, st.earnPos), 1000);
@@ -734,7 +842,7 @@ function drawWin(u, st) {
     u.text(a, px + 24, ry, 20, '#fff', { align: 'left' }); u.text(b, px + pw - 24, ry, 20, b.includes('NEW') ? GOLD : '#fff', { align: 'right' });
     c.fillStyle = 'rgba(255,255,255,0.15)'; c.fillRect(px + 20, ry + 18, pw - 40, 2);
   });
-  u.text(`★ finish · ★ all gems · ★ under ${fmt(par(st.l))}`, u.w / 2, py + 248, 13, '#fff', { maxW: pw - 30 });
+  u.text(st.hint ? 'Hint used: drive it yourself for 3 stars!' : `★ finish · ★ all gems · ★ under ${fmt(par(st.l))}`, u.w / 2, py + 248, st.hint ? 15 : 13, st.hint ? '#ffe9a8' : '#fff', { maxW: pw - 30 });
   const shown = Math.round(st.earn * st.mult * Math.min(1, Math.max(0, (u.st - 1) / 0.9)));
   u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 30 }], u.w / 2, py + 290, { size: 30, gap: 10 });
   st.earnPos = { x: u.w / 2, y: py + 290 };
@@ -1061,7 +1169,12 @@ function drawShop(u) {
   if (save.car === cur.id) u.button('sel', bx, btnY, bw, bh, { color: 'gray', label: 'Selected', disabled: true });
   else if (own) u.button('use', bx, btnY, bw, bh, { color: 'blue', label: 'Use truck', onTap: tap(() => { save.car = cur.id; persist(); u.request(); }) });
   else {
-    u.button('buy', bx, btnY, bw, bh, { color: canAfford(cur.price) ? 'orange' : 'gray', parts: ['Buy', { gem: true, size: 22 }, String(cur.price)], onTap: () => doBuy(cur.id) });
+    // not owned: try it for one level with a video, or buy it
+    const tw = 116, bw2 = Math.min(200, u.w - PAD * 2 - tw - GAP), x0 = u.w / 2 - (tw + GAP + bw2) / 2;
+    u.button('try', x0, btnY, tw, bh, { color: 'purple', parts: [{ icon: 'video', size: 22 }, 'Try'], size: 20, onTap: tap(() => watchAd(() => {
+      trialCar = cur.id; Audio.win(); showLevels(save.world); ui.toast(`${cur.name}: free for your next level!`, '#b47aff');
+    })) });
+    u.button('buy', x0 + tw + GAP, btnY, bw2, bh, { color: canAfford(cur.price) ? 'orange' : 'gray', parts: ['Buy', { gem: true, size: 22 }, String(cur.price)], onTap: () => doBuy(cur.id) });
   }
   navbar(u, 'shop');
   return made || u.st < 0.8;
@@ -1090,6 +1203,7 @@ function showSettings() {
   ui.show('settings', drawSettings);
 }
 const settingsDirty = () => SETTING_KEYS.some((k) => setDraft[k] !== !!save[k]);
+let devTaps = 0, devTapT = -9;
 function drawSettings(u) {
   const c = u.ctx, T = u.safeTop, B = u.safeBottom, sh = short();
   topbar(u);
@@ -1098,7 +1212,7 @@ function drawSettings(u) {
   u.panel(px, py, pw, ph, { ribbon: 'Settings' });
   const footH = sh ? 56 : 64, bodyY = py + 36, bodyH = ph - 36 - footH - 8;
   const rowH = sh ? 44 : 52;
-  const rows = [['sound', 'sound', 'Sound'], ['shadows', 'settings', 'Shadows (quality)'], null, ['autoplay', 'play', 'Autoplay (bot drives)'], ['infinite', 'gem', 'Infinite gems (dev)'], ['unlockAll', 'lock', 'Unlock all levels']];
+  const rows = [['sound', 'sound', 'Sound'], ['shadows', 'settings', 'Shadows (quality)'], ...(dev() ? [null, ['autoplay', 'play', 'Autoplay (bot drives)'], ['infinite', 'gem', 'Infinite gems (dev)'], ['unlockAll', 'lock', 'Unlock all levels']] : [])];
   const size = rows.length * (rowH + 6) + 160;
   u.scroll('set', px + 10, bodyY, pw - 20, bodyH, size, () => {
     let y = bodyY + 4;
@@ -1122,7 +1236,14 @@ function drawSettings(u) {
     u.text('Controls: ◀ ▶ on screen, or Arrow keys / A D.', u.w / 2, y + 8, 12, '#fff', { maxW: pw - 40 });
     u.text('In the air, ▶ tilts back and ◀ tilts forward.', u.w / 2, y + 26, 12, '#fff', { maxW: pw - 40 });
     u.text(`Levels cleared: ${totalDone()}/${WORLDS.reduce((a, w) => a + w.levels.length, 0)} · Race tracks: ${RACE_TRACKS.length}`, u.w / 2, y + 44, 12, '#fff', { maxW: pw - 40 });
-    u.text(`Quality tier ${R.quality} · ${P.kind}`, u.w / 2, y + 62, 11, 'rgba(255,255,255,0.7)', { outline: false });
+    u.text(`Crane Rush v${VERSION} · quality ${R.quality} · ${P.kind}${dev() ? ' · DEV' : ''}`, u.w / 2, y + 62, 11, 'rgba(255,255,255,0.7)', { outline: false });
+    u.hit(px + 16, y + 50, pw - 32, 26, { id: 'devtap', onTap: () => {
+      devTaps = u.t - devTapT < 1.5 ? devTaps + 1 : 1; devTapT = u.t;
+      if (devTaps < 5) return;
+      devTaps = 0; save.dev = !save.dev;
+      if (!save.dev) { save.autoplay = save.infinite = save.unlockAll = false; for (const k of ['autoplay', 'infinite', 'unlockAll']) setDraft[k] = false; }
+      persist(); u.toast(save.dev ? 'Developer tools on' : 'Developer tools off', '#ff8a1f'); u.request();
+    } });
   });
   const fy = py + ph - footH, bw = (pw - 52) / 2;
   c.fillStyle = 'rgba(255,255,255,0.18)'; c.fillRect(px + 16, fy - 4, pw - 32, 2);

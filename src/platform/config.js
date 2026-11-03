@@ -9,9 +9,9 @@ export const TIKTOK = {
 
 // Interstitial pacing (TikTok also enforces its own minimum interval: error 11004).
 export const AD_RULES = {
-  firstInterstitialAfterSec: 60,   // never in the first minute of a session
-  minInterstitialGapSec: 75,       // at least this long between two interstitials
-  levelsBetweenInterstitials: 2,   // show at most every 2nd level end
+  firstInterstitialAfterSec: 45,   // never in the first 45 s of a session
+  minInterstitialGapSec: 45,       // at least this long between two interstitials (levels last ~10-15 s)
+  levelsBetweenInterstitials: 1,   // any level end may show one (the time gap does the pacing)
 };
 
 // Rewards (hard currency = gems). Shortcut and sidebar rewards follow TikTok's guidance:

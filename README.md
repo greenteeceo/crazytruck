@@ -10,7 +10,11 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 - **Stars**: finish, collect every gem, beat the par time
 - Fail screen with a close-up crash photo (roof / nose-dive / belly flop stickers and captions), level-complete and race-result animations, synthesized sound
 
-- **Test tools**: AUTO chip on the home screen and in the game HUD (bot drives), TEST button on the home screen runs automated sessions (tour of all 20 worlds, 20 random levels, every level of a world, 10 random races with 3–6 lanes) and shows a pass/fail report; Unlock all levels and Infinite gems (dev) in Settings
+- **Lives**: 5 hearts. A crash in a level costs one (given back if you continue from the checkpoint), one comes back every 8 minutes, a rewarded video refills all 5. Races never cost lives, so the out-of-lives panel offers a race meanwhile
+- **Hint**: after 2 crashes on the same level the fail screen offers a Hint video: the bot drives the level for you and it counts as cleared with 1 star (drive it yourself for 3)
+- **Try a truck**: trucks you do not own have a Try button in the shop (rewarded video) for one free level
+- **Tutorial**: the first level points a hand at ▶ ("Hold to drive!"), then tips for braking and for tilting in the air
+- **Developer tools** (hidden in release): tap the version line at the bottom of Settings 5 times. Shows the AUTO chip (bot drives), TEST button (tour of all 20 worlds, 20 random levels, every level of a world, 10 random races with 3–6 lanes, with a pass/fail report), Unlock all levels and Infinite gems (also infinite lives)
 
 ## Controls
 
@@ -20,10 +24,10 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 
 ## Download
 
-Android release build: [`release/CraneRush-2.9.apk`](release/CraneRush-2.9.apk) (signed, minSdk 23, targetSdk 36).
-A Play Store bundle is at [`release/CraneRush-2.9.aab`](release/CraneRush-2.9.aab).
+Android release build: [`release/CraneRush-3.0.apk`](release/CraneRush-3.0.apk) (signed, minSdk 23, targetSdk 36).
+A Play Store bundle is at [`release/CraneRush-3.0.aab`](release/CraneRush-3.0.aab).
 
-TikTok Mini Games package: [`release/CraneRush-tiktok-2.9.zip`](release/CraneRush-tiktok-2.9.zip) (native runtime: `game.js`, `game.json`, `project.config.json`, `fredoka.ttf`; about 1 MB, limit 4 MB for the main package).
+TikTok Mini Games package: [`release/CraneRush-tiktok-3.0.zip`](release/CraneRush-tiktok-3.0.zip) (native runtime: `game.js`, `game.json`, `project.config.json`, `fredoka.ttf`; about 1 MB, limit 4 MB for the main package).
 
 ## TikTok Mini Games
 
@@ -53,8 +57,8 @@ Rewards are checked at start-up and every time the game comes back to the foregr
 
 | Type | Where | Rule |
 | --- | --- | --- |
-| Rewarded | Win screen: x3 gems · Fail screen: continue from the last checkpoint · Race results: x2 gems · Shop: +150 gems | Reward only when the video was watched to the end (`isEnded`) |
-| Interstitial | When leaving a win / fail / race result screen | Not in the first 60 s, at least 75 s apart, at most every 2nd level end, never during play, AUTO or TEST |
+| Rewarded | Win screen: x3 gems · Fail screen: continue from the last checkpoint, Hint (after 2 crashes) · Out of lives: refill 5 hearts · Race results: x2 gems · Shop: +150 gems, Try a truck | Reward only when the video was watched to the end (`isEnded`) |
+| Interstitial | When leaving a win / fail / race result screen | Not in the first 45 s, at least 45 s apart (levels last 10–15 s, so about one every 3–4 levels), never during play, AUTO or TEST |
 
 Pacing and reward amounts live in `src/platform/config.js` (`AD_RULES`, `REWARDS`).
 
@@ -66,7 +70,7 @@ Pacing and reward amounts live in `src/platform/config.js` (`AD_RULES`, `REWARDS
 
 ## Google Play checklist
 
-- Upload `release/CraneRush-2.9.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
+- Upload `release/CraneRush-3.0.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
 - Enrol in Play App Signing; the local keystore then acts as the upload key. Keep `android/cranerush-release.keystore` + `keystore.properties` private.
 - Store assets in `store/`: 512×512 icon, 1024×500 feature graphic. Add at least 2 phone screenshots (1080×1920+).
 - Fill in the Data safety form (the app collects nothing; progress is stored on device), content rating questionnaire (IARC), and a privacy policy URL.

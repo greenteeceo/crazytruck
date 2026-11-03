@@ -140,7 +140,7 @@ export class Renderer {
     this.canvas = canvas;
     const dpr = P.info.dpr || 1;
     // MSAA is expensive at high DPR and barely visible there
-    this.r = new THREE.WebGLRenderer({ canvas, antialias: dpr < 2, powerPreference: 'high-performance', stencil: false });
+    this.r = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', stencil: false });
     this.quality = 0;
     this.applyPixelRatio();
     this.r.outputColorSpace = THREE.SRGBColorSpace;
@@ -194,7 +194,8 @@ export class Renderer {
     return c;
   }
 
-  // Quality tiers. 0 = sharp (DPR up to 2, 2048 soft shadows) ... 3 = lowest (DPR 1, no shadows).
+  // Quality tiers. 0 = sharp (DPR up to 2, 2048 soft shadows), 1 = 1024 shadows, 2 = no shadows,
+  // 3 = no shadows and DPR 1.5. Shadows go first: a lower resolution is what makes a phone screen look broken.
   // Starts from the saved tier and steps down automatically when the frame rate stays low.
   setQuality(q) {
     this.quality = Math.max(0, Math.min(3, q | 0));
@@ -203,23 +204,25 @@ export class Renderer {
     this.r.shadowMap.type = this.quality === 0 ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.shadowSize = sm;
     if (this.sun && this.sun.shadow.mapSize.x !== sm) { this.sun.shadow.mapSize.set(sm, sm); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
-    this.r.shadowMap.enabled = this.shadowsOn !== false && this.quality < 3;
+    this.r.shadowMap.enabled = this.shadowsOn !== false && this.quality < 2;
     if (this.sun) this.sun.castShadow = this.r.shadowMap.enabled;
   }
 
   applyPixelRatio() {
     const dpr = P.info.dpr || 1;
-    const cap = [2, 1.6, 1.25, 1][this.quality ?? 0];
+    const cap = [2, 2, 2, 1.5][this.quality ?? 0];
     this.r.setPixelRatio(Math.max(1, Math.min(dpr, cap)));
   }
 
-  // Called every frame while playing: drops a quality tier after ~2 s under 45 fps.
+  // Called every frame while playing: drops a quality tier after 4 s under 40 fps
+  // (the first 3 s of a level are ignored: shader compiles and loading hitches are not slowness).
   watchFps(dt) {
-    if (this.mode !== 'game') { this.fpsAcc = 0; this.fpsN = 0; return; }
+    if (this.mode !== 'game') { this.fpsAcc = 0; this.fpsN = 0; this.fpsWarm = 0; return; }
+    this.fpsWarm = (this.fpsWarm || 0) + dt; if (this.fpsWarm < 3) return;
     this.fpsAcc = (this.fpsAcc || 0) + dt; this.fpsN = (this.fpsN || 0) + 1;
-    if (this.fpsAcc < 2) return;
+    if (this.fpsAcc < 4) return;
     const fps = this.fpsN / this.fpsAcc; this.fps = fps; this.fpsAcc = 0; this.fpsN = 0;
-    if (fps < 45 && this.quality < 3 && this.autoQuality !== false) { this.setQuality(this.quality + 1); this.onQuality?.(this.quality, fps); }
+    if (fps < 40 && this.quality < 3 && this.autoQuality !== false) { this.setQuality(this.quality + 1); this.onQuality?.(this.quality, fps); }
   }
 
   setShadows(on) { this.shadowsOn = on; this.setQuality(this.quality ?? 0); }
@@ -283,7 +286,7 @@ export class Renderer {
     const Dd = this.depth = lanes > 1 ? lanes * laneW + 0.8 : D;
     this.laneCount = lanes; this.laneW = laneW;
     const s = this.scene = this.newScene(theme);
-    this.mode = 'game';
+    this.mode = 'game'; this.fpsWarm = 0; this.fpsAcc = 0; this.fpsN = 0;
     this.theme = theme;
     const pieces = level.pieces;
     let minX = 0, maxX = 0;
