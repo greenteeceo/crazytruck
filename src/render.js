@@ -618,6 +618,28 @@ export class Renderer {
     return this.thumbR.domElement.toDataURL('image/png');
   }
 
+  // Dev helper: 4 orthographic-ish views of a truck (3/4 front, side, 3/4 rear, front) on one square canvas.
+  views(spec, size = 1024) {
+    const c = document.createElement('canvas'); c.width = size; c.height = size;
+    const r = new THREE.WebGLRenderer({ canvas: c, antialias: true, preserveDrawingBuffer: true });
+    r.outputColorSpace = THREE.SRGBColorSpace; r.setSize(size, size, false); r.setClearColor(0xffffff, 1); r.setScissorTest(true);
+    const s = new THREE.Scene();
+    s.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab8, 1.4));
+    const l = new THREE.DirectionalLight(0xffffff, 1.8); l.position.set(-4, 8, 8); s.add(l);
+    const tg = new THREE.Group(); s.add(tg);
+    tg.add(buildTruck(spec).group);
+    spec.wheelX.forEach((wx) => { const wv = buildWheel(spec.wheelR, spec.look); wv.position.set(wx, spec.wheelY, 0); tg.add(wv); });
+    if (spec.crane) { const cr = spec.crane; const y = cr.pivot[1] + Math.sin(cr.angle) * cr.length; const x = cr.pivot[0] + Math.cos(cr.angle) * cr.length; for (let i = 0; i < cr.links; i++) { const lk = buildHookLink(i === cr.links - 1); lk.position.set(x, y - cr.linkLen * (i + 0.5), 0); tg.add(lk); } }
+    const cams = [[6, 3.4, 7.5], [0.4, 1.2, 10.5], [-6, 3.4, 7.5], [10.5, 1.4, 0.3]];
+    const h = size / 2;
+    cams.forEach((p, i) => {
+      const cam = new THREE.PerspectiveCamera(28, 1, 0.1, 100); cam.position.set(...p); cam.lookAt(0.1, 0.8, 0);
+      const x = (i % 2) * h, y = i < 2 ? h : 0;
+      r.setViewport(x, y, h, h); r.setScissor(x, y, h, h); r.render(s, cam);
+    });
+    return c.toDataURL('image/png');
+  }
+
   dispose() {
     this.cars = []; this.particles = []; this.finish = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.punch = 0;
     this.clouds = []; this.dioramaRoot = null; this.menuSpin = []; this.garage = false;

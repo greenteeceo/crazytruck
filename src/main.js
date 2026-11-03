@@ -647,6 +647,6 @@ function loop(now) {
 }
 
 // expose a tiny debug/test hook
-window.__crane = { icon: (n) => R.thumbnail(VEHICLES[0], n, n), get game() { return game; }, save: () => save, actions, startLevel: (w, l) => startLevel(WORLDS[w].levels[l]), keys };
+window.__crane = { icon: (n) => R.thumbnail(VEHICLES[0], n, n), views: (id) => R.views(vehicleById(id || 'crane')), get game() { return game; }, save: () => save, actions, startLevel: (w, l) => startLevel(WORLDS[w].levels[l]), keys };
 
 document.fonts?.load('700 20px Fredoka').finally(() => { showWorlds(); requestAnimationFrame(loop); $('#boot')?.remove(); });

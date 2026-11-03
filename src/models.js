@@ -77,7 +77,7 @@ function makeWheelGeo(r) {
     // rim body: 14-sided drum
     const drum = new THREE.CylinderGeometry(r * 0.8, r * 0.8, W, 14); drum.rotateX(Math.PI / 2); drum.translate(0, 0, zc); dark.push(drum);
     // knobby treads: two staggered rows of cubes
-    const n = 14, cube = r * 0.21;
+    const n = 14, cube = r * 0.24;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2, even = i % 2 === 0;
       const rowZ = even ? [-W / 2 + cube * 0.55, 0] : [0, W / 2 - cube * 0.55];
@@ -128,9 +128,10 @@ function cab(g, L, x0, x1, top, hoodX) {
 
 function outriggers(g, L) {
   for (const z of [-0.74, 0.74]) {
-    box(g, -1.78, -0.42, z - 0.1, -1.56, 0.5, z + 0.1, L.body);
-    box(g, -1.8, 0.42, z - 0.13, -1.54, 0.56, z + 0.13, L.frameDark);
-    box(g, -1.8, -0.5, z - 0.13, -1.54, -0.38, z + 0.13, L.frameDark);
+    box(g, -1.76, -0.3, z - 0.11, -1.54, 0.62, z + 0.11, L.body);          // orange post
+    box(g, -1.8, 0.62, z - 0.15, -1.5, 0.76, z + 0.15, 0x8d91a0);          // cap
+    box(g, -1.8, -0.44, z - 0.15, -1.5, -0.3, z + 0.15, 0x8d91a0);         // foot pad
+    box(g, -1.72, -0.3, z - 0.06, -1.58, -0.2, z + 0.06, 0x3c3d44);
   }
 }
 
@@ -148,33 +149,57 @@ export function buildTruck(spec) {
   frame(g, L);
   switch (L.type) {
     case 'crane': {
-      cab(g, L, 0.05, 1.12, 1.0, 1.82);
-      // fenders
-      zbox(g, 0.5, 0.0, 0.62, 1.7, 0.12, 0.8, L.bodyDark);
-      cbox(g, 0.62, 1.12, 0, 0.42, 0.14, 0.46, 0x4a4b52); cbox(g, 0.62, 1.2, 0, 0.3, 0.06, 0.34, 0x8d91a0); // roof block
-      box(g, -1.75, 0.06, -0.75, 0.05, 0.28, 0.75, L.frame);  // deck
-      hazardRing(g, -0.72, 0.4, 0.68, 0.24);
-      box(g, -1.38, 0.52, -0.56, -0.12, 1.08, 0.56, L.frame);   // crane house
-      box(g, -1.42, 0.98, -0.6, -0.08, 1.1, 0.6, L.frameDark);
-      zbox(g, -1.0, 0.68, 0.56, -0.62, 0.98, 0.6, L.body);      // orange side panel
-      box(g, -1.45, 0.6, -0.3, -1.38, 0.9, 0.3, L.body);
+      const ORANGE = L.body, OD = L.bodyDark, OL = 0xffb23a, G = L.frame, GD = L.frameDark, GL = 0x8d91a0;
+      // ---- cab (front): tall box, big windshield, side windows, darker roof lip, beacon box on top
+      box(g, 0.2, 0.06, -0.66, 1.2, 1.08, 0.66, ORANGE);
+      box(g, 0.14, 1.02, -0.7, 1.26, 1.1, 0.7, OD);                       // roof lip
+      box(g, 0.26, 1.1, -0.56, 1.14, 1.16, 0.56, OD);                      // roof top
+      box(g, 1.2, 0.5, -0.56, 1.23, 1.0, 0.56, GLASS);                     // windshield
+      zbox(g, 0.42, 0.5, 0.66, 1.1, 1.0, 0.69, GLASS);                     // side windows
+      box(g, 0.14, 0.5, -0.5, 0.2, 1.0, 0.5, OD);                          // rear cab wall
+      cbox(g, 0.5, 1.26, 0, 0.5, 0.2, 0.5, G); cbox(g, 0.5, 1.4, 0, 0.36, 0.08, 0.36, GL);   // beacon box
+      // ---- hood: short step in front of the cab, grille slot + white lamps at the corners
+      box(g, 1.2, 0.06, -0.66, 1.86, 0.62, 0.66, ORANGE);
+      box(g, 1.2, 0.62, -0.58, 1.8, 0.68, 0.58, OD);
+      box(g, 1.86, 0.06, -0.66, 1.9, 0.62, 0.66, OD);                      // nose
+      box(g, 1.9, 0.38, -0.26, 1.93, 0.5, 0.26, GLASS);                    // grille
+      zbox(g, 1.9, 0.14, 0.3, 1.95, 0.32, 0.62, WHITE);                    // headlights
+      box(g, 1.82, 0.0, -0.72, 1.98, 0.1, 0.72, GD);                       // front bumper
+      // ---- fenders over the front wheels
+      zbox(g, 0.55, 0.06, 0.66, 1.75, 0.16, 0.8, OD);
+      // ---- rear deck (dark grey) with side rails
+      box(g, -1.8, 0.06, -0.78, 0.2, 0.3, 0.78, G);
+      zbox(g, -1.8, 0.3, 0.68, 0.2, 0.4, 0.78, GD);
+      box(g, -1.84, 0.02, -0.74, -1.78, 0.34, 0.74, GD);                   // rear plate
+      zbox(g, -1.88, 0.1, 0.36, -1.82, 0.26, 0.56, RED);                   // tail lights
+      // ---- turntable (hazard stripes) + crane house
+      hazardRing(g, -0.78, 0.46, 0.66, 0.26);
+      box(g, -1.4, 0.59, -0.56, -0.16, 1.2, 0.56, G);                      // house
+      box(g, -1.44, 1.16, -0.6, -0.12, 1.24, 0.6, GD);                     // house roof
+      zbox(g, -1.34, 0.72, 0.56, -0.26, 1.1, 0.585, GL);                   // side panel (lighter)
+      zbox(g, -0.6, 0.8, 0.585, -0.3, 1.06, 0.61, ORANGE);                 // orange square on the side
+      box(g, -1.44, 0.66, -0.16, -1.4, 1.14, 0.16, ORANGE);                // orange stripe on the back
+      cbox(g, -0.78, 1.28, 0, 0.3, 0.08, 0.3, GL);                         // pivot cap
       outriggers(g, L);
-      // boom
+      // ---- telescopic boom: 3 orange sections with lighter collars, grey head
       const c = spec.crane;
       const boom = new THREE.Group(); boom.position.set(c.pivot[0], c.pivot[1], 0); boom.rotation.z = c.angle; g.add(boom);
-      box(boom, -0.3, -0.18, -0.2, 2.3, 0.18, 0.2, L.body);
-      box(boom, -0.3, 0.14, -0.16, 2.3, 0.2, 0.16, L.bodyDark);
-      box(boom, 2.2, -0.13, -0.15, c.length - 0.05, 0.13, 0.15, 0x6b6c75);
-      for (const bx of [0.55, 1.45, 2.2]) box(boom, bx - 0.09, -0.22, -0.24, bx + 0.09, 0.22, 0.24, L.bodyDark);
-      cbox(boom, c.length, 0, 0, 0.36, 0.36, 0.36, 0x55565e);
-      cbox(boom, c.length, 0, 0.19, 0.16, 0.16, 0.04, SILVER);
-      cbox(boom, c.length, 0, -0.19, 0.16, 0.16, 0.04, SILVER);
-      // hydraulic piston
-      const pis = new THREE.Group(); pis.position.set(-0.25, 0.9, 0); g.add(pis);
-      const tip = new THREE.Vector3(c.pivot[0] + Math.cos(c.angle) * 1.15, c.pivot[1] + Math.sin(c.angle) * 1.15 - 0.15, 0);
+      const secs = [[-0.35, 1.35, 0.22], [1.25, 2.35, 0.17], [2.25, c.length - 0.18, 0.12]];
+      secs.forEach(([x0, x1, h], i) => {
+        box(boom, x0, -h, -h, x1, h, h, i === 2 ? OL : ORANGE);
+        box(boom, x0 + 0.05, h, -h * 0.75, x1 - 0.05, h + 0.05, h * 0.75, i === 2 ? ORANGE : OD);   // top ridge
+      });
+      for (const bx of [1.3, 2.3]) box(boom, bx - 0.12, -0.27, -0.27, bx + 0.12, 0.27, 0.27, OL);   // collars
+      box(boom, -0.35, -0.3, -0.3, -0.1, 0.3, 0.3, OD);                                              // base block
+      cbox(boom, c.length, 0, 0, 0.4, 0.4, 0.4, G);                                                  // head
+      cbox(boom, c.length, 0, 0.21, 0.2, 0.2, 0.04, GL); cbox(boom, c.length, 0, -0.21, 0.2, 0.2, 0.04, GL);
+      // ---- hydraulic cylinder: dark barrel from the deck, silver rod up to the boom
+      const pis = new THREE.Group(); pis.position.set(-0.3, 0.72, 0); g.add(pis);
+      const tip = new THREE.Vector3(c.pivot[0] + Math.cos(c.angle) * 1.2, c.pivot[1] + Math.sin(c.angle) * 1.2 - 0.2, 0);
       const d = tip.clone().sub(pis.position); pis.rotation.z = Math.atan2(d.y, d.x);
-      box(pis, 0, -0.09, -0.09, d.length() * 0.55, 0.09, 0.09, 0x2f3036);
-      box(pis, d.length() * 0.5, -0.05, -0.05, d.length(), 0.05, 0.05, 0xdfe2ea);
+      cbox(pis, 0.05, 0, 0, 0.22, 0.26, 0.26, GD);
+      box(pis, 0.1, -0.1, -0.1, d.length() * 0.55, 0.1, 0.1, 0x4f525c);
+      box(pis, d.length() * 0.5, -0.055, -0.055, d.length(), 0.055, 0.055, 0xdfe2ea);
       break;
     }
     case 'pickup': {
@@ -252,7 +277,7 @@ export function buildTruck(spec) {
 
 export function buildHookLink(isHook) {
   const g = new THREE.Group();
-  if (!isHook) { box(g, -0.05, -0.14, -0.05, 0.05, 0.14, 0.05, 0x2a2b31); return g; }
+  if (!isHook) { cbox(g, 0, 0, 0, 0.16, 0.16, 0.16, 0x6b6f7c); box(g, -0.04, -0.14, -0.04, 0.04, 0.14, 0.04, 0x2a2b31); return g; }
   // hook block + J hook
   cbox(g, 0, 0, 0, 0.3, 0.3, 0.3, 0x55565e);
   cbox(g, 0, 0, 0.16, 0.14, 0.14, 0.03, SILVER);
