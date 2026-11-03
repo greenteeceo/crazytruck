@@ -33,6 +33,7 @@ const I = {
   next: '<svg viewBox="0 0 24 24"><path d="M5 4.5v15a1 1 0 0 0 1.5.86L16 14.4V20h3V4h-3v5.6L6.5 3.64A1 1 0 0 0 5 4.5z"/></svg>',
   star: '<svg viewBox="0 0 24 24"><path d="m12 2 3 6.6 7.2.7-5.4 4.9 1.6 7.1L12 17.6l-6.4 3.7 1.6-7.1L1.8 9.3 9 8.6z"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="m9.5 16.2-4.2-4.2-2.1 2.1 6.3 6.3L21 9l-2.1-2.1z"/></svg>',
+  gem: '<svg viewBox="0 0 24 24"><path d="M12 2 22 12 12 22 2 12z"/></svg>',
   sound: '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>',
 };
 const gemIcon = '<i class="gemi"></i>';
@@ -664,7 +665,7 @@ function showSettings() {
       <button class="toggle ${save.shadows ? 'on' : ''}" data-act="shadows"><span class="ico">${I.settings}</span><span>Shadows (quality)</span><i></i></button>
       <div class="setlbl">Test tools</div>
       <button class="toggle ${save.autoplay ? 'on' : ''}" data-act="autoplay"><span class="ico">${I.play}</span><span>Autoplay (bot drives)</span><i></i></button>
-      <button class="toggle ${save.infinite ? 'on' : ''}" data-act="infinite"><span class="ico">${gemIcon}</span><span>Infinite gems (dev)</span><i></i></button>
+      <button class="toggle ${save.infinite ? 'on' : ''}" data-act="infinite"><span class="ico gold">${I.gem}</span><span>Infinite gems (dev)</span><i></i></button>
       <button class="toggle ${save.unlockAll ? 'on' : ''}" data-act="unlockAll"><span class="ico">${I.lock}</span><span>Unlock all levels</span><i></i></button>
       <button class="btn gray wide" data-act="reset">Reset progress</button>
       <div class="sub">Controls: ◀ ▶ on screen, or Arrow keys / A D.<br>In the air, ▶ tilts back and ◀ tilts forward.<br>Levels cleared: ${totalDone()}/${WORLDS.reduce((a, w) => a + w.levels.length, 0)} · Race tracks: ${RACE_TRACKS.length}</div>
