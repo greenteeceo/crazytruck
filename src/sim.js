@@ -173,8 +173,7 @@ export class Sim {
     s.wheelX.forEach((wx, i) => {
       const wb = w.createDynamicBody({ position: V(st.x + wx, cy + s.wheelY), angularDamping: 0.2 });
       wb.createFixture(pl.Circle(s.wheelR), carFix({ kind: 'car', part: 'wheel', idx: i }, { density: s.wheelDensity, friction: s.grip, restitution: 0.05 }));
-      const j = w.createJoint(pl.WheelJoint({ enableMotor: true, maxMotorTorque: s.torque, motorSpeed: 0, frequencyHz: s.susHz, dampingRatio: s.susDamp }, ch, wb, wb.getPosition(), V(0, 1)));
-      this.wheels.push(wb); this.joints.push(j);
+      this.wheels.push(wb); this.joints.push(this.makeJoint(wb));
     });
     // crane hook pendulum (visual, no collisions)
     this.hook = [];
@@ -194,6 +193,23 @@ export class Sim {
     this.tracked = [ch, ...this.wheels, ...this.hook, ...this.dynamics.map((d) => d.body)];
     this.prev = new Map(this.tracked.map((b) => [b, { x: b.getPosition().x, y: b.getPosition().y, a: b.getAngle() }]));
     this.startX = (this.level.start || { x: 0 }).x;
+  }
+
+  makeJoint(wb) {
+    const s = this.spec;
+    return this.world.createJoint(pl.WheelJoint({ enableMotor: true, maxMotorTorque: s.torque, motorSpeed: 0, frequencyHz: s.susHz, dampingRatio: s.susDamp }, this.chassis, wb, wb.getPosition(), V(0, 1)));
+  }
+
+  // A crash knocks one wheel off; it rolls away as a loose body until recover() bolts it back on.
+  loseWheel() {
+    if (this.lostWheel != null) return;
+    const i = this.wheelTouch[0] <= 0 && this.wheelTouch[1] > 0 ? 0 : this.wheelTouch[1] <= 0 ? 1 : (Math.random() < 0.5 ? 0 : 1);
+    const j = this.joints[i]; if (!j) return;
+    this.world.destroyJoint(j); this.joints[i] = null; this.lostWheel = i;
+    const wb = this.wheels[i], v = wb.getLinearVelocity();
+    wb.setLinearVelocity(V(v.x + (i === 0 ? -2.5 : 2.5), v.y + 4));
+    wb.setAngularVelocity(wb.getAngularVelocity() * 0.5 - 12);
+    this.events.push({ type: 'wheelOff', idx: i });
   }
 
   contacts() {
@@ -232,10 +248,21 @@ export class Sim {
     const running = this.state === 'run';
     const t = running ? throttle : 0;
     for (const j of this.joints) {
+      if (!j) continue;
       if (t !== 0) { j.setMotorSpeed(-t * s.speed); j.setMaxMotorTorque(s.torque); }
       else { j.setMotorSpeed(0); j.setMaxMotorTorque(this.state === 'win' ? s.torque * 0.6 : s.torque * 0.06); }
     }
     const air = this.airborne;
+    if (!air && t !== 0 && running) {
+      // engine torque reaction: strongest when the wheels are spinning up (standstill, hard reverse),
+      // fades out at speed. Hold it long enough and the truck wheelies over -> flip.
+      const wv = Math.abs(this.wheels[0].getAngularVelocity() + this.wheels[1].getAngularVelocity()) / 2;
+      const slip = Math.max(0, 1 - wv / s.speed);
+      const vx = this.chassis.getLinearVelocity().x;
+      const against = (t > 0 && vx < -1) || (t < 0 && vx > 1) ? 1.3 : 1;   // braking into reverse kicks harder
+      const kick = t < 0 ? (s.wheelie ?? 2.4) : (s.wheelie ?? 2.4) * 0.25;   // reverse kicks hardest
+      this.chassis.setAngularVelocity(this.chassis.getAngularVelocity() + t * kick * slip * against * DT);
+    }
     if (air) {
       this.airTime += DT;
       if (t !== 0) {
@@ -294,6 +321,7 @@ export class Sim {
     if (this.state !== 'run') return;
     this.state = 'fail'; this.reason = reason;
     this.failPose = this.classifyPose(reason);
+    if (reason === 'crash') this.loseWheel();
     this.events.push({ type: 'fail', reason, pose: this.failPose });
   }
 
@@ -332,7 +360,8 @@ export class Sim {
     const zero = V(0, 0);
     const place = (b, px, py, ang = 0) => { b.setTransform(V(px, py), ang); b.setLinearVelocity(zero); b.setAngularVelocity(0); b.setAwake(true); };
     place(this.chassis, gx, cy);
-    s.wheelX.forEach((wx, i) => place(this.wheels[i], gx + wx, cy + s.wheelY));
+    s.wheelX.forEach((wx, i) => { place(this.wheels[i], gx + wx, cy + s.wheelY); if (!this.joints[i]) this.joints[i] = this.makeJoint(this.wheels[i]); });
+    this.lostWheel = null;
     if (s.crane) {
       const c = s.crane, tx = c.pivot[0] + Math.cos(c.angle) * c.length, ty = c.pivot[1] + Math.sin(c.angle) * c.length;
       this.hook.forEach((b, i) => place(b, gx + tx, cy + ty - c.linkLen * (i + 0.5)));

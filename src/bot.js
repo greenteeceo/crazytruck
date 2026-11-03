@@ -20,8 +20,8 @@ export function makeBot(skill = 1, seed = 1) {
       const err = a - target + w * 0.25;
       t = err > 0.12 ? -1 : err < -0.12 ? 1 : 0;
     } else {
-      if (a > 0.95) t = 0;               // avoid flipping backwards on wheelies
-      if (v.x > maxV) t = v.x > maxV + 1.5 ? -1 : 0;
+      if (a > 0.7 || (a > 0.35 && c.getAngularVelocity() > 1.5)) t = 0;   // ease off before a wheelie turns into a flip
+      if (v.x > maxV) t = v.x > maxV + 3 && a > -0.15 && c.getAngularVelocity() > -0.8 ? -1 : 0;   // brake gently: reverse torque pitches the nose down
       if (a < -0.9 && v.x > 3) t = 0;    // steep nose-down: don't accelerate
     }
     return t;

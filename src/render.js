@@ -383,7 +383,7 @@ export class Renderer {
         const q = sim.pose(w, al), wv = car.wheels[i];
         wv.position.set(q.x, q.y + hopY, z); wv.rotation.z = q.a;
         // tyre squash from suspension compression (joint travel is negative when compressed)
-        const tr = sim.joints[i].getJointTranslation();
+        const tr = sim.joints[i] ? sim.joints[i].getJointTranslation() : 0;
         const comp = Math.min(0.35, Math.max(0, -tr - 0.02)) / 0.35;
         const k = 1 - Math.exp(-dt * 18);
         wv.userData.sq = (wv.userData.sq || 0) + (comp - (wv.userData.sq || 0)) * k;

@@ -38,7 +38,7 @@ const classic = [
   }, { ai: { airAngle: -0.1 } }),
   lvl('Log Jam', 'grass', (b) => {
     b.ground(-8, 50, 0).dyn(14, 0.3, 0.6, 0.6, 'log', 0.2).dyn(15, 0.3, 0.6, 0.6, 'log', 0.2).dyn(14.5, 0.9, 0.6, 0.6, 'log', 0.2)
-      .hill(20, 28, 1.2).stack(32, 0, 3, 2, 0.8, 'crate').bridge(50, 0, 62, 0).ground(62, 76, 0)
+      .hill(20, 28, 1.2).stack(32, 0, 2, 2, 0.8, 'crate').bridge(50, 0, 62, 0).ground(62, 76, 0)
       .gem(24, 2.6).gem(40, 1.2).gem(56, 1.0).finish(70);
   }, { ai: { zones: [[48, 63, 9]] } }),
   lvl('Island Tour', 'grass', (b) => {
@@ -92,8 +92,8 @@ const construction = [
   }),
   lvl('Skyline', 'concrete', (b) => {
     b.ground(-8, 10, 0).block(16, -0.2, 12, 0.4, 'girder').ground(22, 30, 0).stack(25, 0, 2, 2, 0.8)
-      .mover(34.5, -0.3, 6.5, 0.6, 1.4, 0, 2.4, 'girder').ground(39, 48, 0).ramp(43, 0, 48, 1.2)
-      .ground(54, 62, 0).block(66.6, -1.6, 0.8, 3.6, 'girder').seesaw(66.6, 0.3, 9.2, 0.2, 0.2, 'girder')
+      .mover(34.5, -0.3, 6.5, 0.6, 1.4, 0, 2.4, 'girder').ground(39, 48, 0).ramp(42, 0, 48, 1.3)
+      .ground(52, 62, 0).block(66.6, -1.6, 0.8, 3.6, 'girder').seesaw(66.6, 0.3, 9.2, 0.2, 0.2, 'girder')
       .ground(71.2, 88, -0.8).gem(16, 1.0).gem(34.5, 1.0).gem(51, 2.8).gem(76, 0.4).finish(82, -0.8);
   }, { ai: { zones: [[62, 72, 6]] } }),
 ];
@@ -161,7 +161,7 @@ const science = [
       .gem(18, 3.6).gem(36, 3.6).gem(48, 1.2).finish(52);
   }),
   lvl('Low Gravity', 'metal', (b) => {
-    b.ground(-8, 16, 0).ramp(10, 0, 16, 1.2).ground(26, 34, 0.8).ramp(28, 0.8, 34, 2.0).ground(46, 66, 0)
+    b.ground(-8, 16, 0).ramp(10, 0, 16, 1.2).ground(25, 34, 0.8).ramp(28, 0.8, 34, 2.0).ground(46, 66, 0)
       .gems(19, 4.0, 3, 2.2).gems(37, 5.0, 3, 2.4).finish(60);
   }, { gravity: 5, ai: { airAngle: -0.05 } }),
   lvl('Moving Lifts', 'metal', (b) => {
