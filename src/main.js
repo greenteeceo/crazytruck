@@ -307,11 +307,17 @@ const missionReady = (kind) => (save.tt[kind]?.day !== today());
 // ------------------------------------------------------------ shared widgets
 let gemPill = null;
 const short = () => ui.h < 700;
+// One spacing system for every screen: 16 px side/edge padding, 12 px between blocks.
+const PAD = 16, GAP = 12;
+const topY = (u) => u.safeTop + 12;                       // first row (clears the status bar / host header)
+const pillH = () => (short() ? 34 : 40);
+const navH = () => (short() ? 66 : 76);
+const navTop = (u) => u.h - u.safeBottom - PAD - navH();
 function topbar(u) {
-  const h = short() ? 34 : 40, y = u.safeTop + 10;
+  const h = pillH(), y = topY(u);
   const tw = Math.max(64, u.measure(String(save.trophies), h * 0.5) + h * 0.9 + 18);
-  u.pill(u.w - 12 - tw, y, h, { icon: 'trophy', text: String(save.trophies) }, { minW: tw });
-  const txt = gemsText(), gw = Math.max(74, u.measure(txt, h * 0.5) + h * 0.9 + 18), gx = u.w - 22 - tw - gw;
+  u.pill(u.w - PAD - tw, y, h, { icon: 'trophy', text: String(save.trophies) }, { minW: tw });
+  const txt = gemsText(), gw = Math.max(74, u.measure(txt, h * 0.5) + h * 0.9 + 18), gx = u.w - PAD - 10 - tw - gw;
   const bump = gemBump > 0 && u.t > gemBump && u.t < gemBump + 0.6 ? 1 + Math.sin((u.t - gemBump) / 0.6 * Math.PI) * 0.15 : 1;
   const c = u.ctx; c.save(); c.translate(gx + gw / 2, y + h / 2); c.scale(bump, bump); c.translate(-(gx + gw / 2), -(y + h / 2));
   u.pill(gx, y, h, { gem: true, text: txt }, { minW: gw });
@@ -320,7 +326,7 @@ function topbar(u) {
 }
 
 function navbar(u, active) {
-  const w = Math.min(u.w * 0.94, 460), h = short() ? 66 : 76, x = (u.w - w) / 2, y = u.h - u.safeBottom - 14 - h, c = u.ctx;
+  const w = Math.min(u.w - PAD * 2, 460), h = navH(), x = (u.w - w) / 2, y = navTop(u), c = u.ctx;
   u.rr(x - 3, y + 6, w + 6, h + 4, 20); c.fillStyle = 'rgba(0,0,0,0.2)'; c.fill();
   u.rr(x - 3, y - 3, w + 6, h + 6, 21); c.fillStyle = '#fff'; c.fill();
   c.save(); u.rr(x, y, w, h, 18); c.clip();
@@ -413,16 +419,17 @@ function drawHome(u) {
   u.hit(0, 0, u.w, u.h, { id: '__swipe' });
   topbar(u);
   // dev chips under the gem counter (right)
-  const tw0 = u.measure('TEST', 15) + 22;
-  chip(u, 'test', u.w - 12 - tw0, T + 60, 'TEST', true, () => testMenu(), 'orange');
-  chip(u, 'auto', u.w - 20 - tw0 - (u.measure('AUTO', 15) + 22), T + 60, 'AUTO', !!save.autoplay, () => { save.autoplay = !save.autoplay; persist(); u.request(); });
+  const tw0 = u.measure('TEST', 15) + 22, chipY = topY(u) + pillH() + 10;
+  chip(u, 'test', u.w - PAD - tw0, chipY, 'TEST', true, () => testMenu(), 'orange');
+  chip(u, 'auto', u.w - PAD - 8 - tw0 - (u.measure('AUTO', 15) + 22), chipY, 'AUTO', !!save.autoplay, () => { save.autoplay = !save.autoplay; persist(); u.request(); });
   // TikTok capability buttons (top-left row): Add to Home Screen, Profile sidebar, Share
-  const bs = sh ? 40 : 44; let bx = 14; const by0 = T + 8;
+  const bs = sh ? 40 : 44; let bx = PAD; const by0 = topY(u) + 3;   // +3: white ring
   roundBtn(u, 'tt_add', bx, by0, bs, 'addhome', 'Add', 'orange', ttButtons.addhome, missionReady('shortcut')); bx += bs + 16;
   roundBtn(u, 'tt_side', bx, by0, bs, 'sidebar', 'Profile', 'purple', ttButtons.sidebar, missionReady('sidebar')); bx += bs + 16;
   roundBtn(u, 'tt_share', bx, by0, bs, 'share', 'Share', 'teal', ttButtons.share);
   // world title + progress
-  const ty = sh ? T + 120 : Math.max(T + 140, u.h * 0.2), k = u.pop(0.05, 0.35);
+  // title sits one GAP below the chip row (top rows end at topY + pill + 10 + chip 30)
+  const rowsEnd = topY(u) + pillH() + 10 + 30, ty = Math.max(rowsEnd + GAP + 28, sh ? 0 : u.h * 0.2), k = u.pop(0.05, 0.35);
   const c = u.ctx; c.save(); c.translate(u.w / 2, ty); c.scale(k, k);
   const tw = u.measure(w.name, 44);
   if (!unlocked) u.icon('lock', -tw / 2 - 40, -18, 32, '#c7cde0');
@@ -436,7 +443,7 @@ function drawHome(u) {
   c.restore();
   // arrows
   const ay = u.h * 0.52, asz = 56;
-  for (const [d, x, ic] of [[-1, 12, 'left'], [1, u.w - 12 - asz, 'right']]) {
+  for (const [d, x, ic] of [[-1, PAD, 'left'], [1, u.w - PAD - asz, 'right']]) {
     const dis = (d < 0 && wi === 0) || (d > 0 && wi === WORLDS.length - 1);
     c.save(); if (dis) c.globalAlpha = 0.35;
     if (u.isDown('arr' + d)) { c.translate(x + asz / 2, ay + asz / 2); c.scale(0.92, 0.92); c.translate(-(x + asz / 2), -(ay + asz / 2)); }
@@ -447,14 +454,16 @@ function drawHome(u) {
     if (!dis) u.hit(x - 6, ay - 6, asz + 12, asz + 12, { id: 'arr' + d, onTap: () => changeWorld(d) });
   }
   // bottom: subtitle, counter, play
-  const playH = sh ? 66 : 76, playY = u.h - B - (sh ? 104 : 118) - playH + 76 - (sh ? 0 : 0);
+  // bottom stack, laid out upwards from the nav bar: Play, world counter, subtitle
+  const playH = sh ? 66 : 76, playY = navTop(u) - 2 * GAP;                 // playY = bottom edge of Play
+  const countY = playY - playH - GAP - 10;                                 // centre of the "1 / 20" line
   if (!sh) {
-    const sw = u.measure(w.sub, 17) + 24, sy = u.h - B - 244;
-    u.rr(u.w / 2 - sw / 2, sy, sw, 32, 14); c.fillStyle = 'rgba(10,30,80,0.45)'; c.fill();
-    u.text(w.sub, u.w / 2, sy + 17, 17, '#fff', { maxW: u.w - 40 });
+    const sw = Math.min(u.w - PAD * 2, u.measure(w.sub, 17) + 28), sh2 = 30, sy = countY - 10 - 8 - sh2;
+    u.rr(u.w / 2 - sw / 2, sy, sw, sh2, 14); c.fillStyle = 'rgba(10,30,80,0.45)'; c.fill();
+    u.text(w.sub, u.w / 2, sy + sh2 / 2 + 1, 17, '#fff', { maxW: sw - 20 });
   }
   const wc = `${wi + 1} / ${WORLDS.length}` + (w.starsReq ? `   ★ ${w.starsReq}` : '');
-  u.text(wc, u.w / 2, u.h - B - (sh ? 196 : 206), 17);
+  u.text(wc, u.w / 2, countY, 17);
   const bob = Math.sin(u.t * 3.9) * 3;
   if (unlocked) {
     const pw2 = 180;
@@ -480,13 +489,13 @@ function drawLevels(u, wi, firstOpen) {
   const w = WORLDS[wi], c = u.ctx, T = u.safeTop;
   const g = c.createLinearGradient(0, 0, 0, u.h); g.addColorStop(0, 'rgba(29,140,255,0.55)'); g.addColorStop(1, 'rgba(10,60,160,0.8)');
   c.fillStyle = g; c.fillRect(0, 0, u.w, u.h);
-  u.button('back', 12, T + 12, 50, 50, { color: 'gray', icon: 'left', iconSize: 28, radius: 14, onTap: tap(showWorlds) });
-  u.text(w.name, 76, T + 38, 28, '#fff', { align: 'left', maxW: u.w - 240 });
+  u.button('back', PAD, topY(u), 50, 50, { color: 'gray', icon: 'left', iconSize: 28, radius: 14, onTap: tap(showWorlds) });
+  u.text(w.name, PAD + 50 + GAP, topY(u) + 26, 28, '#fff', { align: 'left', maxW: u.w - 240 });
   const stars = w.levels.reduce((a, l) => a + (lvlSave(l)?.stars || 0), 0);
   const label = `${stars}/${w.levels.length * 3}`, pw = u.measure(label, 17) + 50;
-  u.pill(u.w - 12 - pw, T + 22, 34, { icon: 'star', text: label }, { minW: pw });
-  chip(u, 'auto', u.w - 22 - pw - 70, T + 24, 'AUTO', !!save.autoplay, () => { save.autoplay = !save.autoplay; persist(); u.request(); });
-  const top = T + 80, rowH = 70, gap = 14, lw = Math.min(u.w - 32, 460), lx = (u.w - lw) / 2;
+  u.pill(u.w - PAD - pw, topY(u) + 8, 34, { icon: 'star', text: label }, { minW: pw });
+  chip(u, 'auto', u.w - PAD - 10 - pw - (u.measure('AUTO', 15) + 22), topY(u) + 10, 'AUTO', !!save.autoplay, () => { save.autoplay = !save.autoplay; persist(); u.request(); });
+  const top = topY(u) + 50 + GAP, rowH = 70, gap = GAP, lw = Math.min(u.w - PAD * 2, 460), lx = (u.w - lw) / 2;
   const size = w.levels.length * (rowH + gap) + 30;
   u.scroll('lv', 0, top, u.w, u.h - top, size, () => {
     w.levels.forEach((l, i) => {
@@ -516,19 +525,19 @@ function drawHud(u) {
   const g = game; if (!g) return false;
   const l = g.level, w = WORLDS[l.world], T = u.safeTop, B = u.safeBottom, c = u.ctx;
   // pause + auto
-  u.button('pause', 10, T + 10, 50, 50, { icon: 'pause', iconSize: 28, radius: 14, onTap: tap(pauseMenu) });
-  chip(u, 'auto', 14, T + 68, 'AUTO', !!(save.autoplay || testRun), () => { save.autoplay = !save.autoplay; persist(); u.request(); });
+  u.button('pause', PAD, topY(u), 50, 50, { icon: 'pause', iconSize: 28, radius: 14, onTap: tap(pauseMenu) });
+  chip(u, 'auto', PAD + 2, topY(u) + 50 + 10, 'AUTO', !!(save.autoplay || testRun), () => { save.autoplay = !save.autoplay; persist(); u.request(); });
   const name = g.race ? (g.race.random ? `Random · ${l.name}` : `${g.race.cup.name} · Race ${g.race.idx + 1}/3`) : `${w.name} ${l.index + 1}. ${l.name}`;
-  u.text(name, u.w / 2, T + 20, 15, '#fff', { maxW: u.w - 180 });
-  u.text(fmt(g.sim.state === 'win' ? g.sim.finishTime : g.sim.time), u.w / 2, T + 48, 30);
+  u.text(name, u.w / 2, topY(u) + 10, 15, '#fff', { maxW: u.w - 180 });
+  u.text(fmt(g.sim.state === 'win' ? g.sim.finishTime : g.sim.time), u.w / 2, topY(u) + 38, 30);
   if (g.race) {
     const pl = g.place || 1, n = (g.racers.length + 1), k = g.placeT ? 1 + Math.max(0, 0.3 - (u.t - g.placeT)) : 1;
-    c.save(); c.translate(u.w - 14, T + 40); c.scale(k, k);
+    c.save(); c.translate(u.w - PAD, topY(u) + 28); c.scale(k, k);
     const sw = u.measure(`/${n}`, 18);
     u.text(ord(pl), -sw - 2, 0, 36, GOLD, { align: 'right' }); u.text(`/${n}`, 0, 6, 18, '#fff', { align: 'right' });
     c.restore();
     // progress track with a dot per truck
-    const tx = 76, tw = u.w - 152, ty = T + 80, finishX = g.sim.finishX || 1, sx = l.start?.x || 0;
+    const tx = PAD + 50 + GAP, tw = u.w - 2 * tx, ty = topY(u) + 70, finishX = g.sim.finishX || 1, sx = l.start?.x || 0;
     u.rr(tx, ty, tw, 10, 5); c.fillStyle = 'rgba(10,30,80,0.5)'; c.fill(); c.lineWidth = 2; c.strokeStyle = INK; c.stroke();
     const all = g.all || [{ x: g.sim.x }];
     const cols = ['#ffe14d', ...g.racers.map((r) => r.color)];
@@ -538,10 +547,10 @@ function drawHud(u) {
     }
   } else {
     const txt = `${g.sim.gemsTaken}/${g.sim.gems.length}`, pw = u.measure(txt, 17) + 50;
-    u.pill(u.w - 12 - pw, T + 14, 34, { gem: true, text: txt }, { minW: pw });
+    u.pill(u.w - PAD - pw, topY(u) + 8, 34, { gem: true, text: txt }, { minW: pw });
   }
   if (testRun) {
-    const tr = testRun, txt = `TEST  ${tr.i + 1}/${tr.queue.length}   ✓ ${tr.pass}   ✗ ${tr.fails.length}`, tw2 = u.measure(txt, 15) + 90, tx2 = u.w / 2 - tw2 / 2, ty2 = T + 100;
+    const tr = testRun, txt = `TEST  ${tr.i + 1}/${tr.queue.length}   ✓ ${tr.pass}   ✗ ${tr.fails.length}`, tw2 = u.measure(txt, 15) + 90, tx2 = u.w / 2 - tw2 / 2, ty2 = topY(u) + 92;
     u.rr(tx2, ty2, tw2, 36, 12); c.fillStyle = 'rgba(10,30,80,0.75)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
     u.text(txt, tx2 + 14, ty2 + 19, 15, '#b8ffc0', { align: 'left' });
     u.button('teststop', tx2 + tw2 - 66, ty2 + 5, 58, 26, { color: 'red', label: 'Stop', size: 14, radius: 9, ring: false, onTap: tap(() => endTest(true)) });
@@ -865,7 +874,7 @@ function drawRace(u) {
   const cupIdx = save.cup.idx, cup = CUPS[cupIdx], raceNo = save.cup.race || 0, pts = save.cup.pts || {};
   topbar(u);
   // cups row
-  const cw = Math.min(82, (u.w - 50) / 4), cx0 = u.w / 2 - (cw * 4 + 24) / 2, cy = T + 60;
+  const cw = Math.min(82, (u.w - PAD * 2 - 24) / 4), cx0 = u.w / 2 - (cw * 4 + 24) / 2, cy = topY(u) + pillH() + GAP;
   CUPS.forEach((cp, i) => {
     const lock = i > cupIdx && !save.cups[i], cur = i === cupIdx, x = cx0 + i * (cw + 8);
     u.rr(x, cy, cw, 66, 14); c.fillStyle = 'rgba(10,30,80,0.5)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
@@ -896,9 +905,9 @@ function drawRace(u) {
     u.text(`${i + 1}`, px + 28, y + 1, 16, '#fff', { align: 'left' }); u.text(n, px + 54, y + 1, 16, '#fff', { align: 'left' }); u.text(`${p} pts`, px + pw - 26, y + 1, 16, '#fff', { align: 'right' });
   });
   else { u.text(`Beat ${laneCount() - 1} rival trucks over 3 races.`, u.w / 2, py + 130, 15); u.text('1st place wins the cup!', u.w / 2, py + 152, 15); }
-  const navTop = u.h - B - 14 - (sh ? 66 : 76), bob = Math.sin(u.t * 3.9) * 3;
-  u.button('race', u.w / 2 - 110, navTop - 30 - (sh ? 64 : 74) + bob, 220, sh ? 64 : 74, { color: 'red', label: 'Race!', icon: 'flag', size: 34, onTap: tap(startRace) });
-  u.button('rnd', u.w / 2 - 95, navTop - 30 - (sh ? 64 : 74) - 64, 190, 44, { color: 'orange', label: 'Random track', icon: 'retry', size: 17, onTap: tap(startRandomRace) });
+  const nT = navTop(u), bob = Math.sin(u.t * 3.9) * 3, rh = sh ? 64 : 74, raceY = nT - 2 * GAP - rh;
+  u.button('race', u.w / 2 - 110, raceY + bob, 220, rh, { color: 'red', label: 'Race!', icon: 'flag', size: 34, onTap: tap(startRace) });
+  u.button('rnd', u.w / 2 - 95, raceY - 2 * GAP - 44, 190, 44, { color: 'orange', label: 'Random track', icon: 'retry', size: 17, onTap: tap(startRandomRace) });
   navbar(u, 'race');
   return true;
 }
@@ -917,8 +926,8 @@ function drawShop(u) {
   const cur = vehicleById(shopSel), own = save.owned.includes(cur.id), ups = save.upgrades?.[cur.id] || {};
   topbar(u);
   // free gems for a video (left, under the safe area)
-  u.button('freegems', 12, T + 10, 132, 40, { color: 'green', icon: 'video', label: `+${REWARDS.freeGems}   `, size: 17, radius: 12, onTap: tap(() => watchAd(() => { earnGems(REWARDS.freeGems, { x: 70, y: T + 30 }); Audio.win(); })) });
-  if (!u.isDown('freegems')) u.gem(12 + 132 - 22, T + 29, 18);
+  u.button('freegems', PAD, topY(u), 132, pillH(), { color: 'green', icon: 'video', label: `+${REWARDS.freeGems}   `, size: 17, radius: 12, onTap: tap(() => watchAd(() => { earnGems(REWARDS.freeGems, { x: 70, y: T + 30 }); Audio.win(); })) });
+  if (!u.isDown('freegems')) u.gem(PAD + 132 - 22, topY(u) + pillH() / 2, 18);
   const ny = T + (sh ? 76 : 86);
   u.text(cur.name, u.w / 2, ny, sh ? 26 : 32);
   u.text(cur.desc, u.w / 2, ny + (sh ? 26 : 30), sh ? 13 : 15, '#fff', { maxW: u.w - 30 });
@@ -948,13 +957,13 @@ function drawShop(u) {
     }
   });
   // truck cards
-  const navTop = u.h - B - 14 - (sh ? 66 : 76), btnY = navTop - (sh ? 58 : 66), cardH = sh ? 96 : 112, cardW = sh ? 110 : 128, cy = btnY - 22 - cardH;
+  const bh0 = sh ? 46 : 52, btnY = navTop(u) - 2 * GAP - bh0, cardH = sh ? 96 : 112, cardW = sh ? 110 : 128, cy = btnY - 2 * GAP - cardH;
   const list = [...VEHICLES].sort((a, b) => a.price - b.price);
   const selIdx = list.findIndex((v) => v.id === cur.id);
   let made = false;
-  u.scroll('cards', 0, cy - 8, u.w, cardH + 16, list.length * (cardW + 12) + 20, () => {
+  u.scroll('cards', 0, cy - 8, u.w, cardH + 16, list.length * (cardW + GAP) + PAD * 2 - GAP, () => {
     list.forEach((v, i) => {
-      const x = 12 + i * (cardW + 12), y = cy, o = save.owned.includes(v.id), on = save.car === v.id, sel = v.id === cur.id;
+      const x = PAD + i * (cardW + GAP), y = cy, o = save.owned.includes(v.id), on = save.car === v.id, sel = v.id === cur.id;
       const dy = sel ? -4 : 0;
       u.rr(x - 3, y - 3 + dy, cardW + 6, cardH + 6, 18); c.fillStyle = sel ? GOLD : 'rgba(255,255,255,0.6)'; c.fill();
       u.rr(x, y + dy, cardW, cardH, 16); c.fillStyle = u.grad(y, y + cardH, GRAD.blue); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
@@ -967,9 +976,9 @@ function drawShop(u) {
       if (o && lv) { u.rr(x + 4, y + dy + 4, 34, 22, 10); c.fillStyle = '#2fae4a'; c.fill(); u.text(`+${lv}`, x + 21, y + dy + 16, 12); }
       u.hit(x, y, cardW, cardH, { id: 'card' + v.id, onTap: tap(() => { shopSel = v.id; R.showGarage(v); u.request(); }) });
     });
-  }, { horizontal: true, start: selIdx * (cardW + 12) - u.w / 2 + cardW / 2 + 12 });
+  }, { horizontal: true, start: selIdx * (cardW + GAP) - u.w / 2 + cardW / 2 + PAD });
   // buy / use
-  const bw = 210, bx = u.w / 2 - bw / 2, bh = sh ? 46 : 52;
+  const bw = 210, bx = u.w / 2 - bw / 2, bh = bh0;
   if (save.car === cur.id) u.button('sel', bx, btnY, bw, bh, { color: 'gray', label: 'Selected', disabled: true });
   else if (own) u.button('use', bx, btnY, bw, bh, { color: 'blue', label: 'Use truck', onTap: tap(() => { save.car = cur.id; persist(); u.request(); }) });
   else {
@@ -1006,8 +1015,8 @@ const settingsDirty = () => SETTING_KEYS.some((k) => setDraft[k] !== !!save[k]);
 function drawSettings(u) {
   const c = u.ctx, T = u.safeTop, B = u.safeBottom, sh = short();
   topbar(u);
-  const navTop = u.h - B - 14 - (sh ? 66 : 76);
-  const pw = Math.min(u.w * 0.9, 400), px = u.w / 2 - pw / 2, py = T + (sh ? 74 : 84), ph = navTop - 22 - py;
+  // panel: one GAP under the top pills (+ ribbon), 2 GAP above the nav bar
+  const pw = Math.min(u.w - PAD * 2, 400), px = u.w / 2 - pw / 2, py = topY(u) + pillH() + GAP + 22, ph = navTop(u) - 2 * GAP - py;
   u.panel(px, py, pw, ph, { ribbon: 'Settings' });
   const footH = sh ? 56 : 64, bodyY = py + 36, bodyH = ph - 36 - footH - 8;
   const rowH = sh ? 44 : 52;
