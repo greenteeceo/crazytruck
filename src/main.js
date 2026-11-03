@@ -537,7 +537,7 @@ function drawHud(u) {
     u.text(ord(pl), -sw - 2, 0, 36, GOLD, { align: 'right' }); u.text(`/${n}`, 0, 6, 18, '#fff', { align: 'right' });
     c.restore();
     // progress track with a dot per truck
-    const tx = PAD + 50 + GAP, tw = u.w - 2 * tx, ty = topY(u) + 70, finishX = g.sim.finishX || 1, sx = l.start?.x || 0;
+    const tx = PAD + 2 + u.measure('AUTO', 15) + 22 + GAP + 10, tw = u.w - PAD - 10 - tx, ty = topY(u) + 70, finishX = g.sim.finishX || 1, sx = l.start?.x || 0;
     u.rr(tx, ty, tw, 10, 5); c.fillStyle = 'rgba(10,30,80,0.5)'; c.fill(); c.lineWidth = 2; c.strokeStyle = INK; c.stroke();
     const all = g.all || [{ x: g.sim.x }];
     const cols = ['#ffe14d', ...g.racers.map((r) => r.color)];
@@ -727,8 +727,7 @@ function drawWin(u, st) {
   });
   u.text(`★ finish · ★ all gems · ★ under ${fmt(par(st.l))}`, u.w / 2, py + 248, 13, '#fff', { maxW: pw - 30 });
   const shown = Math.round(st.earn * st.mult * Math.min(1, Math.max(0, (u.st - 1) / 0.9)));
-  const etxt = `+${shown}`, ew = u.measure(etxt, 30);
-  u.text(etxt, u.w / 2 - 18, py + 290, 30, GOLD); u.gem(u.w / 2 + ew / 2 - 2, py + 290, 30);
+  u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 30 }], u.w / 2, py + 290, { size: 30, gap: 10 });
   st.earnPos = { x: u.w / 2, y: py + 290 };
   if (st.mult === 1 && st.earn > 0) {
     const bw = Math.min(u.w - 60, 280);
@@ -805,8 +804,7 @@ function drawResults(u, st) {
   u.panel(px, py, pw, ph, { ribbon: 'Race Results' });
   const endY = tableRows(u, st.rows, px + 14, py + 36, pw - 28);
   const shown = Math.round(st.earn * st.mult * Math.min(1, Math.max(0, (u.st - 0.7) / 0.9)));
-  const etxt = `+${shown}`, ew = u.measure(etxt, 28);
-  u.text(etxt, u.w / 2 - 18, endY + 22, 28, GOLD); u.gem(u.w / 2 + ew / 2 - 2, endY + 22, 28);
+  u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 28 }], u.w / 2, endY + 22, { size: 28, gap: 10 });
   st.earnPos = { x: u.w / 2, y: endY + 22 };
   const by = u.h - B - 24 - barH;
   if (st.mult === 1 && st.earn > 0 && !testRun) {
@@ -926,8 +924,7 @@ function drawShop(u) {
   const cur = vehicleById(shopSel), own = save.owned.includes(cur.id), ups = save.upgrades?.[cur.id] || {};
   topbar(u);
   // free gems for a video (left, under the safe area)
-  u.button('freegems', PAD, topY(u), 132, pillH(), { color: 'green', icon: 'video', label: `+${REWARDS.freeGems}   `, size: 17, radius: 12, onTap: tap(() => watchAd(() => { earnGems(REWARDS.freeGems, { x: 70, y: T + 30 }); Audio.win(); })) });
-  if (!u.isDown('freegems')) u.gem(PAD + 132 - 22, topY(u) + pillH() / 2, 18);
+  u.button('freegems', PAD, topY(u), 132, pillH(), { color: 'green', parts: [{ icon: 'video', size: 22 }, `+${REWARDS.freeGems}`, { gem: true, size: 18 }], size: 17, radius: 12, onTap: tap(() => watchAd(() => { earnGems(REWARDS.freeGems, { x: 70, y: T + 30 }); Audio.win(); })) });
   const ny = T + (sh ? 76 : 86);
   u.text(cur.name, u.w / 2, ny, sh ? 26 : 32);
   u.text(cur.desc, u.w / 2, ny + (sh ? 26 : 30), sh ? 13 : 15, '#fff', { maxW: u.w - 30 });
@@ -971,7 +968,7 @@ function drawShop(u) {
       if (thumbs[v.id]) c.drawImage(thumbs[v.id], x + 2, y + dy + 2, cardW - 4, (cardW - 4) * 150 / 240);
       u.text(v.name, x + cardW / 2, y + dy + cardH - 16, sh ? 12 : 14, '#fff', { maxW: cardW - 8 });
       if (on) { c.beginPath(); c.arc(x + cardW - 16, y + dy + 16, 13, 0, Math.PI * 2); c.fillStyle = '#46d35c'; c.fill(); c.lineWidth = 2; c.strokeStyle = INK; c.stroke(); u.icon('check', x + cardW - 27, y + dy + 5, 22, '#fff', false); }
-      else if (!o) { const tw = u.measure(String(v.price), 12) + 30; u.rr(x + cardW - tw - 4, y + dy + 4, tw, 22, 10); c.fillStyle = 'rgba(10,30,80,0.75)'; c.fill(); u.gem(x + cardW - tw + 9, y + dy + 15, 13); u.text(String(v.price), x + cardW - 10, y + dy + 16, 12, '#fff', { align: 'right' }); }
+      else if (!o) { const tw = u.measure(String(v.price), 12) + 13 + 5 + 14; u.rr(x + cardW - tw - 4, y + dy + 4, tw, 22, 10); c.fillStyle = 'rgba(10,30,80,0.75)'; c.fill(); u.row([{ gem: true, size: 13 }, String(v.price)], x + cardW - 4 - tw / 2, y + dy + 15, { size: 12, gap: 5 }); }
       const lv = Object.values(save.upgrades?.[v.id] || {}).reduce((a, b) => a + b, 0);
       if (o && lv) { u.rr(x + 4, y + dy + 4, 34, 22, 10); c.fillStyle = '#2fae4a'; c.fill(); u.text(`+${lv}`, x + 21, y + dy + 16, 12); }
       u.hit(x, y, cardW, cardH, { id: 'card' + v.id, onTap: tap(() => { shopSel = v.id; R.showGarage(v); u.request(); }) });
@@ -982,8 +979,7 @@ function drawShop(u) {
   if (save.car === cur.id) u.button('sel', bx, btnY, bw, bh, { color: 'gray', label: 'Selected', disabled: true });
   else if (own) u.button('use', bx, btnY, bw, bh, { color: 'blue', label: 'Use truck', onTap: tap(() => { save.car = cur.id; persist(); u.request(); }) });
   else {
-    u.button('buy', bx, btnY, bw, bh, { color: canAfford(cur.price) ? 'orange' : 'gray', label: `Buy  ${cur.price}`, onTap: () => doBuy(cur.id) });
-    u.gem(bx + bw / 2 - u.measure(`Buy  ${cur.price}`, 20) / 2 + 52, btnY + bh / 2, 20);
+    u.button('buy', bx, btnY, bw, bh, { color: canAfford(cur.price) ? 'orange' : 'gray', parts: ['Buy', { gem: true, size: 22 }, String(cur.price)], onTap: () => doBuy(cur.id) });
   }
   navbar(u, 'shop');
   return made || u.st < 0.8;

@@ -19,10 +19,10 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 
 ## Download
 
-Android release build: [`release/CraneRush-2.6.apk`](release/CraneRush-2.6.apk) (signed, minSdk 23, targetSdk 36).
-A Play Store bundle is at [`release/CraneRush-2.6.aab`](release/CraneRush-2.6.aab).
+Android release build: [`release/CraneRush-2.7.apk`](release/CraneRush-2.7.apk) (signed, minSdk 23, targetSdk 36).
+A Play Store bundle is at [`release/CraneRush-2.7.aab`](release/CraneRush-2.7.aab).
 
-TikTok Mini Games package: [`release/CraneRush-tiktok-2.6.zip`](release/CraneRush-tiktok-2.6.zip) (native runtime: `game.js`, `game.json`, `project.config.json`, `fredoka.ttf`; about 1 MB, limit 4 MB for the main package).
+TikTok Mini Games package: [`release/CraneRush-tiktok-2.7.zip`](release/CraneRush-tiktok-2.7.zip) (native runtime: `game.js`, `game.json`, `project.config.json`, `fredoka.ttf`; about 1 MB, limit 4 MB for the main package).
 
 ## TikTok Mini Games
 
@@ -65,7 +65,7 @@ Pacing and reward amounts live in `src/platform/config.js` (`AD_RULES`, `REWARDS
 
 ## Google Play checklist
 
-- Upload `release/CraneRush-2.6.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
+- Upload `release/CraneRush-2.7.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
 - Enrol in Play App Signing; the local keystore then acts as the upload key. Keep `android/cranerush-release.keystore` + `keystore.properties` private.
 - Store assets in `store/`: 512×512 icon, 1024×500 feature graphic. Add at least 2 phone screenshots (1080×1920+).
 - Fill in the Data safety form (the app collects nothing; progress is stored on device), content rating questionnaire (IARC), and a privacy policy URL.

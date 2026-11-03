@@ -214,20 +214,36 @@ export class UI {
     this.rr(x, y, w, h, radius); c.fillStyle = this.grad(y, y + h, GRAD[color] || GRAD.blue); c.fill();
     c.save(); c.clip(); c.fillStyle = 'rgba(0,0,0,0.2)'; c.fillRect(x, y + h - 7, w, 7); c.fillStyle = 'rgba(255,255,255,0.18)'; c.fillRect(x, y, w, h * 0.42); c.restore();
     this.rr(x, y, w, h, radius); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
-    // content
+    // content: always laid out by row(), which measures every part and shrinks to fit the button
     const isz = iconSize ?? size * 1.25;
     if (col && ic) {
       this.icon(ic, x + w / 2 - isz / 2, y + h / 2 - isz / 2 - size * 0.55, isz);
       if (label) this.text(label, x + w / 2, y + h / 2 + isz * 0.5, size * 0.85, '#fff', { maxW: w - 8 });
     } else {
-      const lw = label ? this.measure(label, size) : 0, gap = ic && label ? 8 : 0, tot = (ic ? isz : 0) + gap + lw;
-      let cx = x + w / 2 - tot / 2;
-      if (ic) { this.icon(ic, cx, y + h / 2 - isz / 2 - 1, isz); cx += isz + gap; }
-      if (label) this.text(label, cx, y + h / 2 + (sub ? -7 : 0), size, '#fff', { align: 'left', maxW: w - (cx - x) - 6 });
-      if (sub) this.text(sub, x + w / 2, y + h / 2 + 13, size * 0.6, '#fff', { maxW: w - 10 });
+      const parts = o.parts || [...(ic ? [{ icon: ic, size: isz }] : []), ...(label ? [label] : [])];
+      this.row(parts, x + w / 2, y + h / 2 + (sub ? -7 : 0) - 1, { size, maxW: w - 20 });
+      if (sub) this.text(sub, x + w / 2, y + h / 2 + 13, size * 0.6, '#fff', { maxW: w - 20 });
     }
     c.restore();
     this.hit(x - 4, y - 4, w + 8, h + 8, { id, onTap, disabled, hold });
+  }
+
+  // Horizontal run of text / icons / gems centred on (cx, cy). Every part is measured, so a gem or an
+  // icon can never sit on top of the text. Shrinks uniformly when wider than maxW. Returns the width.
+  // parts: 'text' | { text, color } | { icon, color, size } | { gem, size }
+  row(parts, cx, cy, { size = 20, color = '#fff', gap = 7, maxW = Infinity, outline = true } = {}) {
+    const items = parts.filter((p) => p != null && p !== '').map((p) => (typeof p === 'string' || typeof p === 'number' ? { text: String(p) } : p));
+    const widthAt = (sz) => items.reduce((a, p) => a + (p.text != null ? this.measure(p.text, sz) : p.icon ? (p.size ? p.size * sz / size : sz * 1.2) : (p.size ? p.size * sz / size : sz * 1.1)), 0) + gap * Math.max(0, items.length - 1) * sz / size;
+    let sz = size, tot = widthAt(sz);
+    if (tot > maxW) { sz = Math.max(9, size * maxW / tot); tot = widthAt(sz); }
+    const k = sz / size, g = gap * k;
+    let x = cx - tot / 2;
+    for (const p of items) {
+      if (p.text != null) { const tw = this.measure(p.text, sz); this.text(p.text, x, cy + 1, sz, p.color || color, { align: 'left', outline }); x += tw + g; }
+      else if (p.icon) { const is = p.size ? p.size * k : sz * 1.2; this.icon(p.icon, x, cy - is / 2, is, p.color || '#fff'); x += is + g; }
+      else { const gs = p.size ? p.size * k : sz * 1.1; this.gem(x + gs / 2, cy, gs); x += gs + g; }
+    }
+    return tot;
   }
 
   panel(x, y, w, h, { ribbon, ribbonColor = 'red', scale = 1 } = {}) {
@@ -254,9 +270,8 @@ export class UI {
     this.rr(x - 2, y - 2, w + 4, h + 4, h / 2 + 2); c.fillStyle = 'rgba(255,255,255,0.7)'; c.fill();
     this.rr(x, y, w, h, h / 2); c.fillStyle = bg; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
     const isz = h * 0.6;
-    if (content.gem) this.gem(x + h * 0.5, y + h / 2, isz);
-    else if (content.icon) this.icon(content.icon, x + h * 0.5 - isz / 2, y + h / 2 - isz / 2, isz, content.iconColor || GOLD);
-    this.text(content.text, x + h * 0.9 + 6, y + h / 2 + 1, size, '#fff', { align: 'left' });
+    const lead = content.gem ? { gem: true, size: isz } : content.icon ? { icon: content.icon, size: isz, color: content.iconColor || GOLD } : null;
+    this.row([lead, content.text], x + w / 2, y + h / 2, { size, maxW: w - 12 });
     return w;
   }
 
