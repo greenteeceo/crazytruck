@@ -10,6 +10,7 @@ import { P } from './platform/index.js';
 import { AD_RULES, REWARDS } from './platform/config.js';
 import { UI, INK, GOLD, GRAD } from './ui/kit.js';
 import PARS from './pars.json';
+import { board, rankOf, BOARD_SIZE } from './leaderboard.js';
 
 // ------------------------------------------------------------ save
 const KEY = 'cranerush.save.v2';
@@ -17,6 +18,8 @@ const defaults = { upgrades: {}, diamonds: 0, owned: ['crane'], car: 'crane', le
 let save;
 try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save = { ...defaults }; }
 save.tt ||= {};
+// leaderboard: per-device seed for the simulated players, and when this player joined
+if (!save.lb) save.lb = { seed: (Math.random() * 2 ** 31) | 0, start: Date.now() };
 const persist = () => P.save(KEY, JSON.stringify(save));
 
 // ------------------------------------------------------------ canvases
@@ -319,6 +322,7 @@ function topbar(u) {
   const h = pillH(), y = topY(u);
   const tw = Math.max(64, u.measure(String(save.trophies), h * 0.5) + h * 0.9 + 18);
   u.pill(u.w - PAD - tw, y, h, { icon: 'trophy', text: String(save.trophies) }, { minW: tw });
+  u.hit(u.w - PAD - tw, y, tw, h, { id: 'trophies', onTap: tap(showBoard) });
   const txt = gemsText(), gw = Math.max(74, u.measure(txt, h * 0.5) + h * 0.9 + 18), gx = u.w - PAD - 10 - tw - gw;
   const bump = gemBump > 0 && u.t > gemBump && u.t < gemBump + 0.6 ? 1 + Math.sin((u.t - gemBump) / 0.6 * Math.PI) * 0.15 : 1;
   const c = u.ctx; c.save(); c.translate(gx + gw / 2, y + h / 2); c.scale(bump, bump); c.translate(-(gx + gw / 2), -(y + h / 2));
@@ -701,7 +705,7 @@ function onWin() {
   const t = sim.finishTime, prev = lvlSave(l), allGems = sim.gemsTaken >= sim.gems.length;
   const stars = 1 + (allGems ? 1 : 0) + (t <= par(l) ? 1 : 0);
   let earn = sim.gemsTaken * 5;
-  if (!prev || prev.time == null) earn += 20;
+  if (!prev || prev.time == null) earn += 20 + l.world * 5;   // first clear: coins to buy trucks
   if (stars === 3 && (!prev || (prev.stars || 0) < 3)) earn += 30;
   const best = prev?.time != null ? Math.min(prev.time, t) : t;
   save.levels[l.id] = { time: best, stars: Math.max(stars, prev?.stars || 0) };
@@ -768,16 +772,24 @@ function finishRace() {
   const myPlace = rows.findIndex((r) => r.me);
   const earn = Math.round(PLACE_GEMS[myPlace] * race.cup.reward) + g.sim.gemsTaken * 5;
   if (!race.random) save.cup.race = race.idx + 1;
+  // every 1st place = +1 trophy on the leaderboard
+  let rankMsg = null;
+  if (myPlace === 0) {
+    const before = rankOf(lbRows());
+    save.trophies++;
+    const after = rankOf(lbRows());
+    rankMsg = after < before ? `Leaderboard rank #${after}  ▲${before - after}` : `Leaderboard rank #${after}`;
+  }
   persist();
   if (myPlace === 0) Audio.win(); else Audio.star(0);
-  const st = { rows, race, earn, mult: 1 };
+  const st = { rows, race, earn, mult: 1, trophy: myPlace === 0, rankMsg };
   ui.show('results', (u) => drawResults(u, st), { anim: 2.4 });
   ui.confetti();
   setTimeout(() => earnGems(earn, st.earnPos), 700);
 }
 
-function tableRows(u, rows, x, y, w, { time = true } = {}) {
-  const c = u.ctx, rh = short() ? 44 : 50, gap = 8;
+function tableRows(u, rows, x, y, w, { time = true, rh = short() ? 44 : 50 } = {}) {
+  const c = u.ctx, gap = rh < 44 ? 6 : 8;
   if (time) {
     u.text('Place', x + 10, y + 10, 15, '#fff', { align: 'left' }); u.text('Name', x + 70, y + 10, 15, '#fff', { align: 'left' });
     u.text('Time', x + w - 64, y + 10, 15, '#fff', { align: 'right' }); u.text('Pts', x + w - 10, y + 10, 15, '#fff', { align: 'right' });
@@ -801,18 +813,22 @@ function tableRows(u, rows, x, y, w, { time = true } = {}) {
 }
 
 function drawResults(u, st) {
-  const c = u.ctx, T = u.safeTop, B = u.safeBottom, barH = short() ? 72 : 82;
+  const c = u.ctx, B = u.safeBottom, barH = short() ? 72 : 82;
   c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
   topbar(u);
-  const pw = Math.min(u.w * 0.92, 420), px = u.w / 2 - pw / 2, py = T + 90;
-  const rh = short() ? 52 : 58, ph = 70 + st.rows.length * rh + 60;
+  const by = u.h - B - 24 - barH, showX2 = st.mult === 1 && st.earn > 0 && !testRun;
+  // fit the table between the top bar and the buttons: rows shrink on short screens with 6 trucks
+  const pw = Math.min(u.w * 0.92, 420), px = u.w / 2 - pw / 2, py = topY(u) + pillH() + GAP + 22;
+  const bottom = (showX2 ? by - 66 : by) - GAP, n = st.rows.length, extra = 50 + (st.rankMsg ? 26 : 0);
+  const rh = Math.max(34, Math.min(short() ? 44 : 50, Math.floor((bottom - py - 60 - extra - 10) / n) - 8));
+  const ph = 60 + n * (rh + (rh < 44 ? 6 : 8)) + extra;
   u.panel(px, py, pw, ph, { ribbon: 'Race Results' });
-  const endY = tableRows(u, st.rows, px + 14, py + 36, pw - 28);
+  const endY = tableRows(u, st.rows, px + 14, py + 36, pw - 28, { rh });
   const shown = Math.round(st.earn * st.mult * Math.min(1, Math.max(0, (u.st - 0.7) / 0.9)));
-  u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 28 }], u.w / 2, endY + 22, { size: 28, gap: 10 });
-  st.earnPos = { x: u.w / 2, y: endY + 22 };
-  const by = u.h - B - 24 - barH;
-  if (st.mult === 1 && st.earn > 0 && !testRun) {
+  u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 28 }, ...(st.trophy ? ['   +1', { icon: 'trophy', size: 30, color: GOLD }] : [])], u.w / 2, endY + 20, { size: 28, gap: 10, maxW: pw - 20 });
+  if (st.rankMsg) u.text(st.rankMsg, u.w / 2, endY + 50, 17, '#ffe9a8', { maxW: pw - 20 });
+  st.earnPos = { x: u.w / 2, y: endY + 20 };
+  if (showX2) {
     const bw = Math.min(u.w - 60, 280);
     u.button('x2', u.w / 2 - bw / 2, by - 66, bw, 52, { color: 'green', icon: 'video', label: `x${REWARDS.raceMultiplier} gems`, size: 20, scale: u.pop(1, 0.4), onTap: tap(() => watchAd(() => { st.mult = REWARDS.raceMultiplier; earnGems(st.earn * (REWARDS.raceMultiplier - 1), st.earnPos); Audio.win(); })) });
   }
@@ -830,7 +846,7 @@ function cupStandings() {
   const pts = save.cup.pts || {};
   const rows = Object.entries(pts).map(([name, p]) => ({ name, p, me: name === 'You' })).sort((a, b) => b.p - a.p);
   const won = rows[0]?.me;
-  if (won && !save.cups[cupIdx]) { save.cups[cupIdx] = true; save.trophies++; setTimeout(() => earnGems(250, { x: ui.w / 2, y: ui.h / 2 }), 600); }
+  if (won && !save.cups[cupIdx]) { save.cups[cupIdx] = true; setTimeout(() => earnGems(250, { x: ui.w / 2, y: ui.h / 2 }), 600); }
   save.cup = { idx: won && cupIdx < CUPS.length - 1 ? cupIdx + 1 : cupIdx, race: 0, pts: null };
   persist();
   if (won) { Audio.win(); ui.confetti(); } else Audio.fail();
@@ -839,13 +855,15 @@ function cupStandings() {
     const c = u.ctx, T = u.safeTop, B = u.safeBottom;
     c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
     topbar(u);
-    const pw = Math.min(u.w * 0.92, 420), px = u.w / 2 - pw / 2, py = T + 90, rh = short() ? 52 : 58;
-    u.panel(px, py, pw, 170 + rows.length * rh, { ribbon: `${cup.name} ${won ? 'Won!' : 'Final'}`, ribbonColor: cup.color });
+    const by = u.h - B - 24 - (short() ? 72 : 82), n = rows.length, ts = short() ? 64 : 92;
+    const pw = Math.min(u.w * 0.92, 420), px = u.w / 2 - pw / 2, py = topY(u) + pillH() + GAP + 22, ty = py + 34 + ts;
+    const rh = Math.max(34, Math.min(short() ? 44 : 50, Math.floor((by - GAP - ty - 50) / n) - 8)), gap = rh < 44 ? 6 : 8;
+    u.panel(px, py, pw, ty - py + n * (rh + gap) + 44, { ribbon: `${cup.name} ${won ? 'Won!' : 'Final'}`, ribbonColor: cup.color });
     const k = u.pop(0.1, 0.6) * (won ? 1 + Math.sin(u.t * 4) * 0.05 : 1);
-    c.save(); c.translate(u.w / 2, py + 70); c.scale(k, k); u.icon('trophy', -50, -50, 100, won ? GOLD : '#8e97b0'); c.restore();
-    const endY = tableRows(u, rows, px + 14, py + 130, pw - 28, { time: false });
-    u.text(won ? '+250 bonus gems! Next cup unlocked.' : 'Finish 1st overall to win the cup!', u.w / 2, endY + 18, 15, '#fff', { maxW: pw - 20 });
-    barButtons(u, [{ id: 'cont', label: 'Continue', icon: 'trophy', color: 'blue', big: true, onTap: showRace }], u.h - B - 24 - (short() ? 72 : 82));
+    c.save(); c.translate(u.w / 2, py + 26 + ts / 2); c.scale(k, k); u.icon('trophy', -ts / 2, -ts / 2, ts, won ? GOLD : '#8e97b0'); c.restore();
+    const endY = tableRows(u, rows, px + 14, ty, pw - 28, { time: false, rh });
+    u.text(won ? '+250 bonus gems! Next cup unlocked.' : 'Finish 1st overall to win the cup!', u.w / 2, endY + 16, 15, '#fff', { maxW: pw - 20 });
+    barButtons(u, [{ id: 'cont', label: 'Continue', icon: 'trophy', color: 'blue', big: true, onTap: showRace }], by);
     return true;
   });
 }
@@ -910,9 +928,68 @@ function drawRace(u) {
   else { u.text(`Beat ${laneCount() - 1} rival trucks over 3 races.`, u.w / 2, py + 130, 15); u.text('1st place wins the cup!', u.w / 2, py + 152, 15); }
   const nT = navTop(u), bob = Math.sin(u.t * 3.9) * 3, rh = sh ? 64 : 74, raceY = nT - 2 * GAP - rh;
   u.button('race', u.w / 2 - 110, raceY + bob, 220, rh, { color: 'red', label: 'Race!', icon: 'flag', size: 34, onTap: tap(startRace) });
-  u.button('rnd', u.w / 2 - 95, raceY - 2 * GAP - 44, 190, 44, { color: 'orange', label: 'Random track', icon: 'retry', size: 17, onTap: tap(startRandomRace) });
+  const rw = 180, tw2 = 120, rx = u.w / 2 - (rw + GAP + tw2) / 2, ry = raceY - 2 * GAP - 44;
+  u.button('rnd', rx, ry, rw, 44, { color: 'orange', label: 'Random track', icon: 'retry', size: 17, onTap: tap(startRandomRace) });
+  u.button('top', rx + rw + GAP, ry, tw2, 44, { color: 'gold', label: 'Top', icon: 'trophy', size: 17, onTap: tap(showBoard) });
   navbar(u, 'race');
   return true;
+}
+
+// ------------------------------------------------------------ trophy leaderboard (simulated players, see leaderboard.js)
+const lbRows = () => board(save.lb.seed, save.lb.start, { name: 'You', trophies: save.trophies || 0 });
+const MEDAL = ['#ffd84a', '#dfe3ee', '#e98a7a'];
+function avatar(u, cx, cy, r, color, name, ring) {
+  const c = u.ctx;
+  c.beginPath(); c.arc(cx, cy, r + 3, 0, Math.PI * 2); c.fillStyle = ring || '#fff'; c.fill();
+  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fillStyle = color; c.fill(); c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
+  u.text(name[0].toUpperCase(), cx, cy + 1, r * 1.1);
+}
+function lbRow(u, r, x, y, w, h) {
+  const c = u.ctx, top3 = r.rank <= 3;
+  if (r.me) { u.rr(x - 3, y - 3, w + 6, h + 6, 15); c.fillStyle = '#fff'; c.fill(); }
+  u.rr(x, y, w, h, 12); c.fillStyle = r.me ? u.grad(y, y + h, GRAD.gold) : 'rgba(10,30,80,0.45)'; c.fill(); c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
+  u.text(`#${r.rank}`, x + 12, y + h / 2 + 1, 16, top3 ? MEDAL[r.rank - 1] : '#fff', { align: 'left' });
+  const ax = x + 12 + 46 + h * 0.32;
+  avatar(u, ax, y + h / 2, h * 0.32, r.color, r.name);
+  const tw = u.measure(String(r.trophies), 18) + 34;
+  u.text(r.name, ax + h * 0.32 + 10, y + h / 2 + 1, 17, '#fff', { align: 'left', maxW: w - (ax - x) - h * 0.32 - 22 - tw });
+  u.row([{ icon: 'trophy', size: 22, color: r.me ? '#fff' : GOLD }, String(r.trophies)], x + w - 10 - tw / 2, y + h / 2, { size: 18 });
+}
+function showBoard() {
+  let rows = lbRows(), at = ui.t;
+  delete ui.scrolls.lb;
+  ui.overlay((u, age) => {
+    if (u.t - at > 5) { rows = lbRows(); at = u.t; }    // the simulated players keep playing
+    const c = u.ctx, sh = short();
+    const pw = Math.min(u.w - PAD * 2, 440), px = u.w / 2 - pw / 2, py = topY(u) + 26, ph = u.h - u.safeBottom - PAD - py;
+    u.panel(px, py, pw, ph, { ribbon: `Top ${BOARD_SIZE}`, ribbonColor: 'gold', scale: u.pop(0, 0.3, age) });
+    if (age < 0.25) return true;
+    const ix = px + PAD, iw = pw - PAD * 2;
+    u.text('1st place in a race = +1 trophy', u.w / 2, py + 40, 14, '#fff', { maxW: iw });
+    // podium: 2nd, 1st, 3rd
+    const podY = py + 58, podH = sh ? 112 : 126, cw = iw / 3;
+    [1, 0, 2].forEach((k, col) => {
+      const r = rows[k], cx = ix + col * cw + cw / 2, rad = k === 0 ? (sh ? 24 : 28) : (sh ? 19 : 22), cy = podY + (k === 0 ? rad + 4 : rad + 18);
+      avatar(u, cx, cy, rad, r.color, r.name, MEDAL[k]);
+      c.beginPath(); c.arc(cx + rad * 0.75, cy - rad * 0.75, 10, 0, Math.PI * 2); c.fillStyle = MEDAL[k]; c.fill(); c.lineWidth = 2; c.strokeStyle = INK; c.stroke();
+      u.text(String(k + 1), cx + rad * 0.75, cy - rad * 0.75 + 1, 13, '#5a3000', { outline: false });
+      u.text(r.name, cx, cy + rad + 16, 14, r.me ? GOLD : '#fff', { maxW: cw - 6 });
+      u.row([{ icon: 'trophy', size: 18, color: GOLD }, String(r.trophies)], cx, cy + rad + 36, { size: 16, maxW: cw - 6 });
+    });
+    // list 4..100, then the player's own row pinned above the close button
+    const btnH = 48, btnY = py + ph - PAD - btnH, meH = 52, meY = btnY - GAP - meH, me = rows.find((r) => r.me);
+    const listY = podY + podH + 6, listH = meY - 26 - listY, rh = 46, rest = rows.slice(3);
+    u.scroll('lb', ix - 4, listY, iw + 8, listH, rest.length * (rh + 6) + 4, () => {
+      const off = u.scrolls.lb?.off || 0;
+      rest.forEach((r, i) => { const y = listY + 4 + i * (rh + 6); if (y + rh + 4 < listY + off || y - 4 > listY + off + listH) return; lbRow(u, r, ix, y, iw, rh); });
+    });
+    lbRow(u, me, ix, meY, iw, meH);
+    const above = rows[me.rank - 2];
+    const hint = !above ? 'You are the champion!' : `${above.trophies - me.trophies + 1} more win${above.trophies - me.trophies ? 's' : ''} to pass ${above.name}`;
+    u.text(hint, u.w / 2, meY - 13, 13, '#ffe9a8', { maxW: iw });
+    u.button('lbclose', ix, btnY, iw, btnH, { color: 'blue', label: 'Close', size: 20, onTap: tap(() => u.closeOverlay()) });
+    return age < 0.6;
+  });
 }
 
 // ------------------------------------------------------------ shop + upgrades
@@ -1221,7 +1298,7 @@ boot();
 globalThis.__crane = {
   get game() { return game; }, get testRun() { return testRun; }, save: () => save, ui, R, P, worlds: WORLDS,
   startLevel: (w, l) => startLevel(WORLDS[w].levels[l]), startTest, keys,
-  actions: { tab: ({ tab }) => tabs2[tab](), race: startRace, randomRace: startRandomRace, levels: ({ w }) => showLevels(+w), shopSel: ({ id }) => showShop(id), use: ({ id }) => { save.car = id; persist(); } },
+  actions: { board: () => showBoard(), standings: () => cupStandings(), tab: ({ tab }) => tabs2[tab](), race: startRace, randomRace: startRandomRace, levels: ({ w }) => showLevels(+w), shopSel: ({ id }) => showShop(id), use: ({ id }) => { save.car = id; persist(); } },
   stats: () => ({ calls: R.r.info.render.calls, tris: R.r.info.render.triangles, geos: R.r.info.memory.geometries, tex: R.r.info.memory.textures, pr: R.r.getPixelRatio() }),
   views: (id) => R.views(vehicleById(id || 'crane')), icon: (n) => { const c = R.thumbnail(VEHICLES[0], n, n); return c.toDataURL ? c.toDataURL() : ''; },
   tapAt: (x, y) => { ui.pointerDown({ id: 99, x, y }); ui.pointerUp({ id: 99, x, y }); },
