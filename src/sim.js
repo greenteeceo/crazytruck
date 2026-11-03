@@ -25,6 +25,8 @@ export class Sim {
     this.headTouch = 0;
     this.headTime = 0;
     this.padCooldown = 0;
+    this.freeze = 0;
+    this.pose = '';
     this.landed = 0;     // set when wheel lands after air; used for fx
     this.airTime = 0;
     this.events = [];    // queued fx events for renderer/audio
@@ -198,8 +200,8 @@ export class Sim {
       for (const [u, o, fo] of [[ua, ub, fb], [ub, ua, fa]]) {
         if (u.kind !== 'car') continue;
         if (o.kind === 'ground') {
-          if (u.part === 'wheel') this.wheelTouch[u.idx] += delta;
-          else if (u.part === 'head' && !o.prop) this.headTouch += delta;
+          if (u.part === 'wheel') this.wheelTouch[u.idx] = Math.max(0, this.wheelTouch[u.idx] + delta);
+          else if (u.part === 'head') { if (o.prop) this.headProp = Math.max(0, (this.headProp || 0) + delta); else this.headTouch = Math.max(0, this.headTouch + delta); }
           if (delta > 0 && o.prop) this.events.push({ type: 'bonk', style: o.style });
           if (delta > 0 && o.style === 'pad' && o.pad) this.events.push({ type: 'pad', p: o.pad });
         } else if (delta > 0 && o.kind === 'gem' && !o.gem.taken) {
@@ -223,6 +225,7 @@ export class Sim {
 
   step(throttle) {
     const s = this.spec;
+    if (this.freeze > 0) { this.freeze -= DT; this.time += DT; if (this.freeze <= 0) { this.state = 'run'; this.events.push({ type: 'recovered' }); } return; }
     const running = this.state === 'run';
     const t = running ? throttle : 0;
     for (const j of this.joints) {
@@ -267,9 +270,15 @@ export class Sim {
     if (this.state === 'run') {
       const pos = this.chassis.getPosition();
       this.maxX = Math.max(this.maxX, pos.x);
+      // roof on solid ground: instant crash. Roof on a prop (crate, domino...) or resting upside down: a short grace period.
+      let a = this.chassis.getAngle() % (Math.PI * 2); if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
+      const v = this.chassis.getLinearVelocity(), slow = Math.abs(v.x) + Math.abs(v.y) < 1.5;
       if (this.headTouch > 0) {
         this.headTime += DT;
         if (this.headTime > 0.1) this.fail('crash');
+      } else if ((this.headProp || 0) > 0 || (Math.abs(a) > 2.0 && slow)) {
+        this.headTime += DT;
+        if (this.headTime > 0.6) this.fail('crash');
       } else this.headTime = 0;
       if (pos.y < (this.level.water ?? -4) - 1.2) this.fail('splash');
       if (pos.x < (this.level.minX ?? -12)) this.fail('lost');
@@ -279,7 +288,56 @@ export class Sim {
   fail(reason) {
     if (this.state !== 'run') return;
     this.state = 'fail'; this.reason = reason;
-    this.events.push({ type: 'fail', reason });
+    this.pose = this.classifyPose(reason);
+    this.events.push({ type: 'fail', reason, pose: this.pose });
+  }
+
+  // How did we crash? Used for funny captions and stickers.
+  classifyPose(reason) {
+    let a = this.chassis.getAngle() % (Math.PI * 2);
+    if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
+    const v = this.chassis.getLinearVelocity();
+    if (reason === 'lost') return 'lost';
+    if (reason === 'splash') {
+      if (Math.abs(a) > 2.2) return 'splashRoof';
+      if (v.x < 1 && this.maxX - this.x > 2.5) return 'splashShort';   // fell off the edge backwards / short jump
+      return Math.abs(this.chassis.getAngularVelocity()) > 2.5 ? 'splashSpin' : 'splash';
+    }
+    if (Math.abs(a) > 2.3) return 'roof';
+    if (a < -0.8) return 'nose';
+    if (a > 0.8) return 'backflip';
+    return 'crash';
+  }
+
+  // Put the truck back on its wheels near x without rebuilding the level (scenery keeps its state).
+  // The caller animates the flip; physics is frozen for `hold` seconds meanwhile.
+  recover(x, hold = 0.8) {
+    const s = this.spec;
+    // find a spot where both wheels sit on roughly level static ground
+    let gx = x, gy = null;
+    const span = Math.max(...s.wheelX.map(Math.abs)) + 0.3;
+    for (let i = 0; i < 80 && gy == null; i++) {
+      const a = this.groundAt(gx - span), b = this.groundAt(gx + span), c = this.groundAt(gx);
+      if (a != null && b != null && c != null && Math.abs(a - b) < 0.5 && c <= Math.max(a, b) + 0.3) gy = Math.max(a, b);
+      else gx += 0.5;
+    }
+    if (gy == null) { gx = this.startX; gy = this.level.start?.y || 0; }
+    const from = { x: this.x, y: this.chassis.getPosition().y, a: this.chassis.getAngle() };
+    const cy = gy + s.wheelR - s.wheelY + 0.08;
+    const zero = V(0, 0);
+    const place = (b, px, py, ang = 0) => { b.setTransform(V(px, py), ang); b.setLinearVelocity(zero); b.setAngularVelocity(0); b.setAwake(true); };
+    place(this.chassis, gx, cy);
+    s.wheelX.forEach((wx, i) => place(this.wheels[i], gx + wx, cy + s.wheelY));
+    if (s.crane) {
+      const c = s.crane, tx = c.pivot[0] + Math.cos(c.angle) * c.length, ty = c.pivot[1] + Math.sin(c.angle) * c.length;
+      this.hook.forEach((b, i) => place(b, gx + tx, cy + ty - c.linkLen * (i + 0.5)));
+    }
+    this.headTouch = 0; this.headProp = 0; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
+    this.state = 'recover'; this.reason = ''; this.freeze = hold;
+    this.maxX = Math.max(this.maxX, gx);
+    const to = { x: gx, y: cy, a: 0 };
+    this.events.push({ type: 'recover', from, to, hold });
+    return to;
   }
 
   // Highest static ground surface at x (for respawns), or null over a gap.

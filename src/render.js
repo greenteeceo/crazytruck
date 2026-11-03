@@ -184,7 +184,7 @@ export class Renderer {
       c.position.set(x, 20 + srand() * 12, -70 - srand() * 40); c.scale.setScalar(1.6); s.add(c); this.clouds.push(c);
     }
     // water / floor
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ color: theme.water }));
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ color: theme.water, transparent: true, opacity: 0.78 }));
     water.rotation.x = -Math.PI / 2; water.position.y = waterY; water.receiveShadow = true; s.add(water);
     const deep = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshBasicMaterial({ color: theme.waterDeep, fog: true }));
     deep.rotation.x = -Math.PI / 2; deep.position.set(0, waterY + 0.01, -1500 - 30); s.add(deep);
@@ -363,6 +363,20 @@ export class Renderer {
       car.squash *= Math.exp(-dt * 7); car.hop = Math.max(0, car.hop - dt);
       const sq = Math.sin(Math.min(1, car.squash) * Math.PI) * car.squash;
       const hopY = car.hop > 0 ? Math.abs(Math.sin(car.hop * 9)) * 0.35 * car.hop : 0;
+      if (car.anim) {
+        // flip-back: lift, roll upright and drop a little behind the crash spot
+        const an = car.anim; an.t += dt;
+        const k = Math.min(1, an.t / an.dur), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        const x = an.from.x + (an.to.x - an.from.x) * e, y = an.from.y + (an.to.y - an.from.y) * e + Math.sin(k * Math.PI) * 1.6;
+        const ang = an.from.a + (an.to.a - an.from.a) * e;
+        car.parts.group.position.set(x, y, z); car.parts.group.rotation.z = ang; car.parts.group.scale.set(1, 1, 1);
+        const ca = Math.cos(ang), sa = Math.sin(ang), sp = car.spec;
+        sp.wheelX.forEach((wx, i) => { car.wheels[i].position.set(x + wx * ca - sp.wheelY * sa, y + wx * sa + sp.wheelY * ca, z); car.wheels[i].rotation.z += dt * 12; });
+        if (sp.crane) { const cr = sp.crane, tx = cr.pivot[0] + Math.cos(cr.angle) * cr.length, ty = cr.pivot[1] + Math.sin(cr.angle) * cr.length; car.hook.forEach((h, i) => { const ly = ty - cr.linkLen * (i + 0.5); h.position.set(x + tx * ca - ly * sa, y + tx * sa + ly * ca, z); h.rotation.z = ang; }); }
+        if (k >= 1) { car.anim = null; car.squash = 0.9; this.burst(x, y - 0.9, 0xf3e2d2, 10, 3, -4, 0.5, z); }
+        if (car.tag) car.tag.position.set(x, y + 3.2, z);
+        continue;
+      }
       car.parts.group.position.set(p.x, p.y + hopY, z); car.parts.group.rotation.z = c.getAngle();
       car.parts.group.scale.set(1 + sq * 0.1, 1 - sq * 0.16, 1 + sq * 0.08);
       sim.wheels.forEach((w, i) => { const q = w.getPosition(); car.wheels[i].position.set(q.x, q.y + hopY, z); car.wheels[i].rotation.z = w.getAngle(); });
@@ -461,6 +475,30 @@ export class Renderer {
   snapshot() {
     this.r.render(this.scene, this.camera);
     try { return this.canvas.toDataURL('image/jpeg', 0.82); } catch { return ''; }
+  }
+
+  // Start the flip-back animation from a sim 'recover' event. Angle goes the short way round.
+  carRecover(car, e) {
+    let a = e.from.a % (Math.PI * 2);
+    if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
+    car.anim = { from: { x: e.from.x, y: e.from.y, a }, to: e.to, t: 0, dur: e.hold * 0.9 };
+  }
+
+  // Close-up "crash photo": camera dives in with a tilted (dutch) angle, then everything is restored.
+  snapshotCar(sim, z = 0) {
+    const p = sim.chassis.getPosition();
+    const cam = this.camera, keep = { pos: cam.position.clone(), quat: cam.quaternion.clone(), up: cam.up.clone(), fov: cam.fov };
+    const water = sim.level.water ?? -3;
+    const target = new THREE.Vector3(p.x + 0.4, Math.max(p.y, water + 0.6) + 0.4, z);
+    const side = sim.reason === 'splash' ? 1 : -1;
+    cam.position.set(target.x + 6.5 * side, target.y + 4.2, z + 11);
+    cam.up.set(Math.sin(0.28 * side), Math.cos(0.28 * side), 0);
+    cam.fov = 38; cam.updateProjectionMatrix(); cam.lookAt(target);
+    this.r.render(this.scene, cam);
+    let url = '';
+    try { url = this.canvas.toDataURL('image/jpeg', 0.85); } catch { /* ignore */ }
+    cam.position.copy(keep.pos); cam.quaternion.copy(keep.quat); cam.up.copy(keep.up); cam.fov = keep.fov; cam.updateProjectionMatrix();
+    return url;
   }
 
   // ------------------------------------------------------------ menus

@@ -4,10 +4,10 @@ A voxel physics driving game: drive the crane monster truck across floating isla
 seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups and unlock new trucks in the shop.
 
 - **4 worlds × 10 levels**: Classic (islands), Construction, Medieval, Science (low gravity, boost pads)
-- **Race mode**: 5-lane races on 12 wacky tracks (dominoes, swinging hammers, rolling boulders, crate walls, seesaws, bounce pads), 4 cups × 3 races vs 4 AI trucks, auto-respawn, points table, trophies
+- **Race mode**: 3–6 lane races (pick before each cup race) on 12 wacky tracks (dominoes, swinging hammers, rolling boulders, crate walls, seesaws, bounce pads), 4 cups × 3 races vs 4 AI trucks, in-place flip-back recovery, points table, trophies
 - **Shop**: 8 trucks with different speed / power / grip / air control, bought with gems
 - **Stars**: finish, collect every gem, beat the par time
-- Fail screen with a snapshot of the crash, level-complete and race-result animations, synthesized sound
+- Fail screen with a close-up crash photo (roof / nose-dive / belly flop stickers and captions), level-complete and race-result animations, synthesized sound
 
 ## Controls
 
@@ -17,8 +17,16 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 
 ## Download
 
-Android release build: [`release/CraneRush-1.1.apk`](release/CraneRush-1.1.apk) (signed, minSdk 23, targetSdk 35).
-A Play Store bundle is at [`release/CraneRush-1.1.aab`](release/CraneRush-1.1.aab).
+Android release build: [`release/CraneRush-1.2.apk`](release/CraneRush-1.2.apk) (signed, minSdk 23, targetSdk 36).
+A Play Store bundle is at [`release/CraneRush-1.2.aab`](release/CraneRush-1.2.aab).
+
+## Google Play checklist
+
+- Upload `release/CraneRush-1.2.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
+- Enrol in Play App Signing; the local keystore then acts as the upload key. Keep `android/cranerush-release.keystore` + `keystore.properties` private.
+- Store assets in `store/`: 512×512 icon, 1024×500 feature graphic. Add at least 2 phone screenshots (1080×1920+).
+- Fill in the Data safety form (the app collects nothing; progress is stored on device), content rating questionnaire (IARC), and a privacy policy URL.
+- Change `appId` in `capacitor.config.json` / `android/app/build.gradle` if `com.greentee.cranerush` is not the package you want; it cannot be changed after the first upload.
 
 ## Project layout
 

@@ -79,15 +79,15 @@ const RIVALS = [
   { name: 'Iron Knight', car: 'knight', color: '#c6a8ff' },
 ];
 const CUPS = [
-  { name: 'Grass Cup', world: 0, races: [0, 1, 4], skill: [0.55, 0.62, 0.7, 0.78], color: '#46d35c', reward: 1 },
-  { name: 'Girder Cup', world: 1, races: [2, 5, 11], skill: [0.62, 0.7, 0.8, 0.88], color: '#ff6a3c', reward: 1.5 },
-  { name: 'Castle Cup', world: 2, races: [6, 7, 10], skill: [0.7, 0.8, 0.88, 0.95], color: '#7f96ff', reward: 2 },
-  { name: 'Lab Cup', world: 3, races: [3, 8, 9], skill: [0.8, 0.88, 0.95, 1.0], color: '#2ee6c8', reward: 3 },
+  { name: 'Grass Cup', world: 0, races: [0, 1, 4], skill: [0.55, 0.62, 0.7, 0.78, 0.84], color: '#46d35c', reward: 1 },
+  { name: 'Girder Cup', world: 1, races: [2, 5, 11], skill: [0.62, 0.7, 0.8, 0.88, 0.92], color: '#ff6a3c', reward: 1.5 },
+  { name: 'Castle Cup', world: 2, races: [6, 7, 10], skill: [0.7, 0.8, 0.88, 0.95, 0.98], color: '#7f96ff', reward: 2 },
+  { name: 'Lab Cup', world: 3, races: [3, 8, 9], skill: [0.8, 0.88, 0.95, 1.0, 1.0], color: '#2ee6c8', reward: 3 },
 ];
-const PLACE_GEMS = [100, 60, 30, 15, 5];
-const PLACE_PTS = [5, 4, 3, 2, 1];
-const LANE_W = 3.4, LANES = 5;
-const laneZ = (i) => (2 - i) * LANE_W;   // lane 0 (player) is nearest the camera
+const PLACE_GEMS = [100, 60, 30, 15, 8, 4];
+const LANE_W = 3.4;
+const laneCount = () => Math.min(6, Math.max(3, save.lanes || 5));
+const laneZ = (i) => ((laneCount() - 1) / 2 - i) * LANE_W;   // lane 0 (player) is nearest the camera
 
 function aiSpec(id) {
   const base = VEHICLES[0], v = vehicleById(id);
@@ -97,7 +97,7 @@ function aiSpec(id) {
 function startLevel(level, race = null) {
   const spec = vehicleById(save.car);
   const theme = WORLDS[level.world].theme;
-  R.buildLevel(level, theme, race ? { lanes: LANES, laneW: LANE_W } : {});
+  R.buildLevel(level, theme, race ? { lanes: laneCount(), laneW: LANE_W } : {});
   const z0 = race ? laneZ(0) : 0;
   const me = makeRacer(level, spec, { stuckLimit: 5 });
   const sim = me.sim;
@@ -118,14 +118,6 @@ function startLevel(level, race = null) {
   R.snapCam = true;
   hud();
   Audio.engineStart();
-}
-
-// After a respawn the racer has a fresh simulation: re-bind its lane and truck view.
-function rebind(h, gems) {
-  R.detachLane(h.lane);
-  h.lane = R.attachSim(h.r ? h.r.sim : h.me.sim, { z: h.z, gems });
-  const car = h.car || h.player; car.sim = h.lane.sim; car.squash = 1;
-  R.burst(car.sim.x, car.sim.chassis.getPosition().y, 0xffffff, 14, 4, -4, 0.6, h.z);
 }
 
 function hud() {
@@ -182,7 +174,7 @@ function tick(dt) {
     g.acc -= DT;
     g.sim.step(t);
     for (const e of g.sim.drainEvents()) fx(e, g.sim, g.z, g.player);
-    if (g.race && racerWatch(g.me) === 'respawn') { g.sim = g.me.sim; rebind(g, true); Audio.boost(); R.popText('Respawn!', g.sim.x, g.sim.chassis.getPosition().y + 2.5, g.z, '#ffffff'); }
+    if (g.race && racerWatch(g.me) === 'respawn') Audio.boost();
     for (const r of g.racers) {
       const rs = r.r.sim;
       if (r.finish != null) { rs.step(0); rs.drainEvents(); continue; }
@@ -190,9 +182,10 @@ function tick(dt) {
       for (const e of rs.drainEvents()) {
         if (e.type === 'win') r.finish = rs.finishTime;
         else if (e.type === 'land') r.car.squash = Math.min(1, e.v);
+        else if (e.type === 'recover') R.carRecover(r.car, e);
         else if (e.type === 'bonk' && Math.random() < 0.3) R.burst(rs.x, rs.chassis.getPosition().y + 0.5, 0xffffff, 5, 3, -6, 0.4, r.z);
       }
-      if (racerWatch(r.r) === 'respawn') rebind(r, false);
+      racerWatch(r.r);
       if (rs.time > 120 && r.finish == null) r.finish = Infinity;
     }
   }
@@ -242,6 +235,7 @@ function fx(e, sim, z = 0, car = null) {
         if (e.style === 'metal' || e.style === 'stone') { R.popText(e.style === 'metal' ? 'BONK!' : 'THUD!', p.x, p.y + 2.6, z, '#ff6b74'); R.shake = 0.25; }
       }
       break;
+    case 'recover': if (car) { R.carRecover(car, e); R.popText('Flip!', e.to.x, e.to.y + 2.6, z, '#ffffff'); } break;
     case 'win':
       for (const c of [0xffffff, 0xff3d6b, 0x2f7cf6, 0xffd21a]) R.burst(p.x + 1, p.y + 2, c, 14, 7, -5, 1.2, z);
       if (car) car.hop = 1.2;
@@ -249,7 +243,7 @@ function fx(e, sim, z = 0, car = null) {
     case 'fail':
       if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }
       else { R.burst(p.x, p.y, 0x9a9eab, 18, 5, -8, 0.8, z); Audio.crash(); R.shake = 0.35; }
-      if (!game.race) setTimeout(() => { if (game && !game.snap) game.snap = R.snapshot(); }, 380);
+      if (!game.race) setTimeout(() => { if (game && !game.snap) game.snap = R.snapshotCar(sim, z); }, e.reason === 'splash' ? 120 : 420);
       else R.popText(e.reason === 'splash' ? 'SPLASH!' : 'OOPS!', p.x, p.y + 2.4, z, '#ffffff');
       break;
     default: break;
@@ -257,18 +251,39 @@ function fx(e, sim, z = 0, car = null) {
 }
 
 const QUIPS = {
-  crash: ['You got stuck! Try again!', 'Wrong side up!', 'Crane down!', 'Roof parking is not a thing.', 'That was a flip.'],
-  splash: ['Splash! Trucks can\'t swim.', 'Glug glug glug...', 'Took an unplanned dip!', 'Need a bigger jump!'],
-  lost: ['Wrong way, driver!'],
+  roof: ['Roof parking is not a thing.', 'Wrong side up!', 'Turtle mode activated.', 'Nice ceiling view!'],
+  nose: ['Face plant!', 'Nose first. Classic.', 'The ground said hello.', 'Headbutt of the year.'],
+  backflip: ['Too much style!', 'Backflip... almost.', 'Show-off!', 'Rotation: 270°. Needed: 360°.'],
+  crash: ['You got stuck! Try again!', 'Crane down!', 'That was a flip.', 'Ouch.'],
+  splash: ['Trucks can\'t swim.', 'Glug glug glug...', 'Took an unplanned dip!', 'Need a bigger jump!'],
+  splashSpin: ['Olympic dive! 10 points!', 'Spinning into the deep.', 'Tumble dry: ON.'],
+  splashRoof: ['Belly flop!', 'Upside down AND wet.', 'Swimming lessons needed.'],
+  splashShort: ['Just... one... more... metre.', 'Short jump. Long swim.', 'Gravity wins again.'],
+  lost: ['Wrong way, driver!', 'The finish is the OTHER way.'],
 };
+const STICKERS = {
+  roof: 'stars', nose: 'bang', backflip: 'spin', crash: 'bang',
+  splash: 'bubbles', splashSpin: 'bubbles', splashRoof: 'bubbles', splashShort: 'bubbles', lost: 'bang',
+};
+const stickerHtml = (kind) => ({
+  stars: '<div class="stk stars"><i>' + I.star + '</i><i>' + I.star + '</i><i>' + I.star + '</i></div><div class="stk zz">z<span>z</span><span>z</span></div>',
+  bang: '<div class="stk bang">BONK!</div><div class="stk lines"><i></i><i></i><i></i></div>',
+  spin: '<div class="stk spin">360°?</div><div class="stk lines"><i></i><i></i><i></i></div>',
+  bubbles: '<div class="stk bubbles"><i></i><i></i><i></i><i></i><i></i></div><div class="stk fish">&lt;°)))&gt;&lt;</div>',
+})[kind] || '';
 
 function onFail() {
   Audio.engineStop(); Audio.fail();
   const g = game, l = g.level;
-  const snap = g.snap || R.snapshot();
-  const q = QUIPS[g.sim.reason] || QUIPS.crash;
+  const snap = g.snap || R.snapshotCar(g.sim, g.z);
+  const pose = g.sim.pose || g.sim.reason || 'crash';
+  const q = QUIPS[pose] || QUIPS.crash;
+  const tilt = (Math.random() * 10 - 5).toFixed(1);
   screen('fail', html`
-    <div class="polaroid"><div class="photo" style="background-image:url(${snap})"></div><div class="caption">${q[(Math.random() * q.length) | 0]}</div></div>
+    <div class="polaroid" style="--tilt:${tilt}deg">
+      <div class="photo" style="background-image:url(${snap})">${stickerHtml(STICKERS[pose])}<div class="stamp">OOPS!</div></div>
+      <div class="caption">${q[(Math.random() * q.length) | 0]}</div>
+    </div>
     <div class="barbtns">
       <button class="btn gray" data-act="home"><span class="ico">${I.home}</span><span>Home</span></button>
       <button class="btn blue big" data-act="retry"><span class="ico">${I.retry}</span><span>Retry</span></button>
@@ -340,7 +355,7 @@ function finishRace() {
     .sort((a, b) => a.time - b.time);
   const race = g.race;
   const pts = save.cup.pts || {};
-  rows.forEach((r, i) => { r.pts = PLACE_PTS[i]; pts[r.name] = (pts[r.name] || 0) + r.pts; });
+  rows.forEach((r, i) => { r.pts = rows.length - i; pts[r.name] = (pts[r.name] || 0) + r.pts; });
   save.cup.pts = pts;
   const myPlace = rows.findIndex((r) => r.me);
   const earn = Math.round(PLACE_GEMS[myPlace] * race.cup.reward) + g.sim.gemsTaken * 5;
@@ -420,7 +435,7 @@ function startRace() {
   const idx = save.cup.race || 0;
   if (!save.cup.pts) save.cup.pts = { You: 0 };
   // stable rival set per cup
-  const rivals = [0, 1, 2, 3].map((i) => ({ ...RIVALS[(cupIdx + i) % RIVALS.length], skill: cup.skill[i] }));
+  const rivals = Array.from({ length: laneCount() - 1 }, (_, i) => ({ ...RIVALS[(cupIdx + i) % RIVALS.length], skill: cup.skill[i] }));
   rivals.forEach((r) => { if (save.cup.pts[r.name] == null) save.cup.pts[r.name] = 0; });
   persist();
   const level = RACE_TRACKS[cup.races[idx]];
@@ -488,8 +503,9 @@ function showRace() {
     <div class="cups">${CUPS.map((c, i) => `<div class="cup ${save.cups[i] ? 'won' : ''} ${i === cupIdx ? 'cur' : ''} ${i > cupIdx && !save.cups[i] ? 'lock' : ''}" style="--c:${c.color}"><span class="ico">${i > cupIdx && !save.cups[i] ? I.lock : I.trophy}</span><span>${c.name}</span></div>`).join('')}</div>
     <div class="panel racep">
       <div class="ribbon" style="background:${cup.color}">${cup.name}</div>
-      <div class="sub">Race ${raceNo + 1} of 3 · ${RACE_TRACKS[cup.races[raceNo]].name} · 5 lanes</div>
-      <div class="standings">${Object.keys(pts).length ? Object.entries(pts).sort((a, b) => b[1] - a[1]).map(([n, p], i) => `<div class="st ${n === 'You' ? 'me' : ''}"><span>${i + 1}</span><span>${n}</span><b>${p} pts</b></div>`).join('') : '<div class="sub">Beat 4 rival trucks over 3 races.<br>1st place wins the cup!</div>'}</div>
+      <div class="sub">Race ${raceNo + 1} of 3 · ${RACE_TRACKS[cup.races[raceNo]].name}</div>
+      <div class="lanesel"><span>Lanes</span>${[3, 4, 5, 6].map((n) => `<button class="${laneCount() === n ? 'on' : ''}" data-act="lanes" data-n="${n}">${n}</button>`).join('')}</div>
+      <div class="standings">${Object.keys(pts).length ? Object.entries(pts).sort((a, b) => b[1] - a[1]).map(([n, p], i) => `<div class="st ${n === 'You' ? 'me' : ''}"><span>${i + 1}</span><span>${n}</span><b>${p} pts</b></div>`).join('') : `<div class="sub">Beat ${laneCount() - 1} rival trucks over 3 races.<br>1st place wins the cup!</div>`}</div>
     </div>
     <button class="btn red race" data-act="race"><span>Race!</span><span class="ico">${I.flag}</span></button>
     ${navbar('race')}`);
@@ -569,6 +585,7 @@ const actions = {
   race: () => startRace(),
   raceNext: () => { if ((save.cup.race || 0) >= 3) cupStandings(); else showRace(); },
   shopSel: ({ id }) => showShop(id),
+  lanes: ({ n }) => { save.lanes = +n; persist(); showRace(); },
   buy: ({ id }) => {
     const v = vehicleById(id);
     if (save.diamonds < v.price) { const p = $('#dpill'); p?.classList.add('shake'); setTimeout(() => p?.classList.remove('shake'), 400); Audio.crash(); return; }
