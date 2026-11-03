@@ -26,6 +26,7 @@ export const VEHICLES = [
     look: { type: 'crane', body: 0xff9a14, bodyDark: 0xe07800, frame: 0x55565e, frameDark: 0x3c3d44 },
     heads: [{ x: 0.7, y: 0.6, hw: 0.55, hh: 0.33 }, { x: -0.7, y: 0.52, hw: 0.55, hh: 0.24 }],
     crane: { pivot: [-0.6, 0.85], angle: 0.5, length: 3.3, links: 3, linkLen: 0.28 },
+    wheelR: 0.72, wheelY: -0.5,
   },
   {
     ...base,

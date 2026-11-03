@@ -67,7 +67,7 @@ export class Sim {
         case 'bridge': this.buildBridge(p); break;
         case 'dyn': {
           const b = w.createDynamicBody({ position: V(p.x, p.y), angle: p.a || 0 });
-          b.createFixture(pl.Box(p.w / 2, p.h / 2), this.fixtureOpts(p.s, { density: p.d ?? 0.5, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: p.s } }));
+          b.createFixture(pl.Box(p.w / 2, p.h / 2), this.fixtureOpts(p.s, { density: p.d ?? 0.5, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: p.s, prop: !!this.level.race } }));
           this.dynamics.push({ body: b, piece: p });
           break;
         }
@@ -88,6 +88,23 @@ export class Sim {
           w.createJoint(pl.RevoluteJoint({ enableLimit: true, lowerAngle: p.lo ?? -1.5, upperAngle: p.hi ?? 1.5 }, this.ground, b, V(p.x, p.y)));
           b.setTransform(V(cx, cy), p.a0 || 0);
           this.dynamics.push({ body: b, piece: { ...p, h: p.h || 0.3 } });
+          break;
+        }
+        case 'ball': {
+          const b = w.createDynamicBody({ position: V(p.x, p.y), angularDamping: 0.05 });
+          b.createFixture(pl.Circle(p.r), this.fixtureOpts(p.s || 'stone', { density: p.d ?? 0.35, friction: 0.6, restitution: 0.25, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: 'stone', prop: true } }));
+          if (p.vx) b.setLinearVelocity(V(p.vx, 0));
+          this.dynamics.push({ body: b, piece: p });
+          break;
+        }
+        case 'pend': {
+          // swinging hammer: body origin at pivot, only the head collides
+          const b = w.createDynamicBody({ position: V(p.x, p.y), angularDamping: 0 });
+          b.createFixture(pl.Box(0.08, p.len / 2, V(0, -p.len / 2)), { density: 0.2, filterMaskBits: 0 });
+          b.createFixture(pl.Box(p.bw / 2, p.bh / 2, V(0, -p.len)), this.fixtureOpts('metal', { density: p.d ?? 2, restitution: 0.3, filterCategoryBits: CAT_DYN, filterMaskBits: CAT_CAR, userData: { kind: 'ground', style: 'metal', prop: true } }));
+          w.createJoint(pl.RevoluteJoint({}, this.ground, b, V(p.x, p.y)));
+          b.setTransform(V(p.x, p.y), p.a0 ?? 1.0);
+          this.dynamics.push({ body: b, piece: p });
           break;
         }
         case 'mover': case 'spin': {
@@ -182,7 +199,8 @@ export class Sim {
         if (u.kind !== 'car') continue;
         if (o.kind === 'ground') {
           if (u.part === 'wheel') this.wheelTouch[u.idx] += delta;
-          else if (u.part === 'head') this.headTouch += delta;
+          else if (u.part === 'head' && !o.prop) this.headTouch += delta;
+          if (delta > 0 && o.prop) this.events.push({ type: 'bonk', style: o.style });
           if (delta > 0 && o.style === 'pad' && o.pad) this.events.push({ type: 'pad', p: o.pad });
         } else if (delta > 0 && o.kind === 'gem' && !o.gem.taken) {
           o.gem.taken = true; this.gemsTaken++;
@@ -262,6 +280,18 @@ export class Sim {
     if (this.state !== 'run') return;
     this.state = 'fail'; this.reason = reason;
     this.events.push({ type: 'fail', reason });
+  }
+
+  // Highest static ground surface at x (for respawns), or null over a gap.
+  groundAt(x) {
+    let best = null;
+    this.world.rayCast(V(x, 40), V(x, -20), (f, pt, n, frac) => {
+      const u = f.getUserData();
+      if (!u || u.kind !== 'ground' || f.getBody().isDynamic() || f.isSensor()) return -1;
+      if (best == null || pt.y > best) best = pt.y;
+      return frac;
+    });
+    return best;
   }
 
   drainEvents() { const e = this.events; this.events = []; return e; }

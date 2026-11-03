@@ -1,6 +1,7 @@
 // Crane Rush: game flow, UI screens, input and main loop.
 import { Sim, DT } from './sim.js';
-import { WORLDS } from './levels.js';
+import { WORLDS, RACE_TRACKS } from './levels.js';
+import { makeRacer, racerWatch } from './racer.js';
 import { VEHICLES, vehicleById } from './vehicles.js';
 import { makeBot } from './bot.js';
 import { Renderer } from './render.js';
@@ -8,7 +9,7 @@ import { Audio } from './audio.js';
 import PARS from './pars.json';
 
 // ------------------------------------------------------------ save
-const KEY = 'cranerush.save.v1';
+const KEY = 'cranerush.save.v2';
 const defaults = { diamonds: 0, owned: ['crane'], car: 'crane', levels: {}, world: 0, cups: {}, cup: { idx: 0, race: 0, pts: null }, sound: true, shadows: true, trophies: 0 };
 let save;
 try { save = { ...defaults, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { save = { ...defaults }; }
@@ -78,13 +79,15 @@ const RIVALS = [
   { name: 'Iron Knight', car: 'knight', color: '#c6a8ff' },
 ];
 const CUPS = [
-  { name: 'Grass Cup', world: 0, races: [1, 4, 7], skill: [0.55, 0.68, 0.8], color: '#46d35c', reward: 1 },
-  { name: 'Girder Cup', world: 1, races: [1, 6, 8], skill: [0.65, 0.78, 0.88], color: '#ff6a3c', reward: 1.5 },
-  { name: 'Castle Cup', world: 2, races: [0, 1, 4], skill: [0.75, 0.85, 0.94], color: '#7f96ff', reward: 2 },
-  { name: 'Lab Cup', world: 3, races: [1, 3, 4], skill: [0.82, 0.92, 1.0], color: '#2ee6c8', reward: 3 },
+  { name: 'Grass Cup', world: 0, races: [0, 1, 4], skill: [0.55, 0.62, 0.7, 0.78], color: '#46d35c', reward: 1 },
+  { name: 'Girder Cup', world: 1, races: [2, 5, 11], skill: [0.62, 0.7, 0.8, 0.88], color: '#ff6a3c', reward: 1.5 },
+  { name: 'Castle Cup', world: 2, races: [6, 7, 10], skill: [0.7, 0.8, 0.88, 0.95], color: '#7f96ff', reward: 2 },
+  { name: 'Lab Cup', world: 3, races: [3, 8, 9], skill: [0.8, 0.88, 0.95, 1.0], color: '#2ee6c8', reward: 3 },
 ];
-const PLACE_GEMS = [100, 60, 30, 10];
-const PLACE_PTS = [4, 3, 2, 1];
+const PLACE_GEMS = [100, 60, 30, 15, 5];
+const PLACE_PTS = [5, 4, 3, 2, 1];
+const LANE_W = 3.4, LANES = 5;
+const laneZ = (i) => (2 - i) * LANE_W;   // lane 0 (player) is nearest the camera
 
 function aiSpec(id) {
   const base = VEHICLES[0], v = vehicleById(id);
@@ -94,22 +97,35 @@ function aiSpec(id) {
 function startLevel(level, race = null) {
   const spec = vehicleById(save.car);
   const theme = WORLDS[level.world].theme;
-  const sim = new Sim(level, spec);
-  R.buildLevel(level, theme);
-  R.attachSim(sim);
-  const player = R.addCar(sim, spec, race ? { label: 'You', color: '#ffe14d' } : {});
-  game = { level, spec, sim, player, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.2 : 0, startDelay: 0, lastSafe: null, gemsTotal: 0, takenIdx: new Set() };
+  R.buildLevel(level, theme, race ? { lanes: LANES, laneW: LANE_W } : {});
+  const z0 = race ? laneZ(0) : 0;
+  const me = makeRacer(level, spec, { stuckLimit: 5 });
+  const sim = me.sim;
+  const lane = R.attachSim(sim, { z: z0 });
+  const player = R.addCar(sim, spec, race ? { label: 'You', color: '#ffe14d', z: z0 } : {});
+  R.focusZ = z0;
+  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0 };
   if (race) {
     race.rivals.forEach((rv, i) => {
       const s2 = aiSpec(rv.car);
-      const ais = new Sim(level, s2, { collectGems: false });
-      const car = R.addCar(ais, s2, { label: rv.name, color: rv.color, ghost: true });
-      game.racers.push({ ...rv, sim: ais, car, bot: makeBot(rv.skill, i + 3), spec: s2, finish: null, lastSafe: null });
+      const r = makeRacer(level, s2, { collectGems: false });
+      const z = laneZ(i + 1);
+      const ln = R.attachSim(r.sim, { z, gems: false });
+      const car = R.addCar(r.sim, s2, { label: rv.name, color: rv.color, z });
+      game.racers.push({ ...rv, r, lane: ln, car, z, bot: makeBot(rv.skill, i + 3), spec: s2, finish: null });
     });
   }
   R.snapCam = true;
   hud();
   Audio.engineStart();
+}
+
+// After a respawn the racer has a fresh simulation: re-bind its lane and truck view.
+function rebind(h, gems) {
+  R.detachLane(h.lane);
+  h.lane = R.attachSim(h.r ? h.r.sim : h.me.sim, { z: h.z, gems });
+  const car = h.car || h.player; car.sim = h.lane.sim; car.squash = 1;
+  R.burst(car.sim.x, car.sim.chassis.getPosition().y, 0xffffff, 14, 4, -4, 0.6, h.z);
 }
 
 function hud() {
@@ -126,7 +142,7 @@ function hud() {
     ${g.race ? '<div class="track"><div class="trackbar" id="trackbar"></div></div>' : ''}
     <div class="ctrl left" id="cl">${I.left}</div>
     <div class="ctrl right" id="cr">${I.right}</div>
-    ${g.race ? '<div class="count" id="count"></div>' : `<div class="banner" id="banner">${l.index + 1}. ${l.name}</div>`}
+    ${g.race ? '<div class="lights" id="lights"><i></i><i></i><i></i></div><div class="count" id="count"></div>' : `<div class="banner" id="banner">${l.index + 1}. ${l.name}</div>`}
   `);
   const bind = (id, set) => {
     const b = $(id, el);
@@ -142,35 +158,6 @@ function hud() {
   }
 }
 
-function recordSafe(holder, sim) {
-  if (sim.state !== 'run' || sim.airborne) return;
-  if (sim.wheelTouch[0] <= 0 || sim.wheelTouch[1] <= 0) return;
-  const a = sim.chassis.getAngle();
-  if (Math.abs(Math.sin(a)) > 0.35 || Math.cos(a) < 0.6) return;
-  const p = sim.chassis.getPosition();
-  holder.lastSafe = { x: p.x, y: p.y - (sim.spec.wheelR - sim.spec.wheelY + 0.05) + 0.1 };
-}
-
-function respawnPlayer() {
-  const g = game, old = g.sim;
-  const at = g.lastSafe || null;
-  const sim = new Sim(g.level, g.spec, { start: at ? { x: at.x - 1, y: at.y + 0.3 } : undefined, time: old.time + 0.5 });
-  sim.gems.forEach((gm, i) => { if (old.gems[i]?.taken) { gm.taken = true; sim.gemsTaken++; } });
-  // re-render level with fresh dynamic objects, keep rivals
-  R.buildLevel(g.level, WORLDS[g.level.world].theme);
-  R.attachSim(sim);
-  g.player = R.addCar(sim, g.spec, { label: 'You', color: '#ffe14d' });
-  for (const r of g.racers) r.car = R.addCar(r.sim, r.spec, { label: r.name, color: r.color, ghost: true });
-  g.sim = sim; g.failT = 0;
-  R.snapCam = true;
-}
-
-function respawnRival(r) {
-  const old = r.sim, at = r.lastSafe;
-  const sim = new Sim(game.level, r.spec, { collectGems: false, start: at ? { x: at.x - 1, y: at.y + 0.3 } : undefined, time: old.time + 0.5 });
-  r.sim = sim; r.car.sim = sim; r.failT = 0;
-}
-
 function tick(dt) {
   const g = game;
   if (!g || g.paused) return;
@@ -182,9 +169,11 @@ function tick(dt) {
     if (c && (before !== after || !c.textContent)) {
       c.textContent = after > 0 ? after : 'GO!';
       c.classList.remove('popk'); void c.offsetWidth; c.classList.add('popk');
+      const bulbs = document.querySelectorAll('#lights i');
+      bulbs.forEach((b, i) => { b.className = after <= 0 ? 'go' : i < 3 - after + 1 ? 'on' : ''; });
       Audio.countdown(after <= 0);
     }
-    if (g.countdown <= 0) setTimeout(() => { const c2 = $('#count'); if (c2) c2.textContent = ''; }, 600);
+    if (g.countdown <= 0) setTimeout(() => { const c2 = $('#count'); if (c2) c2.textContent = ''; $('#lights')?.classList.add('out'); }, 700);
     return;
   }
   g.acc += Math.min(dt, 0.1);
@@ -192,16 +181,20 @@ function tick(dt) {
   while (g.acc >= DT) {
     g.acc -= DT;
     g.sim.step(t);
-    for (const e of g.sim.drainEvents()) fx(e, g.sim);
+    for (const e of g.sim.drainEvents()) fx(e, g.sim, g.z, g.player);
+    if (g.race && racerWatch(g.me) === 'respawn') { g.sim = g.me.sim; rebind(g, true); Audio.boost(); R.popText('Respawn!', g.sim.x, g.sim.chassis.getPosition().y + 2.5, g.z, '#ffffff'); }
     for (const r of g.racers) {
-      if (r.finish != null) { r.sim.step(0); r.sim.drainEvents(); continue; }
-      r.sim.step(r.bot(r.sim));
-      for (const e of r.sim.drainEvents()) if (e.type === 'win') r.finish = r.sim.finishTime;
-      if (((r.sim.time * 60) | 0) % 15 === 0) recordSafe(r, r.sim);
-      if (r.sim.state === 'fail') { r.failT = (r.failT || 0) + DT; if (r.failT > 0.9) respawnRival(r); }
-      if (r.sim.time > 120 && r.finish == null) r.finish = Infinity;
+      const rs = r.r.sim;
+      if (r.finish != null) { rs.step(0); rs.drainEvents(); continue; }
+      rs.step(r.bot(rs));
+      for (const e of rs.drainEvents()) {
+        if (e.type === 'win') r.finish = rs.finishTime;
+        else if (e.type === 'land') r.car.squash = Math.min(1, e.v);
+        else if (e.type === 'bonk' && Math.random() < 0.3) R.burst(rs.x, rs.chassis.getPosition().y + 0.5, 0xffffff, 5, 3, -6, 0.4, r.z);
+      }
+      if (racerWatch(r.r) === 'respawn') rebind(r, false);
+      if (rs.time > 120 && r.finish == null) r.finish = Infinity;
     }
-    if (g.race && ((g.sim.time * 60) | 0) % 15 === 0) recordSafe(g, g.sim);
   }
   // engine sound
   const av = Math.abs(g.sim.wheels[0].getAngularVelocity());
@@ -210,18 +203,17 @@ function tick(dt) {
   const tm = $('#timer'); if (tm) tm.textContent = fmt(g.sim.state === 'win' ? g.sim.finishTime : g.sim.time);
   const gc = $('#gcount'); if (gc) gc.textContent = `${g.sim.gemsTaken}/${g.sim.gems.length}`;
   if (g.race) {
-    const all = [{ x: g.sim.x, fin: g.sim.state === 'win' ? g.sim.finishTime : null, me: true }, ...g.racers.map((r) => ({ x: r.sim.x, fin: r.finish }))];
+    const all = [{ x: g.sim.x, fin: g.sim.state === 'win' ? g.sim.finishTime : null, me: true }, ...g.racers.map((r) => ({ x: r.r.sim.x, fin: r.finish }))];
     const me = all[0];
     const ahead = all.filter((o) => o !== me && ((o.fin != null && (me.fin == null || o.fin < me.fin)) || (o.fin == null && me.fin == null && o.x > me.x))).length;
-    const pe = $('#pos'); if (pe) pe.textContent = ord(ahead + 1);
+    const pe = $('#pos'); if (pe) { const txt = ord(ahead + 1); if (pe.dataset.v !== txt) { pe.dataset.v = txt; pe.innerHTML = `${txt}<small>/${all.length}</small>`; pe.classList.remove('popk'); void pe.offsetWidth; pe.classList.add('popk'); } }
     const finishX = g.sim.finishX || 1, sx = g.level.start?.x || 0;
     document.querySelectorAll('#trackbar .dot').forEach((d) => { const o = all[+d.dataset.i]; const p = o.fin != null ? 1 : Math.max(0, Math.min(1, (o.x - sx) / (finishX - sx))); d.style.left = `${p * 100}%`; });
   }
   const st = g.sim.state;
   if (st === 'fail' && !g.over) {
     g.failT += dt;
-    if (g.race) { if (g.failT > 0.9) respawnPlayer(); }
-    else if (g.failT > 0.85) { g.over = true; onFail(); }
+    if (!g.race && g.failT > 0.85) { g.over = true; onFail(); }
   }
   if (st === 'win' && !g.over) {
     if (g.race) {
@@ -232,17 +224,33 @@ function tick(dt) {
   }
 }
 
-function fx(e, sim) {
+function fx(e, sim, z = 0, car = null) {
   const p = sim.chassis.getPosition();
   switch (e.type) {
-    case 'gem': R.burst(e.gem.piece.x, e.gem.piece.y, 0xffd21a, 12, 4, -6, 0.6); Audio.gem(); break;
-    case 'land': R.burst(p.x, p.y - 0.9, 0xf3e2d2, 8, 2.5, -4, 0.5); Audio.land(e.v); if (e.v > 1) R.shake = 0.2; break;
-    case 'pad': case 'boost': R.burst(p.x, p.y - 0.6, 0x5ff0ff, 14, 5, -3, 0.7); Audio.boost(); break;
-    case 'win': R.burst(p.x + 1, p.y + 2, 0xffffff, 24, 7, -5, 1.2); R.burst(p.x + 1, p.y + 2, 0xff3d6b, 12, 6, -5, 1.2); R.burst(p.x + 1, p.y + 2, 0x2f7cf6, 12, 6, -5, 1.2); Audio.win(); break;
+    case 'gem': R.burst(e.gem.piece.x, e.gem.piece.y, 0xffd21a, 12, 4, -6, 0.6, z); R.popText('+1', e.gem.piece.x, e.gem.piece.y + 0.8, z); Audio.gem(); break;
+    case 'land':
+      R.burst(p.x, p.y - 0.9, 0xf3e2d2, 8 + Math.min(10, e.v * 6), 2.5 + e.v, -4, 0.5, z); Audio.land(e.v);
+      if (car) car.squash = Math.min(1, 0.4 + e.v * 0.5);
+      if (e.v > 1) R.shake = 0.2;
+      if (e.v > 1.3) R.popText(e.v > 2 ? 'HUGE AIR!' : 'Nice air!', p.x, p.y + 2.6, z, '#7df9ff');
+      break;
+    case 'pad': case 'boost': R.burst(p.x, p.y - 0.6, 0x5ff0ff, 18, 6, -3, 0.7, z); R.punch = 1; Audio.boost(); break;
+    case 'bonk':
+      if ((game.bonkT || 0) < performance.now()) {
+        game.bonkT = performance.now() + 450;
+        R.burst(p.x + 1, p.y + 0.6, 0xffffff, 6, 3, -6, 0.4, z); Audio.land(0.3);
+        if (e.style === 'metal' || e.style === 'stone') { R.popText(e.style === 'metal' ? 'BONK!' : 'THUD!', p.x, p.y + 2.6, z, '#ff6b74'); R.shake = 0.25; }
+      }
+      break;
+    case 'win':
+      for (const c of [0xffffff, 0xff3d6b, 0x2f7cf6, 0xffd21a]) R.burst(p.x + 1, p.y + 2, c, 14, 7, -5, 1.2, z);
+      if (car) car.hop = 1.2;
+      Audio.win(); break;
     case 'fail':
-      if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1); Audio.splash(); }
-      else { R.burst(p.x, p.y, 0x9a9eab, 18, 5, -8, 0.8); Audio.crash(); R.shake = 0.35; }
+      if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }
+      else { R.burst(p.x, p.y, 0x9a9eab, 18, 5, -8, 0.8, z); Audio.crash(); R.shake = 0.35; }
       if (!game.race) setTimeout(() => { if (game && !game.snap) game.snap = R.snapshot(); }, 380);
+      else R.popText(e.reason === 'splash' ? 'SPLASH!' : 'OOPS!', p.x, p.y + 2.4, z, '#ffffff');
       break;
     default: break;
   }
@@ -322,10 +330,9 @@ function finishRace() {
   for (const r of g.racers) {
     let n = 0;
     while (r.finish == null && n < 60 * 60) {
-      r.sim.step(r.bot(r.sim)); n++;
-      for (const e of r.sim.drainEvents()) if (e.type === 'win') r.finish = r.sim.finishTime;
-      if (((r.sim.time * 60) | 0) % 15 === 0) recordSafe(r, r.sim);
-      if (r.sim.state === 'fail') { r.failT = (r.failT || 0) + DT; if (r.failT > 0.9) { const at = r.lastSafe; r.sim = new Sim(g.level, r.spec, { collectGems: false, start: at ? { x: at.x - 1, y: at.y + 0.3 } : undefined, time: r.sim.time + 0.5 }); r.failT = 0; } }
+      r.r.sim.step(r.bot(r.r.sim)); n++;
+      for (const e of r.r.sim.drainEvents()) if (e.type === 'win') r.finish = r.r.sim.finishTime;
+      racerWatch(r.r);
     }
     if (r.finish == null) r.finish = Infinity;
   }
@@ -413,10 +420,10 @@ function startRace() {
   const idx = save.cup.race || 0;
   if (!save.cup.pts) save.cup.pts = { You: 0 };
   // stable rival set per cup
-  const rivals = [0, 1, 2].map((i) => ({ ...RIVALS[(cupIdx * 2 + i) % RIVALS.length], skill: cup.skill[i] }));
+  const rivals = [0, 1, 2, 3].map((i) => ({ ...RIVALS[(cupIdx + i) % RIVALS.length], skill: cup.skill[i] }));
   rivals.forEach((r) => { if (save.cup.pts[r.name] == null) save.cup.pts[r.name] = 0; });
   persist();
-  const level = WORLDS[cup.world].levels[cup.races[idx]];
+  const level = RACE_TRACKS[cup.races[idx]];
   startLevel(level, { cup, cupIdx, idx, rivals });
 }
 
@@ -481,8 +488,8 @@ function showRace() {
     <div class="cups">${CUPS.map((c, i) => `<div class="cup ${save.cups[i] ? 'won' : ''} ${i === cupIdx ? 'cur' : ''} ${i > cupIdx && !save.cups[i] ? 'lock' : ''}" style="--c:${c.color}"><span class="ico">${i > cupIdx && !save.cups[i] ? I.lock : I.trophy}</span><span>${c.name}</span></div>`).join('')}</div>
     <div class="panel racep">
       <div class="ribbon" style="background:${cup.color}">${cup.name}</div>
-      <div class="sub">Race ${raceNo + 1} of 3 · ${WORLDS[cup.world].levels[cup.races[raceNo]].name}</div>
-      <div class="standings">${Object.keys(pts).length ? Object.entries(pts).sort((a, b) => b[1] - a[1]).map(([n, p], i) => `<div class="st ${n === 'You' ? 'me' : ''}"><span>${i + 1}</span><span>${n}</span><b>${p} pts</b></div>`).join('') : '<div class="sub">Beat 3 rival trucks over 3 races.<br>1st place wins the cup!</div>'}</div>
+      <div class="sub">Race ${raceNo + 1} of 3 · ${RACE_TRACKS[cup.races[raceNo]].name} · 5 lanes</div>
+      <div class="standings">${Object.keys(pts).length ? Object.entries(pts).sort((a, b) => b[1] - a[1]).map(([n, p], i) => `<div class="st ${n === 'You' ? 'me' : ''}"><span>${i + 1}</span><span>${n}</span><b>${p} pts</b></div>`).join('') : '<div class="sub">Beat 4 rival trucks over 3 races.<br>1st place wins the cup!</div>'}</div>
     </div>
     <button class="btn red race" data-act="race"><span>Race!</span><span class="ico">${I.flag}</span></button>
     ${navbar('race')}`);

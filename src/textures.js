@@ -12,10 +12,10 @@ function canvasTex(w, h, draw, { repeat = true } = {}) {
   draw(g, w, h);
   const t = new THREE.CanvasTexture(c);
   t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.NearestMipmapLinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
   t.colorSpace = THREE.SRGBColorSpace;
   if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
-  t.anisotropy = 4;
+  t.anisotropy = 16;
   return t;
 }
 

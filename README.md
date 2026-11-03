@@ -4,7 +4,7 @@ A voxel physics driving game: drive the crane monster truck across floating isla
 seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups and unlock new trucks in the shop.
 
 - **4 worlds × 10 levels**: Classic (islands), Construction, Medieval, Science (low gravity, boost pads)
-- **Race mode**: 4 cups × 3 races against 3 AI trucks, points table, trophies
+- **Race mode**: 5-lane races on 12 wacky tracks (dominoes, swinging hammers, rolling boulders, crate walls, seesaws, bounce pads), 4 cups × 3 races vs 4 AI trucks, auto-respawn, points table, trophies
 - **Shop**: 8 trucks with different speed / power / grip / air control, bought with gems
 - **Stars**: finish, collect every gem, beat the par time
 - Fail screen with a snapshot of the crash, level-complete and race-result animations, synthesized sound
@@ -17,8 +17,8 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 
 ## Download
 
-Android release build: [`release/CraneRush-1.0.apk`](release/CraneRush-1.0.apk) (signed, minSdk 23, targetSdk 35).
-A Play Store bundle is at [`release/CraneRush-1.0.aab`](release/CraneRush-1.0.aab).
+Android release build: [`release/CraneRush-1.1.apk`](release/CraneRush-1.1.apk) (signed, minSdk 23, targetSdk 35).
+A Play Store bundle is at [`release/CraneRush-1.1.aab`](release/CraneRush-1.1.aab).
 
 ## Project layout
 
@@ -29,7 +29,8 @@ A Play Store bundle is at [`release/CraneRush-1.0.aab`](release/CraneRush-1.0.aa
 | `src/vehicles.js` | Truck stats and looks (shop catalogue) |
 | `src/models.js`, `src/textures.js`, `src/render.js` | Three.js voxel models, pixel textures, scene, camera, particles |
 | `src/main.js`, `src/index.html` | Game flow, UI screens, input, save data |
-| `src/bot.js` | AI driver for rival trucks |
+| `src/bot.js`, `src/racer.js` | AI driver for rival trucks; race respawn (crash / stuck) |
+| `tools/raceharness.mjs` | Headless test: every race track with the bot at three skill levels |
 | `tools/harness.mjs` | Headless test: drives every level with the bot and writes par times to `src/pars.json` |
 | `android/` | Capacitor Android project (immersive full screen, portrait) |
 

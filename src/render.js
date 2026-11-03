@@ -1,7 +1,7 @@
 // Three.js renderer: level scene, trucks, particles, camera, menu dioramas.
 import * as THREE from 'three';
 import { tex, skyTexture } from './textures.js';
-import { mat, box, cbox, buildTruck, buildWheel, buildHookLink, buildGem, buildFinish, buildDeco } from './models.js';
+import { mat, box, cbox, buildTruck, buildWheel, buildHookLink, buildGem, buildFinish, buildDeco, boulder, pendulum, addOutline } from './models.js';
 
 const D = 4; // terrain depth (z)
 
@@ -117,7 +117,7 @@ export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.r = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.applyPixelRatio();
     this.r.outputColorSpace = THREE.SRGBColorSpace;
     this.r.shadowMap.enabled = true;
     this.r.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -133,10 +133,18 @@ export class Renderer {
     window.addEventListener('resize', () => this.resize());
   }
 
+  // Sharp rendering on phones: use the full device pixel ratio up to ~3.2M pixels.
+  applyPixelRatio() {
+    const dpr = window.devicePixelRatio || 1, px = window.innerWidth * window.innerHeight;
+    const pr = Math.min(dpr, 3, Math.sqrt(3.2e6 / Math.max(1, px)));
+    this.r.setPixelRatio(Math.max(1, pr));
+  }
+
   setShadows(on) { this.shadowsOn = on; this.r.shadowMap.enabled = on; if (this.sun) this.sun.castShadow = on; }
 
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
+    this.applyPixelRatio();
     this.r.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
   }
@@ -183,8 +191,10 @@ export class Renderer {
   }
 
   // ------------------------------------------------------------ level
-  buildLevel(level, theme) {
+  buildLevel(level, theme, { lanes = 1, laneW = 2.7 } = {}) {
     this.dispose();
+    const Dd = this.depth = lanes > 1 ? lanes * laneW + 0.8 : D;
+    this.laneCount = lanes; this.laneW = laneW;
     const s = this.scene = this.newScene(theme);
     this.mode = 'game';
     this.theme = theme;
@@ -196,11 +206,21 @@ export class Renderer {
     for (const p of pieces) {
       if (p.t === 'box' || p.t === 'poly') {
         const pts = piecePoly(p);
-        const m = new THREE.Mesh(prismGeo(pts), styleMats(p.s)); m.receiveShadow = true; m.castShadow = true; s.add(m);
+        const m = new THREE.Mesh(prismGeo(pts, Dd), styleMats(p.s)); m.receiveShadow = true; m.castShadow = true; s.add(m);
+        if (lanes > 1 && p.t === 'box' && !p.a && p.w > 2 && p.s !== 'pad') {
+          // lane divider stripes
+          const lm = mat(0xffffff, { transparent: true, opacity: 0.55 });
+          for (let i = 1; i < lanes; i++) {
+            const z = -Dd / 2 + 0.4 + i * laneW;
+            for (let x = p.x - p.w / 2 + 0.6; x < p.x + p.w / 2 - 1; x += 2.2) {
+              const st = box(s, x, p.y + p.h / 2 + 0.005, z - 0.07, x + 1.2, p.y + p.h / 2 + 0.03, z + 0.07, lm); st.castShadow = false;
+            }
+          }
+        }
         const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
         const bx0 = Math.min(...xs), bx1 = Math.max(...xs), by0 = Math.min(...ys), by1 = Math.max(...ys);
         minX = Math.min(minX, bx0); maxX = Math.max(maxX, bx1);
-        if (by0 < waterY + 0.05 && by1 > waterY) box(s, bx0 - 0.12, waterY - 0.02, -D / 2 - 0.12, bx1 + 0.12, waterY + 0.06, D / 2 + 0.12, foam).castShadow = false;
+        if (by0 < waterY + 0.05 && by1 > waterY) box(s, bx0 - 0.12, waterY - 0.02, -Dd / 2 - 0.12, bx1 + 0.12, waterY + 0.06, Dd / 2 + 0.12, foam).castShadow = false;
         // grass caps on upward faces
         if (STYLE[p.s]?.cap && !p.a) {
           for (let i = 0; i < pts.length; i++) {
@@ -212,27 +232,31 @@ export class Renderer {
             const cx = xs.reduce((u, v) => u + v) / xs.length, cy = ys.reduce((u, v) => u + v) / ys.length;
             const cross = (b[0] - a[0]) * (cy - a[1]) - (b[1] - a[1]) * (cx - a[0]);
             if (cross > 0) continue;
-            s.add(capMesh(a[0], a[1], b[0], b[1]));
+            s.add(capMesh(a[0], a[1], b[0], b[1], Dd + 0.08));
           }
           // auto decoration on wide flat grass
           if (p.t === 'box' && p.w > 5) this.autoDeco(s, theme, bx0 + 1, bx1 - 1, by1);
         } else if (p.t === 'box' && p.w > 6 && !['girder', 'pad', 'wood'].includes(p.s)) this.autoDeco(s, theme, bx0 + 1, bx1 - 1, by1);
       } else if (p.t === 'deco') {
-        const d = buildDeco(p.kind, srand); d.position.set(p.x, p.y, -1.2); s.add(d);
+        const d = buildDeco(p.kind, srand); d.position.set(p.x, p.y, -Dd / 2 + 0.8); s.add(d);
       } else if (p.t === 'bridge') {
-        for (const [x, y] of [[p.x1, p.y1], [p.x2, p.y2]]) for (const z of [-1.75, 1.75]) {
+        for (const [x, y] of [[p.x1, p.y1], [p.x2, p.y2]]) for (const z of [-Dd / 2 + 0.25, Dd / 2 - 0.25]) {
           box(s, x - 0.16, y - 1.0, z - 0.16, x + 0.16, y + 1.2, z + 0.16, 0x9a5b34);
           box(s, x - 0.2, y + 1.1, z - 0.2, x + 0.2, y + 1.25, z + 0.2, 0x7a4426);
         }
+      } else if (p.t === 'pend') {
+        const hz = Dd / 2 - 0.2;
+        for (const z of [-hz, hz]) box(s, p.x - 0.2, p.y - p.len - 2.5, z - 0.2, p.x + 0.2, p.y + 0.3, z + 0.2, 0xffc61a);
+        box(s, p.x - 0.25, p.y, -hz - 0.25, p.x + 0.25, p.y + 0.45, hz + 0.25, 0x3c3d44);
       } else if (p.t === 'finish') {
-        const f = buildFinish(); f.position.set(p.x, p.y, 0); s.add(f); this.finish = f;
+        const f = buildFinish(Dd); f.position.set(p.x, p.y, 0); s.add(f); this.finish = f;
       }
     }
     this.background(s, theme, minX, maxX, waterY);
     this.level = level;
-    this.ropes = [];
-    this.dynViews = [];
+    this.lanes = [];
     this.gemViews = [];
+    if (lanes > 1) { const sc = this.sun.shadow.camera; sc.top = 22; sc.bottom = -16; sc.left = -26; sc.right = 26; sc.updateProjectionMatrix(); }
     return s;
   }
 
@@ -241,50 +265,63 @@ export class Renderer {
       if (srand() < 0.35) continue;
       const kind = theme.deco[(srand() * theme.deco.length) | 0];
       const d = buildDeco(kind, srand);
-      d.position.set(x, y, -1.3 - srand() * 0.5); d.rotation.y = (srand() - 0.5) * 0.6;
+      d.position.set(x, y, -this.depth / 2 + 0.7 - srand() * 0.4); d.rotation.y = (srand() - 0.5) * 0.6;
       s.add(d);
     }
   }
 
-  attachSim(sim) {
-    // dynamic pieces from the player's simulation
+  // Render one simulation's moving pieces in its own lane (z offset). Returns the lane handle.
+  attachSim(sim, { z = 0, gems = true } = {}) {
     const s = this.scene;
-    let bridgePlanks = [];
+    const lane = { sim, z, dynViews: [], ropes: [], bridgeBodies: [] };
+    const plankD = this.laneCount > 1 ? this.laneW - 0.25 : 3.4;
+    let planks = 0;
     for (const d of sim.dynamics) {
       const p = d.piece;
       let m;
       if (p.t === 'plank') {
-        m = texturedBox(p.w, p.h, 3.4, 'wood'); m.material = [tmat('wood'), tmat('wood'), tmat('plank'), tmat('wood'), tmat('wood'), tmat('wood')];
-        bridgePlanks.push(m);
+        m = texturedBox(p.w, p.h, plankD, 'wood'); m.material = [tmat('wood'), tmat('wood'), tmat('plank'), tmat('wood'), tmat('wood'), tmat('wood')];
+        planks++; lane.bridgeBodies.push(d.body);
+      } else if (p.t === 'ball') {
+        m = boulder(p.r, p.s);
+      } else if (p.t === 'pend') {
+        m = pendulum(p, this.laneCount > 1 ? this.laneW - 0.6 : 2.4);
       } else {
-        const depth = ['crate', 'labcrate', 'barrel'].includes(p.s) ? p.w : p.t === 'dyn' && p.s === 'log' ? 3 : 3.4;
+        const depth = ['crate', 'labcrate', 'barrel'].includes(p.s) ? p.w : this.laneCount > 1 ? this.laneW - 0.25 : p.t === 'dyn' && p.s === 'log' ? 3 : 3.4;
         m = texturedBox(p.w, p.h, depth, p.s);
       }
-      s.add(m); this.dynViews.push({ m, body: d.body });
+      s.add(m); lane.dynViews.push({ m, body: d.body });
     }
-    // rope rails over bridge planks
-    if (bridgePlanks.length) {
-      for (const z of [-1.7, 1.7]) {
-        const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(bridgePlanks.length * 3 * 2), 3));
+    if (planks) {
+      for (const dz of [-plankD / 2, plankD / 2]) {
+        const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(planks * 6), 3));
         const line = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x5b3a1e }));
-        line.frustumCulled = false; s.add(line); this.ropes.push({ line, z });
+        line.frustumCulled = false; s.add(line); lane.ropes.push({ line, z: z + dz });
       }
-      this.bridgeBodies = sim.dynamics.filter((d) => d.piece.t === 'plank').map((d) => d.body);
     }
-    for (const g of sim.gems) {
-      const v = buildGem(); v.position.set(g.piece.x, g.piece.y, 0); s.add(v); this.gemViews.push({ v, g, t: srand() * 6, pop: 0 });
+    if (gems) for (const g of sim.gems) {
+      const v = buildGem(); v.position.set(g.piece.x, g.piece.y, z); s.add(v); this.gemViews.push({ v, g, t: srand() * 6, pop: 0, z });
     }
+    this.lanes.push(lane);
+    return lane;
   }
 
-  addCar(sim, spec, { label, color, ghost } = {}) {
+  detachLane(lane) {
+    for (const d of lane.dynViews) this.scene.remove(d.m);
+    for (const r of lane.ropes) this.scene.remove(r.line);
+    this.lanes = this.lanes.filter((l) => l !== lane);
+    this.gemViews = this.gemViews.filter((g) => { if (lane.sim.gems.includes(g.g)) { this.scene.remove(g.v); return false; } return true; });
+  }
+
+  addCar(sim, spec, { label, color, ghost, z = 0 } = {}) {
     const parts = buildTruck(spec);
     this.scene.add(parts.group);
     const wheels = sim.wheels.map(() => { const w = buildWheel(spec.wheelR, spec.look); this.scene.add(w); return w; });
     const hook = sim.hook.map((b, i) => { const h = buildHookLink(i === sim.hook.length - 1); this.scene.add(h); return h; });
     if (ghost) [parts.group, ...wheels, ...hook].forEach((o) => o.traverse((m) => { if (m.isMesh) { m.material = (Array.isArray(m.material) ? m.material[0] : m.material).clone(); m.material.transparent = true; m.material.opacity = 0.55; m.castShadow = false; } }));
     let tag = null;
-    if (label) { tag = nameSprite(label, color); this.scene.add(tag); }
-    const car = { sim, spec, parts, wheels, hook, tag, dustT: 0 };
+    if (label) { tag = nameSprite(label, color); if (this.laneCount > 1) tag.scale.set(4.8, 1.2, 1); this.scene.add(tag); }
+    const car = { sim, spec, parts, wheels, hook, tag, dustT: 0, z, squash: 0, hop: 0 };
     this.cars.push(car);
     return car;
   }
@@ -303,11 +340,16 @@ export class Renderer {
     p.m.scale.setScalar(size);
   }
 
-  burst(x, y, color, n = 16, speed = 5, grav = -9, life = 0.9) {
+  burst(x, y, color, n = 16, speed = 5, grav = -9, life = 0.9, z = 0) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, s = speed * (0.4 + Math.random() * 0.6);
-      this.spawn(x, y, (Math.random() - 0.5) * 2, Math.cos(a) * s, Math.abs(Math.sin(a)) * s + 1, (Math.random() - 0.5) * s, color, life * (0.6 + Math.random() * 0.6), 0.14 + Math.random() * 0.18, grav);
+      this.spawn(x, y, z + (Math.random() - 0.5) * 2, Math.cos(a) * s, Math.abs(Math.sin(a)) * s + 1, (Math.random() - 0.5) * s, color, life * (0.6 + Math.random() * 0.6), 0.14 + Math.random() * 0.18, grav);
     }
+  }
+
+  popText(text, x, y, z = 0, color = '#ffd21a') {
+    const sp = nameSprite(text, color); sp.position.set(x, y, z); sp.scale.set(2.4, 0.6, 1);
+    this.scene.add(sp); (this.pops ||= []).push({ sp, t: 0 });
   }
 
   // ------------------------------------------------------------ per-frame
@@ -316,28 +358,34 @@ export class Renderer {
     for (const car of this.cars) {
       const { sim } = car;
       const c = sim.chassis, p = c.getPosition();
-      car.parts.group.position.set(p.x, p.y, 0); car.parts.group.rotation.z = c.getAngle();
-      sim.wheels.forEach((w, i) => { const q = w.getPosition(); car.wheels[i].position.set(q.x, q.y, 0); car.wheels[i].rotation.z = w.getAngle(); });
-      sim.hook.forEach((b, i) => { const q = b.getPosition(); car.hook[i].position.set(q.x, q.y, 0); car.hook[i].rotation.z = b.getAngle(); });
+      const z = car.z;
+      // squash & stretch on landings, little hop on finish
+      car.squash *= Math.exp(-dt * 7); car.hop = Math.max(0, car.hop - dt);
+      const sq = Math.sin(Math.min(1, car.squash) * Math.PI) * car.squash;
+      const hopY = car.hop > 0 ? Math.abs(Math.sin(car.hop * 9)) * 0.35 * car.hop : 0;
+      car.parts.group.position.set(p.x, p.y + hopY, z); car.parts.group.rotation.z = c.getAngle();
+      car.parts.group.scale.set(1 + sq * 0.1, 1 - sq * 0.16, 1 + sq * 0.08);
+      sim.wheels.forEach((w, i) => { const q = w.getPosition(); car.wheels[i].position.set(q.x, q.y + hopY, z); car.wheels[i].rotation.z = w.getAngle(); });
+      sim.hook.forEach((b, i) => { const q = b.getPosition(); car.hook[i].position.set(q.x, q.y + hopY, z); car.hook[i].rotation.z = b.getAngle(); });
       for (const sp of car.parts.spin) sp.obj.rotation[sp.axis] += sp.speed * dt;
-      if (car.tag) car.tag.position.set(p.x, p.y + 3.1, 0);
+      if (car.tag) car.tag.position.set(p.x, p.y + 3.2, z);
       // dust from spinning wheels on ground
       car.dustT -= dt;
       if (car === this.cars[0] && car.dustT <= 0 && sim.state === 'run' && throttle !== 0) {
         sim.wheels.forEach((w, i) => {
           if (sim.wheelTouch[i] > 0 && Math.abs(w.getAngularVelocity()) > 6) {
             const q = w.getPosition();
-            this.spawn(q.x - 0.5 * Math.sign(throttle), q.y - sim.spec.wheelR + 0.15, (Math.random() - 0.5) * 2.2, -throttle * (1 + Math.random() * 2), 1 + Math.random() * 1.5, 0, this.theme?.deco?.includes('tank') ? 0xbfe6d8 : 0xf3e2d2, 0.5, 0.18 + Math.random() * 0.15, -2);
+            this.spawn(q.x - 0.5 * Math.sign(throttle), q.y - sim.spec.wheelR + 0.15, z + (Math.random() - 0.5) * 2.2, -throttle * (1 + Math.random() * 2), 1 + Math.random() * 1.5, 0, this.theme?.deco?.includes('tank') ? 0xbfe6d8 : 0xf3e2d2, 0.5, 0.18 + Math.random() * 0.15, -2);
           }
         });
         car.dustT = 0.05;
       }
     }
-    for (const d of this.dynViews || []) { const q = d.body.getPosition(); d.m.position.set(q.x, q.y, 0); d.m.rotation.z = d.body.getAngle(); }
-    if (this.ropes?.length && this.bridgeBodies) {
-      for (const r of this.ropes) {
+    for (const lane of this.lanes || []) {
+      for (const d of lane.dynViews) { const q = d.body.getPosition(); d.m.position.set(q.x, q.y, lane.z); d.m.rotation.z = d.body.getAngle(); }
+      for (const r of lane.ropes) {
         const arr = r.line.geometry.attributes.position.array; let k = 0;
-        for (const b of this.bridgeBodies) {
+        for (const b of lane.bridgeBodies) {
           const q = b.getPosition();
           arr[k++] = q.x; arr[k++] = q.y; arr[k++] = r.z; arr[k++] = q.x; arr[k++] = q.y + 0.9; arr[k++] = r.z;
         }
@@ -350,15 +398,21 @@ export class Renderer {
         gv.pop += dt;
         const k = Math.min(1, gv.pop / 0.35);
         gv.v.scale.setScalar(Math.max(0.001, 1 + k * 0.8) * (1 - k));
-        gv.v.position.y = gv.g.piece.y + k * 1.5;
+        gv.v.position.y = gv.g.piece.y + k * 1.5; gv.v.rotation.y += dt * 20;
         if (k >= 1) gv.v.visible = false;
       } else {
-        gv.v.rotation.y = gv.t * 2.2; gv.v.position.y = gv.g.piece.y + Math.sin(gv.t * 3) * 0.12;
+        gv.v.rotation.y = gv.t * 2.2; gv.v.position.y = gv.g.piece.y + Math.sin(gv.t * 3) * 0.12; gv.v.scale.setScalar(1 + Math.sin(gv.t * 6) * 0.06);
       }
     }
     if (this.finish) this.finish.traverse((o) => { if (o.userData.wave) o.rotation.y = Math.sin(t * 6 + o.position.z) * 0.25; });
     this.scene.traverse((o) => { if (o.userData.flicker) o.scale.y = 0.28 * (0.85 + Math.sin(t * 20 + o.id) * 0.15); });
     for (const c of this.clouds || []) c.position.x += dt * 0.4;
+    this.pops = (this.pops || []).filter((q) => {
+      q.t += dt; q.sp.position.y += dt * 1.6;
+      const k = q.t < 0.15 ? q.t / 0.15 : 1; q.sp.scale.set(2.4 * k, 0.6 * k, 1);
+      q.sp.material.opacity = Math.max(0, 1 - Math.max(0, q.t - 0.5) / 0.4);
+      if (q.t > 0.9) { this.scene.remove(q.sp); return false; } return true;
+    });
     for (const p of this.particles) {
       if (p.life <= 0) continue;
       p.life -= dt;
@@ -376,15 +430,30 @@ export class Renderer {
   follow(dt, sim) {
     const c = sim.chassis, p = c.getPosition(), v = c.getLinearVelocity();
     const aspect = this.camera.aspect;
-    const viewW = aspect < 0.7 ? 12.5 : aspect < 1 ? 15 : aspect < 1.4 ? 19 : 24;
-    const dist = viewW / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * aspect);
-    const look = new THREE.Vector3(p.x + 1.6 + THREE.MathUtils.clamp(v.x * 0.15, -2, 2.5), p.y + 0.7 + THREE.MathUtils.clamp(v.y * 0.06, -1, 1), 0);
-    const pos = new THREE.Vector3(look.x + dist * 0.17, look.y + dist * 0.15, dist);
-    const k = this.snapCam ? 1 : 1 - Math.exp(-dt * 4);
+    const race = this.laneCount > 1;
+    let look, pos;
+    if (race) {
+      // 3/4 chase view over all lanes, player lane nearest the camera
+      const viewW = aspect < 0.7 ? 17 : aspect < 1 ? 19 : 24;
+      const dist = viewW / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * aspect);
+      const zc = this.focusZ * 0.35;
+      look = new THREE.Vector3(p.x + 2.6 + THREE.MathUtils.clamp(v.x * 0.15, -1, 2.5), p.y + 0.6 + THREE.MathUtils.clamp(v.y * 0.05, -1, 1), zc);
+      pos = new THREE.Vector3(look.x + dist * 0.28, look.y + dist * 0.62, zc + dist * 0.8);
+    } else {
+      const viewW = aspect < 0.7 ? 11.5 : aspect < 1 ? 14 : aspect < 1.4 ? 19 : 24;
+      const dist = viewW / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * aspect);
+      look = new THREE.Vector3(p.x + 1.8 + THREE.MathUtils.clamp(v.x * 0.15, -2, 2.5), p.y + 0.7 + THREE.MathUtils.clamp(v.y * 0.06, -1, 1), 0);
+      pos = new THREE.Vector3(look.x + dist * 0.2, look.y + dist * 0.2, dist);
+    }
+    const k = this.snapCam ? 1 : 1 - Math.exp(-dt * 4.5);
     this.camLook.lerp(look, k); this.camPos.lerp(pos, k);
     this.snapCam = false;
     this.camera.position.copy(this.camPos);
     if (this.shake > 0) { this.shake -= dt; const a = this.shake * 0.6; this.camera.position.x += (Math.random() - 0.5) * a; this.camera.position.y += (Math.random() - 0.5) * a; }
+    // FOV punch for boosts
+    this.punch = Math.max(0, (this.punch || 0) - dt * 1.5);
+    const fov = 32 + this.punch * 8;
+    if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     this.camera.lookAt(this.camLook);
     if (this.sun) { this.sun.position.set(p.x - 8, p.y + 20, 14); this.sun.target.position.set(p.x, p.y, 0); }
   }
@@ -458,7 +527,7 @@ export class Renderer {
     spec.wheelX.forEach((wx) => { const w = buildWheel(spec.wheelR, spec.look); w.position.set(wx, spec.wheelY, 0); tg.add(w); });
     if (spec.crane) { const c = spec.crane; const y = c.pivot[1] + Math.sin(c.angle) * c.length; const x = c.pivot[0] + Math.cos(c.angle) * c.length; for (let i = 0; i < c.links; i++) { const l = buildHookLink(i === c.links - 1); l.position.set(x, y - c.linkLen * (i + 0.5), 0); tg.add(l); } }
     this.menuSpin = parts.spin; this.menuT = 0;
-    this.menuCam = { pos: new THREE.Vector3(8.5, 4.6, 11), look: new THREE.Vector3(0, 1.4, 0) };
+    this.menuCam = { pos: new THREE.Vector3(8.5, 4.6, 11), look: new THREE.Vector3(0, 0.5, 0) };
     this.sun.position.set(-6, 14, 10);
     const sc = this.sun.shadow.camera; sc.left = -6; sc.right = 6; sc.top = 6; sc.bottom = -6; sc.updateProjectionMatrix();
   }
@@ -503,7 +572,7 @@ export class Renderer {
   }
 
   dispose() {
-    this.cars = []; this.particles = []; this.finish = null; this.dynViews = []; this.gemViews = []; this.ropes = []; this.bridgeBodies = null;
+    this.cars = []; this.particles = []; this.finish = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.punch = 0;
     this.clouds = []; this.dioramaRoot = null; this.menuSpin = []; this.garage = false;
     this.snapCam = true;
   }

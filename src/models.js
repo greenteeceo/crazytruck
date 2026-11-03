@@ -24,6 +24,26 @@ export function cbox(parent, x, y, z, w, h, d, color, opts) { return box(parent,
 // mirrored on z
 function zbox(p, x0, y0, z0, x1, y1, z1, c) { box(p, x0, y0, z0, x1, y1, z1, c); box(p, x0, y0, -z1, x1, y1, -z0, c); }
 
+// Merge crisp dark edge lines over every box/cylinder of a model (voxel "ink" look).
+const outlineMat = new THREE.LineBasicMaterial({ color: 0x14141c, transparent: true, opacity: 0.55 });
+const edgeCache = new Map();
+export function addOutline(group, mat2 = outlineMat) {
+  group.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const pos = [], v = new THREE.Vector3(), m = new THREE.Matrix4();
+  group.traverse((o) => {
+    if (!o.isMesh || o.userData.noOutline) return;
+    let e = edgeCache.get(o.geometry.uuid);
+    if (!e) { e = new THREE.EdgesGeometry(o.geometry, 25).attributes.position; edgeCache.set(o.geometry.uuid, e); }
+    m.multiplyMatrices(inv, o.matrixWorld);
+    for (let i = 0; i < e.count; i++) { v.fromBufferAttribute(e, i).applyMatrix4(m); pos.push(v.x, v.y, v.z); }
+  });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const lines = new THREE.LineSegments(g, mat2); lines.userData.outline = true;
+  group.add(lines);
+  return lines;
+}
+
 const BLACK = 0x1c1c22, TIRE = 0x26262c, TIRE2 = 0x34343b, SILVER = 0xc9ccd6, SILVER2 = 0x8d91a0, GLASS = 0x15161c, WHITE = 0xfafafa, RED = 0xff2a3a;
 
 // ---------------------------------------------------------------- wheels
@@ -48,6 +68,7 @@ export function buildWheel(r, look) {
     cbox(t, 0, 0, hz + side * 0.03, r * 0.4, r * 0.4, 0.06, SILVER2);
     cbox(t, 0, 0, hz + side * 0.06, r * 0.18, r * 0.18, 0.04, 0x6b6f7c);
   }
+  addOutline(g);
   return g;
 }
 
@@ -201,6 +222,7 @@ export function buildTruck(spec) {
       break;
     }
   }
+  addOutline(g);
   return parts;
 }
 
@@ -228,20 +250,51 @@ export function buildGem() {
   return g;
 }
 
-export function buildFinish() {
+export function buildFinish(width = 4.2) {
   const g = new THREE.Group();
-  for (const z of [-2.1, 2.1]) {
-    box(g, -0.25, 0, z - 0.25, 0.25, 4.2, z + 0.25, 0x8d93a3);
+  const hz = width / 2 + 0.1;
+  for (const z of [-hz, hz]) {
+    box(g, -0.25, -0.3, z - 0.25, 0.25, 4.2, z + 0.25, 0x8d93a3);
     for (const y of [0.6, 1.8, 3.0]) box(g, -0.28, y, z - 0.28, 0.28, y + 0.2, z + 0.28, 0x646a7a);
     box(g, -0.04, 4.2, z - 0.04, 0.04, 5.4, z + 0.04, 0x3c3d44);
     const flag = box(g, 0.04, 4.9, z - 0.02, 0.7, 5.35, z + 0.02, RED);
     flag.userData.wave = true;
   }
-  const t = tex('checker').clone(); t.needsUpdate = true; t.repeat.set(5, 1);
-  const banner = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 4.6), [mat(0x1d1d22), mat(0x1d1d22), mat(0x1d1d22), mat(0x1d1d22), new THREE.MeshLambertMaterial({ map: t }), new THREE.MeshLambertMaterial({ map: t })]);
-  const t2 = tex('checker').clone(); t2.needsUpdate = true; t2.repeat.set(5, 1); t2.rotation = Math.PI / 2;
-  banner.material[0] = new THREE.MeshLambertMaterial({ map: t2 }); banner.material[1] = banner.material[0];
+  const cm = () => { const t = tex('checker').clone(); t.needsUpdate = true; t.repeat.set(width * 1.2, 1); return new THREE.MeshLambertMaterial({ map: t }); };
+  const dark = mat(0x1d1d22);
+  const banner = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, width + 0.4), [dark, dark, dark, dark, dark, dark]);
+  const side = cm(); side.map.rotation = Math.PI / 2; side.map.repeat.set(1, width * 1.2);
+  banner.material[0] = side; banner.material[1] = side;
   banner.position.set(0, 3.9, 0); banner.castShadow = true; g.add(banner);
+  // checkered strip on the ground
+  const stripT = tex('checker').clone(); stripT.needsUpdate = true; stripT.repeat.set(1, width);
+  const strip = new THREE.Mesh(new THREE.PlaneGeometry(1.0, width), new THREE.MeshLambertMaterial({ map: stripT, polygonOffset: true, polygonOffsetFactor: -2 }));
+  strip.rotation.x = -Math.PI / 2; strip.position.y = 0.03; strip.receiveShadow = true; strip.userData.noOutline = true; g.add(strip);
+  return g;
+}
+
+// Rolling boulder (race obstacle)
+export function boulder(r, style) {
+  const g = new THREE.Group();
+  const geo = new THREE.IcosahedronGeometry(r, 0);
+  const col = style === 'snow' ? 0xe9f1ff : style === 'barrel' ? 0x2f7cf6 : 0x9aa0ae;
+  const m = new THREE.Mesh(geo, mat(col, { flatShading: true })); m.castShadow = true; m.receiveShadow = true; g.add(m);
+  const band = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 1.02, 0), mat(0x7d8292, { flatShading: true, wireframe: false }));
+  band.scale.set(0.35, 1, 1); g.add(band);
+  addOutline(g);
+  return g;
+}
+
+// Swinging hammer: group origin = pivot, hangs along -y
+export function pendulum(p, depth) {
+  const g = new THREE.Group();
+  box(g, -0.09, -p.len, -0.09, 0.09, 0, 0.09, 0x3c3d44);
+  const bob = new THREE.Group(); bob.position.y = -p.len; g.add(bob);
+  const t = tex('hazard').clone(); t.needsUpdate = true; t.repeat.set(1.5, 1);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(p.bw, p.bh, depth), [mat(0xe8333c), mat(0xe8333c), new THREE.MeshLambertMaterial({ map: t }), mat(0xe8333c), new THREE.MeshLambertMaterial({ map: t }), new THREE.MeshLambertMaterial({ map: t })]);
+  m.castShadow = true; bob.add(m);
+  cbox(bob, 0, 0, depth / 2 + 0.02, p.bw * 0.5, p.bh * 0.5, 0.06, 0xffffff);
+  addOutline(g);
   return g;
 }
 

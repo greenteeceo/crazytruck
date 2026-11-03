@@ -102,9 +102,16 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .ctrl { position: absolute; bottom: calc(28px + var(--safe-b)); width: 30vw; max-width: 170px; height: 30vw; max-height: 170px; padding: 6%; color: rgba(255,255,255,.75); filter: drop-shadow(0 3px 0 rgba(0,0,0,.25)); touch-action: none; transition: transform .06s, color .06s; }
 .ctrl.left { left: 4vw; } .ctrl.right { right: 4vw; }
 .ctrl.down { transform: scale(.88); color: #fff; }
-.count { position: absolute; top: 34%; left: 0; right: 0; text-align: center; font-size: 110px; color: var(--gold); pointer-events: none !important; }
+.count { position: absolute; top: calc(24% + 70px); left: 0; right: 0; text-align: center; font-size: 110px; color: var(--gold); pointer-events: none !important; }
 .count.popk { animation: pop .45s; }
 .banner { position: absolute; top: 22%; left: 0; right: 0; margin: auto; width: fit-content; font-size: 30px; padding: 8px 22px; border-radius: 16px; background: rgba(10,30,80,.4); animation: pop .4s, fadeout .5s 1.6s forwards; pointer-events: none !important; }
+.lights { position: absolute; top: 24%; left: 0; right: 0; margin: auto; width: fit-content; display: flex; gap: 12px; padding: 10px 14px; border-radius: 18px; background: #1d1f2b; border: 3px solid var(--ink); box-shadow: 0 0 0 3px #fff, 0 6px 0 3px rgba(0,0,0,.25); animation: pop .4s; pointer-events: none !important; transition: transform .4s, opacity .4s; }
+.lights i { width: 38px; height: 38px; border-radius: 50%; background: #3a3d4f; box-shadow: inset 0 -4px 0 rgba(0,0,0,.35); transition: background .1s; }
+.lights i.on { background: #ff3d57; box-shadow: 0 0 18px #ff3d57, inset 0 -4px 0 rgba(0,0,0,.25); }
+.lights i.go { background: #46d35c; box-shadow: 0 0 22px #46d35c, inset 0 -4px 0 rgba(0,0,0,.25); }
+.lights.out { transform: translateY(-120px); opacity: 0; }
+.pos small { font-size: 18px; color: #fff; }
+.pos.popk { animation: pop .35s; }
 @keyframes fadeout { to { opacity: 0; transform: translateY(-20px); } }
 .track { position: absolute; top: calc(78px + var(--safe-t)); left: 0; right: 0; margin: auto; width: min(70vw, 360px); height: 10px; border-radius: 6px; background: rgba(10,30,80,.5); border: 2px solid var(--ink); }
 .trackbar { position: absolute; inset: 0; }
@@ -208,7 +215,15 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
   .fail .barbtns .btn, .win .barbtns .btn, .results .barbtns .btn { border-right: 0; border-bottom: 2px solid rgba(0,0,0,.25); }
   .polaroid { width: min(42vh, 340px); } .caption { font-size: 20px; padding: 14px 6px 18px; }
 }
-@media (max-height: 700px) and (max-aspect-ratio: 1/1) { .logo { display: none; } .wtitle { top: 14%; } .prog { top: calc(14% + 64px); } .racep { top: calc(150px + var(--safe-t)); } }
+@media (max-height: 700px) and (max-aspect-ratio: 1/1) {
+  .wsub { display: none; } .dots { bottom: calc(200px + var(--safe-b)); }
+  .play, .btn.race { height: 66px; bottom: calc(104px + var(--safe-b)); }
+  .nav button { height: 66px; font-size: 14px; } .nav button .ico { width: 28px; height: 28px; }
+  .sname { font-size: 26px; } .sdesc { font-size: 13px; } .stats { margin-top: 6px; }
+  .cards { bottom: calc(146px + var(--safe-b)); padding: 8px 14px; } .card { width: 108px; height: 94px; } .card img { height: 60px; }
+  .shopbtn { bottom: calc(90px + var(--safe-b)); } .shopbtn .btn { min-height: 46px; font-size: 19px; }
+  .ctrl { bottom: calc(14px + var(--safe-b)); }
+ .logo { display: none; } .wtitle { top: 14%; } .prog { top: calc(14% + 64px); } .racep { top: calc(150px + var(--safe-t)); } }
 </style>
 </head>
 <body>
