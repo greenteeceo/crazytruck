@@ -1,11 +1,11 @@
+import { P } from './platform/index.js';
 // Tiny synthesized sound engine (no asset files).
 let ctx, master, engine, engGain, engFilter, enabled = true;
 
 function ensure() {
   if (ctx) return ctx;
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC) return null;
-  ctx = new AC();
+  ctx = P.audioContext();
+  if (!ctx) return null;
   master = ctx.createGain(); master.gain.value = 0.55; master.connect(ctx.destination);
   return ctx;
 }

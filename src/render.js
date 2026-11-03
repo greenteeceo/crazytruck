@@ -1,9 +1,12 @@
 // Three.js renderer: level scene, trucks, particles, camera, menu dioramas.
 import * as THREE from 'three';
 import { tex, skyTexture } from './textures.js';
+import { bake } from './bake.js';
+import { P } from './platform/index.js';
 import { mat, box, cbox, buildTruck, buildWheel, buildHookLink, buildGem, buildFinish, buildDeco, boulder, pendulum, addOutline } from './models.js';
 
 const D = 4; // terrain depth (z)
+const _col = new THREE.Color(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
 
 const STYLE = {
   grass: { top: 'grassTop', side: 'dirt', cap: ['grassTop', 'grassSide'] },
@@ -40,7 +43,7 @@ const STYLE = {
 const texMats = {};
 function tmat(name, emissive) {
   const k = name + (emissive || '');
-  if (!texMats[k]) texMats[k] = new THREE.MeshLambertMaterial({ map: tex(name), ...(emissive ? { emissive, emissiveIntensity: 0.6 } : {}) });
+  if (!texMats[k]) { texMats[k] = new THREE.MeshLambertMaterial({ map: tex(name), ...(emissive ? { emissive, emissiveIntensity: 0.6 } : {}) }); texMats[k].userData.shared = true; }
   return texMats[k];
 }
 const styleMats = (s) => { const st = STYLE[s] || STYLE.concrete; return [tmat(st.top, st.emissive), tmat(st.side)]; };
@@ -95,7 +98,7 @@ function capMesh(x0, y0, x1, y1, depth = D + 0.08, cap = ['grassTop', 'grassSide
     else if (f === 4 || f === 5) uv.setXY(i, uv.getX(i) * len, uv.getY(i));
     else uv.setXY(i, uv.getX(i) * depth, uv.getY(i));
   }
-  const side = capMats[cap[1]] ||= new THREE.MeshLambertMaterial({ map: tex(cap[1]), transparent: true, alphaTest: 0.5 });
+  const side = capMats[cap[1]] ||= Object.assign(new THREE.MeshLambertMaterial({ map: tex(cap[1]), transparent: true, alphaTest: 0.5 }), { userData: { shared: true } });
   const top = tmat(cap[0]);
   const m = new THREE.Mesh(geo, [side, side, top, top, side, side]);
   m.position.set((x0 + x1) / 2 - Math.sin(ang) * -0.0, (y0 + y1) / 2 - h / 2 + 0.06, 0);
@@ -116,10 +119,12 @@ function texturedBox(w, h, d, style) {
   return m;
 }
 
+let labelFont = 'Fredoka, sans-serif';
+export const setLabelFont = (f) => { labelFont = f; };
 function nameSprite(text, color = '#ffffff') {
-  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const c = P.createCanvas(256, 64);
   const g = c.getContext('2d');
-  g.font = '700 34px Fredoka, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `700 34px ${labelFont}`; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.lineWidth = 8; g.strokeStyle = '#11131c'; g.strokeText(text, 128, 34); g.fillStyle = color; g.fillText(text, 128, 34);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
@@ -133,7 +138,10 @@ const srand = () => ((rseed = (rseed * 16807) % 2147483647) / 2147483647);
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
-    this.r = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    const dpr = P.info.dpr || 1;
+    // MSAA is expensive at high DPR and barely visible there
+    this.r = new THREE.WebGLRenderer({ canvas, antialias: dpr < 2, powerPreference: 'high-performance', stencil: false });
+    this.quality = 0;
     this.applyPixelRatio();
     this.r.outputColorSpace = THREE.SRGBColorSpace;
     this.r.shadowMap.enabled = true;
@@ -147,20 +155,77 @@ export class Renderer {
     this.camLook = new THREE.Vector3();
     this.mode = 'none';
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    P.onResize(() => this.resize());
   }
 
-  // Sharp rendering on phones: use the full device pixel ratio up to ~3.2M pixels.
+  // TikTok runtime: there is one on-screen canvas, so the 2D UI canvas is drawn on top of the
+  // 3D scene as a full-screen textured quad (re-uploaded only when the UI redraws).
+  setOverlay(canvas) {
+    this.overlayTex = new THREE.CanvasTexture(canvas);
+    this.overlayTex.colorSpace = THREE.SRGBColorSpace; this.overlayTex.minFilter = THREE.LinearFilter; this.overlayTex.generateMipmaps = false;
+    this.overlayScene = new THREE.Scene();
+    this.overlayCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ map: this.overlayTex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+    q.frustumCulled = false; this.overlayScene.add(q);
+  }
+  overlayChanged() { if (this.overlayTex) this.overlayTex.needsUpdate = true; }
+  drawOverlay() {
+    if (!this.overlayScene) return;
+    this.r.autoClear = false; this.r.render(this.overlayScene, this.overlayCam); this.r.autoClear = true;
+  }
+
+  // Render `scene` with `cam` into an offscreen 2D canvas (no toDataURL / preserveDrawingBuffer needed).
+  capture(scene, cam, w, h, { transparent = false } = {}) {
+    w = Math.round(w); h = Math.round(h);
+    const rt = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true });
+    rt.texture.colorSpace = THREE.SRGBColorSpace;
+    const buf = new Uint8Array(w * h * 4);
+    const bg = scene.background, oldClear = this.r.getClearColor(new THREE.Color()), oldA = this.r.getClearAlpha();
+    if (transparent) { scene.background = null; this.r.setClearColor(0x000000, 0); }
+    const shadows = this.r.shadowMap.enabled;
+    this.r.setRenderTarget(rt); this.r.clear(); this.r.render(scene, cam);
+    this.r.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+    this.r.setRenderTarget(null); rt.dispose();
+    if (transparent) { scene.background = bg; this.r.setClearColor(oldClear, oldA); }
+    void shadows;
+    const c = P.createCanvas(w, h), ctx = c.getContext('2d'), img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) img.data.set(buf.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);   // flip Y
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
+
+  // Quality tiers. 0 = sharp (DPR up to 2, 2048 soft shadows) ... 3 = lowest (DPR 1, no shadows).
+  // Starts from the saved tier and steps down automatically when the frame rate stays low.
+  setQuality(q) {
+    this.quality = Math.max(0, Math.min(3, q | 0));
+    this.applyPixelRatio();
+    const sm = this.quality === 0 ? 2048 : 1024;
+    this.r.shadowMap.type = this.quality === 0 ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.shadowSize = sm;
+    if (this.sun && this.sun.shadow.mapSize.x !== sm) { this.sun.shadow.mapSize.set(sm, sm); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
+    this.r.shadowMap.enabled = this.shadowsOn !== false && this.quality < 3;
+    if (this.sun) this.sun.castShadow = this.r.shadowMap.enabled;
+  }
+
   applyPixelRatio() {
-    const dpr = window.devicePixelRatio || 1, px = window.innerWidth * window.innerHeight;
-    const pr = Math.min(dpr, 3, Math.sqrt(3.2e6 / Math.max(1, px)));
-    this.r.setPixelRatio(Math.max(1, pr));
+    const dpr = P.info.dpr || 1;
+    const cap = [2, 1.6, 1.25, 1][this.quality ?? 0];
+    this.r.setPixelRatio(Math.max(1, Math.min(dpr, cap)));
   }
 
-  setShadows(on) { this.shadowsOn = on; this.r.shadowMap.enabled = on; if (this.sun) this.sun.castShadow = on; }
+  // Called every frame while playing: drops a quality tier after ~2 s under 45 fps.
+  watchFps(dt) {
+    if (this.mode !== 'game') { this.fpsAcc = 0; this.fpsN = 0; return; }
+    this.fpsAcc = (this.fpsAcc || 0) + dt; this.fpsN = (this.fpsN || 0) + 1;
+    if (this.fpsAcc < 2) return;
+    const fps = this.fpsN / this.fpsAcc; this.fps = fps; this.fpsAcc = 0; this.fpsN = 0;
+    if (fps < 45 && this.quality < 3 && this.autoQuality !== false) { this.setQuality(this.quality + 1); this.onQuality?.(this.quality, fps); }
+  }
+
+  setShadows(on) { this.shadowsOn = on; this.setQuality(this.quality ?? 0); }
 
   resize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = P.info.w, h = P.info.h;
     this.applyPixelRatio();
     this.r.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
@@ -173,8 +238,8 @@ export class Renderer {
     s.fog = new THREE.Fog(theme.fog, 70, 260);
     s.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab8, 1.35));
     const sun = new THREE.DirectionalLight(0xffffff, 1.9);
-    sun.position.set(-8, 20, 14); sun.castShadow = this.shadowsOn !== false;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.position.set(-8, 20, 14); sun.castShadow = this.r.shadowMap.enabled;
+    sun.shadow.mapSize.set(this.shadowSize || 2048, this.shadowSize || 2048);
     const sc = sun.shadow.camera; sc.left = -22; sc.right = 22; sc.top = 16; sc.bottom = -12; sc.near = 1; sc.far = 80;
     sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.02;
     s.add(sun); s.add(sun.target);
@@ -198,7 +263,7 @@ export class Renderer {
       const w = 6 + srand() * 8;
       cbox(c, 0, 0, 0, w, 0.5, 3, cm); cbox(c, srand() * 2, 0.4, 0, w * 0.6, 0.5, 2.6, cm);
       c.children.forEach((m) => { m.castShadow = false; });
-      c.position.set(x, 20 + srand() * 12, -70 - srand() * 40); c.scale.setScalar(1.6); s.add(c); this.clouds.push(c);
+      c.position.set(x, 20 + srand() * 12, -70 - srand() * 40); c.scale.setScalar(1.6); c.userData.dynamic = true; s.add(c); this.clouds.push(c);
     }
     // water / floor
     const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ color: theme.water, transparent: true, opacity: theme.lava ? 0.95 : 0.78, ...(theme.lava ? { emissive: 0xc83a00 } : {}) }));
@@ -271,15 +336,28 @@ export class Renderer {
         for (const z of [-hz, hz]) box(s, p.x - 0.2, p.y - p.len - 2.5, z - 0.2, p.x + 0.2, p.y + 0.3, z + 0.2, 0xffc61a);
         box(s, p.x - 0.25, p.y, -hz - 0.25, p.x + 0.25, p.y + 0.45, hz + 0.25, 0x3c3d44);
       } else if (p.t === 'finish') {
-        const f = buildFinish(Dd); f.position.set(p.x, p.y, 0); s.add(f); this.finish = f;
+        const f = buildFinish(Dd); f.position.set(p.x, p.y, 0); f.userData.dynamic = true; s.add(f); this.finish = f;
       }
     }
     this.background(s, theme, minX, maxX, waterY);
+    this.bakeScene(s);
     this.level = level;
     this.lanes = [];
     this.gemViews = [];
     if (lanes > 1) { const sc = this.sun.shadow.camera; sc.top = 22; sc.bottom = -16; sc.left = -26; sc.right = 26; sc.updateProjectionMatrix(); }
     return s;
+  }
+
+  // Move every static mesh of the scene under one group and merge it (terrain, props, mountains).
+  bakeScene(s, root = s) {
+    const g = new THREE.Group(); g.userData.levelRoot = true;
+    for (const c of [...root.children]) {
+      if (c.isLight || c.userData.dynamic || c.isPoints || c.isInstancedMesh || c === this.sun?.target || c.isSprite) continue;
+      if (!c.isMesh && !c.isGroup) continue;
+      g.add(c);
+    }
+    root.add(g);
+    bake(g);
   }
 
   autoDeco(s, theme, x0, x1, y) {
@@ -349,54 +427,93 @@ export class Renderer {
   }
 
   // ------------------------------------------------------------ particles
-  spawn(x, y, z, vx, vy, vz, color, life = 0.8, size = 0.22, grav = -9) {
-    let p = this.particles.find((q) => q.life <= 0);
-    if (!p) {
-      if (this.particles.length > 220) return;
-      const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color }));
-      this.scene.add(m); p = { m, life: 0 }; this.particles.push(p);
+  // All short-lived effects share instanced pools: one draw call per effect type.
+  pools() {
+    if (this._pools && this._pools.scene === this.scene) return this._pools;
+    const mk = (geo, mat, n, order = 0) => {
+      const m = new THREE.InstancedMesh(geo, mat, n); m.count = n; m.frustumCulled = false; m.renderOrder = order;
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const hide = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < n; i++) m.setMatrixAt(i, hide);
+      this.scene.add(m); return m;
+    };
+    if (!this.trackTex) {
+      const c = P.createCanvas(16, 16); const g = c.getContext('2d');
+      g.fillStyle = 'rgba(40,28,20,0.9)'; for (let i = 0; i < 16; i += 5) g.fillRect(1, i, 14, 3);
+      this.trackTex = new THREE.CanvasTexture(c); this.trackTex.magFilter = THREE.NearestFilter; this.trackTex.userData.shared = true;
     }
-    if (p.m.parent !== this.scene) this.scene.add(p.m);
-    p.m.material.color.setHex(color); p.m.visible = true;
-    p.m.position.set(x, y, z); p.v = new THREE.Vector3(vx, vy, vz); p.life = p.max = life; p.size = size; p.grav = grav;
-    p.m.scale.setScalar(size);
+    const box1 = new THREE.BoxGeometry(1, 1, 1);
+    const PL = {
+      scene: this.scene,
+      bits: { mesh: mk(box1, new THREE.MeshLambertMaterial({ color: 0xffffff }), 240), items: [], next: 0 },
+      smoke: { mesh: mk(box1, new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x9a9a9a, transparent: true, opacity: 0.55, depthWrite: false }), 96, 2), items: [], next: 0 },
+      track: { mesh: mk(new THREE.PlaneGeometry(0.5, 0.52), new THREE.MeshLambertMaterial({ map: this.trackTex, transparent: true, opacity: 0.3, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }), 240, 1), items: [], next: 0 },
+    };
+    PL.bits.mesh.setColorAt(0, new THREE.Color()); PL.bits.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    for (const k of ['bits', 'smoke', 'track']) { const pl = PL[k]; for (let i = 0; i < pl.mesh.count; i++) pl.items.push({ life: 0, i }); }
+    this._pools = PL;
+    return PL;
+  }
+  take(pool) { const it = pool.items[pool.next]; pool.next = (pool.next + 1) % pool.items.length; return it; }
+
+  spawn(x, y, z, vx, vy, vz, color, life = 0.8, size = 0.22, grav = -9) {
+    const PL = this.pools(), it = this.take(PL.bits);
+    it.p ||= new THREE.Vector3(); it.v ||= new THREE.Vector3(); it.r ||= new THREE.Euler();
+    it.p.set(x, y, z); it.v.set(vx, vy, vz); it.life = it.max = life; it.size = size; it.grav = grav; it.r.set(0, 0, 0);
+    PL.bits.mesh.setColorAt(it.i, _col.setHex(color)); PL.bits.mesh.instanceColor.needsUpdate = true;
   }
 
   // Soft voxel exhaust puff: grows, rises and fades.
   smoke(x, y, z, size = 0.3, vx = 0) {
-    this.smokes ||= [];
-    let p = this.smokes.find((q) => q.life <= 0);
-    if (!p) {
-      if (this.smokes.length > 90) return;
-      const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x9a9a9a, transparent: true, opacity: 0.7, depthWrite: false }));
-      m.renderOrder = 2; p = { m, life: 0 }; this.smokes.push(p);
-    }
-    if (p.m.parent !== this.scene) this.scene.add(p.m);
-    p.m.visible = true; p.m.position.set(x, y, z); p.m.rotation.set(Math.random(), Math.random(), Math.random());
-    p.v = new THREE.Vector3(vx + (Math.random() - 0.5) * 0.4, 0.7 + Math.random() * 0.5, (Math.random() - 0.5) * 0.3);
-    p.life = p.max = 1.1 + Math.random() * 0.5; p.s0 = size; p.s1 = size * (2.4 + Math.random());
+    const it = this.take(this.pools().smoke);
+    it.p ||= new THREE.Vector3(); it.v ||= new THREE.Vector3(); it.r ||= new THREE.Euler();
+    it.p.set(x, y, z); it.r.set(Math.random(), Math.random(), Math.random());
+    it.v.set(vx + (Math.random() - 0.5) * 0.4, 0.7 + Math.random() * 0.5, (Math.random() - 0.5) * 0.3);
+    it.life = it.max = 1.1 + Math.random() * 0.5; it.s0 = size; it.s1 = size * (2.4 + Math.random());
   }
 
   // Faint tread mark on the ground, fades out over a few seconds.
   track(x, y, z, ang) {
-    this.tracks ||= [];
-    if (!this.trackGeo) {
-      const c = document.createElement('canvas'); c.width = 16; c.height = 16; const g = c.getContext('2d');
-      g.fillStyle = 'rgba(40,28,20,0.9)'; for (let i = 0; i < 16; i += 5) g.fillRect(1, i, 14, 3);
-      const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter;
-      this.trackTex = t; this.trackGeo = new THREE.PlaneGeometry(0.5, 0.52);
+    const PL = this.pools(), it = this.take(PL.track);
+    _q.setFromEuler(_e.set(-Math.PI / 2, 0, ang, 'ZYX'));
+    it.m ||= new THREE.Matrix4(); it.m.compose(_v.set(x, y, z), _q, _s.set(1, 1, 1));
+    it.life = it.max = 3.2;
+    PL.track.mesh.setMatrixAt(it.i, it.m); PL.track.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  updatePools(dt) {
+    const PL = this._pools; if (!PL || PL.scene !== this.scene) return;
+    const zero = _m.makeScale(0, 0, 0).clone();
+    let dirty = false;
+    for (const it of PL.bits.items) {
+      if (it.life <= 0) continue;
+      it.life -= dt; it.v.y += it.grav * dt; it.p.addScaledVector(it.v, dt); it.r.x += dt * 4; it.r.y += dt * 3;
+      const sc = it.size * Math.max(0.05, it.life / it.max);
+      PL.bits.mesh.setMatrixAt(it.i, it.life <= 0 ? zero : _m.compose(it.p, _q.setFromEuler(it.r), _s.set(sc, sc, sc)));
+      dirty = true;
     }
-    let p = this.tracks.find((q) => q.life <= 0);
-    if (!p) {
-      if (this.tracks.length > 220) { p = this.tracks.reduce((a, b) => (a.life < b.life ? a : b)); }
-      else {
-        const m = new THREE.Mesh(this.trackGeo, new THREE.MeshLambertMaterial({ map: this.trackTex, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
-        m.receiveShadow = true; m.renderOrder = 1; p = { m, life: 0 }; this.tracks.push(p);
+    if (dirty) PL.bits.mesh.instanceMatrix.needsUpdate = true;
+    dirty = false;
+    for (const it of PL.smoke.items) {
+      if (it.life <= 0) continue;
+      it.life -= dt; const k = 1 - it.life / it.max;
+      it.p.addScaledVector(it.v, dt); it.v.multiplyScalar(1 - dt * 0.8); it.r.y += dt;
+      // fade by shrinking at the end (instances share one material opacity)
+      const sc = (it.s0 + (it.s1 - it.s0) * Math.sqrt(k)) * Math.min(1, k * 8) * Math.min(1, (1 - k) * 2.2);
+      PL.smoke.mesh.setMatrixAt(it.i, it.life <= 0 ? zero : _m.compose(it.p, _q.setFromEuler(it.r), _s.set(sc, sc, sc)));
+      dirty = true;
+    }
+    if (dirty) PL.smoke.mesh.instanceMatrix.needsUpdate = true;
+    dirty = false;
+    for (const it of PL.track.items) {
+      if (it.life <= 0) continue;
+      it.life -= dt;
+      if (it.life < 1) {   // fade: narrow the mark away
+        const k = Math.max(0, it.life);
+        _m.copy(it.m).multiply(_m2.makeScale(k, 1, 1));
+        PL.track.mesh.setMatrixAt(it.i, it.life <= 0 ? zero : _m); dirty = true;
       }
     }
-    if (p.m.parent !== this.scene) this.scene.add(p.m);
-    p.m.visible = true; p.m.position.set(x, y, z); p.m.rotation.set(-Math.PI / 2, 0, ang, 'ZYX');
-    p.life = p.max = 3.2;
+    if (dirty) PL.track.mesh.instanceMatrix.needsUpdate = true;
   }
 
   burst(x, y, color, n = 16, speed = 5, grav = -9, life = 0.9, z = 0) {
@@ -450,6 +567,7 @@ export class Renderer {
 
   // ------------------------------------------------------------ per-frame
   update(dt, focus, throttle = 0) {
+    this.watchFps(dt);
     const t = performance.now() / 1000;
     for (const car of this.cars) {
       const { sim } = car;
@@ -552,37 +670,17 @@ export class Renderer {
     if (this.finish) this.finish.traverse((o) => { if (o.userData.wave) o.rotation.y = Math.sin(t * 6 + o.position.z) * 0.25; });
     this.scene.traverse((o) => { if (o.userData.flicker) { o.userData.sy ??= o.scale.y; o.scale.y = o.userData.sy * (0.85 + Math.sin(t * 20 + o.id) * 0.15); } });
     for (const c of this.clouds || []) c.position.x += dt * 0.4;
-    for (const p of this.smokes || []) {
-      if (p.life <= 0) continue;
-      p.life -= dt; const k = 1 - p.life / p.max;
-      p.m.position.addScaledVector(p.v, dt); p.v.multiplyScalar(1 - dt * 0.8);
-      p.m.scale.setScalar(p.s0 + (p.s1 - p.s0) * Math.sqrt(k)); p.m.rotation.y += dt;
-      p.m.material.opacity = 0.72 * (1 - k) * Math.min(1, k * 8);
-      if (p.life <= 0) p.m.visible = false;
-    }
-    for (const p of this.tracks || []) {
-      if (p.life <= 0) continue;
-      p.life -= dt; p.m.material.opacity = 0.32 * Math.min(1, p.life / 1.2);
-      if (p.life <= 0) p.m.visible = false;
-    }
+    this.updatePools(dt);
     this.pops = (this.pops || []).filter((q) => {
       q.t += dt; q.sp.position.y += dt * 1.6;
       const k = q.t < 0.15 ? q.t / 0.15 : 1; q.sp.scale.set(2.4 * k, 0.6 * k, 1);
       q.sp.material.opacity = Math.max(0, 1 - Math.max(0, q.t - 0.5) / 0.4);
       if (q.t > 0.9) { this.scene.remove(q.sp); return false; } return true;
     });
-    for (const p of this.particles) {
-      if (p.life <= 0) continue;
-      p.life -= dt;
-      p.v.y += p.grav * dt;
-      p.m.position.addScaledVector(p.v, dt);
-      p.m.scale.setScalar(p.size * Math.max(0.05, p.life / p.max));
-      p.m.rotation.x += dt * 4; p.m.rotation.y += dt * 3;
-      if (p.life <= 0) p.m.visible = false;
-    }
     if (this.mode === 'game' && focus) this.follow(dt, focus);
     if (this.mode === 'menu') this.menuUpdate(dt);
     this.r.render(this.scene, this.camera);
+    this.drawOverlay();
   }
 
   follow(dt, sim) {
@@ -616,10 +714,7 @@ export class Renderer {
     if (this.sun) { this.sun.position.set(p.x - 8, p.y + 20, 14); this.sun.target.position.set(p.x, p.y, 0); }
   }
 
-  snapshot() {
-    this.r.render(this.scene, this.camera);
-    try { return this.canvas.toDataURL('image/jpeg', 0.82); } catch { return ''; }
-  }
+  snapshot(w = 360, h = 380) { return this.capture(this.scene, this.camera, w, h); }
 
   // Start the flip-back animation from a sim 'recover' event. Angle goes the short way round.
   carRecover(car, e) {
@@ -637,12 +732,11 @@ export class Renderer {
     const side = reason === 'splash' ? 1 : -1;
     cam.position.set(target.x + 6.5 * side, target.y + 4.2, z + 11);
     cam.up.set(Math.sin(0.28 * side), Math.cos(0.28 * side), 0);
+    const aspect = cam.aspect; cam.aspect = 1 / 1.05;
     cam.fov = 38; cam.updateProjectionMatrix(); cam.lookAt(target);
-    this.r.render(this.scene, cam);
-    let url = '';
-    try { url = this.canvas.toDataURL('image/jpeg', 0.85); } catch { /* ignore */ }
-    cam.position.copy(keep.pos); cam.quaternion.copy(keep.quat); cam.up.copy(keep.up); cam.fov = keep.fov; cam.updateProjectionMatrix();
-    return url;
+    const shot = this.capture(this.scene, cam, 400, 420);
+    cam.position.copy(keep.pos); cam.quaternion.copy(keep.quat); cam.up.copy(keep.up); cam.fov = keep.fov; cam.aspect = aspect; cam.updateProjectionMatrix();
+    return shot;
   }
 
   // ------------------------------------------------------------ menus
@@ -697,6 +791,7 @@ export class Renderer {
     const parts = buildTruck(spec); tg.add(parts.group);
     spec.wheelX.forEach((wx) => { const w = buildWheel(spec.wheelR, spec.look); w.position.set(wx, spec.wheelY, 0); tg.add(w); });
     if (spec.crane) { const c = spec.crane; let y = c.pivot[1] + Math.sin(c.angle) * c.length; const x = c.pivot[0] + Math.cos(c.angle) * c.length; for (let i = 0; i < c.links; i++) { const l = buildHookLink(i === c.links - 1); l.position.set(x, y - c.linkLen * (i + 0.5), 0); tg.add(l); } }
+    tg.userData.dynamic = true; bake(g);
     this.menuSpin = parts.spin;
     this.menuT = 0;
     this.menuCam = { pos: new THREE.Vector3(9, 7 + lift, 14), look: new THREE.Vector3(0, 1.4 + lift, 0) };
@@ -739,25 +834,20 @@ export class Renderer {
   }
 
   // Render a still image of a truck for shop cards
+  // Still image of a truck for shop cards and the loading screen (2D canvas, transparent background).
   thumbnail(spec, w = 240, h = 160) {
-    if (!this.thumbR) {
-      const c = document.createElement('canvas'); c.width = w; c.height = h;
-      this.thumbR = new THREE.WebGLRenderer({ canvas: c, antialias: true, alpha: true, preserveDrawingBuffer: true });
-      this.thumbR.outputColorSpace = THREE.SRGBColorSpace;
-      this.thumbR.setSize(w, h, false);
-    }
-    const s = new THREE.Scene();
-    s.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab8, 1.4));
-    const l = new THREE.DirectionalLight(0xffffff, 1.8); l.position.set(-4, 8, 8); s.add(l);
-    const tg = new THREE.Group(); s.add(tg);
+    const s2 = new THREE.Scene();
+    s2.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab8, 1.4));
+    const l = new THREE.DirectionalLight(0xffffff, 1.8); l.position.set(-4, 8, 8); s2.add(l);
+    const tg = new THREE.Group(); s2.add(tg);
     tg.add(buildTruck(spec).group);
     spec.wheelX.forEach((wx) => { const wv = buildWheel(spec.wheelR, spec.look); wv.position.set(wx, spec.wheelY, 0); tg.add(wv); });
     if (spec.crane) { const c = spec.crane; const y = c.pivot[1] + Math.sin(c.angle) * c.length; const x = c.pivot[0] + Math.cos(c.angle) * c.length; for (let i = 0; i < c.links; i++) { const lk = buildHookLink(i === c.links - 1); lk.position.set(x, y - c.linkLen * (i + 0.5), 0); tg.add(lk); } }
     const cam = new THREE.PerspectiveCamera(30, w / h, 0.1, 100);
     cam.position.set(5.5, 3.6, 8.5); cam.lookAt(0.3, 0.6, 0);
-    this.thumbR.setClearColor(0x000000, 0);
-    this.thumbR.render(s, cam);
-    return this.thumbR.domElement.toDataURL('image/png');
+    const shot = this.capture(s2, cam, w, h, { transparent: true });
+    s2.traverse((o) => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); });
+    return shot;
   }
 
   // Dev helper: 4 orthographic-ish views of a truck (3/4 front, side, 3/4 rear, front) on one square canvas.
@@ -783,7 +873,23 @@ export class Renderer {
   }
 
   dispose() {
-    this.cars = []; this.particles = []; this.smokes = []; this.tracks = []; this.finish = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.punch = 0;
+    // free GPU memory owned only by the previous scene (merged level meshes, label textures, effect pools)
+    if (this.scene) {
+      const geos = new Set(), mats = new Set(), texs = new Set();
+      this.scene.traverse((o) => {
+        if (o.geometry && !o.geometry.userData.shared) geos.add(o.geometry);
+        for (const m of [].concat(o.material || [])) {
+          if (m.userData.shared) continue;
+          mats.add(m);
+          if (m.map && !m.map.userData.shared) texs.add(m.map);
+        }
+      });
+      geos.forEach((g) => g.dispose()); mats.forEach((m) => m.dispose()); texs.forEach((t) => t.dispose());
+    }
+    if (this.scene?.background?.isTexture) this.scene.background.dispose();
+    // every scene has its own sun: its shadow map is a full render target (up to 2048² depth)
+    if (this.sun?.shadow?.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+    this.cars = []; this._pools = null; this.finish = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.punch = 0;
     this.clouds = []; this.dioramaRoot = null; this.menuSpin = []; this.garage = false;
     this.snapCam = true;
   }

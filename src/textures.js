@@ -129,6 +129,7 @@ export function tex(name) {
     case 'cloudSide': t = canvasTex(16, 8, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, 5); for (let x = 0; x < w; x += 3) { g.beginPath(); g.fillRect(x, 5, 3, 1 + ((rnd() * 3) | 0)); } }); break;
     default: t = canvasTex(4, 4, (g) => { g.fillStyle = '#ff00ff'; g.fillRect(0, 0, 4, 4); });
   }
+  t.userData.shared = true;
   cache[name] = t;
   return t;
 }

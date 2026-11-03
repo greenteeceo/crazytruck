@@ -2,14 +2,17 @@
 import * as THREE from 'three';
 import { tex } from './textures.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { bake } from './bake.js';
 
 const matCache = new Map();
 export function mat(color, opts = {}) {
   const key = color + JSON.stringify(opts);
-  if (!matCache.has(key)) matCache.set(key, new THREE.MeshLambertMaterial({ color, ...opts }));
+  if (!matCache.has(key)) { const m = new THREE.MeshLambertMaterial({ color, ...opts }); m.userData.shared = true; matCache.set(key, m); }
   return matCache.get(key);
 }
-const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+// a cloned cached texture must not keep the 'shared' flag, or it is never freed
+export const unshare = (t) => { t.userData = { ...t.userData, shared: false }; return t; };
+const boxGeo = new THREE.BoxGeometry(1, 1, 1); boxGeo.userData.shared = true;
 
 // axis-aligned box from min to max corner
 export function box(parent, x0, y0, z0, x1, y1, z1, color, opts) {
@@ -26,13 +29,14 @@ export function cbox(parent, x, y, z, w, h, d, color, opts) { return box(parent,
 function zbox(p, x0, y0, z0, x1, y1, z1, c) { box(p, x0, y0, z0, x1, y1, z1, c); box(p, x0, y0, -z1, x1, y1, -z0, c); }
 
 // Merge crisp dark edge lines over every box/cylinder of a model (voxel "ink" look).
-const outlineMat = new THREE.LineBasicMaterial({ color: 0x14141c, transparent: true, opacity: 0.55 });
+const outlineMat = new THREE.LineBasicMaterial({ color: 0x14141c, transparent: true, opacity: 0.55 }); outlineMat.userData.shared = true;
 const edgeCache = new Map();
 export function addOutline(group, mat2 = outlineMat) {
   group.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
   const pos = [], v = new THREE.Vector3(), m = new THREE.Matrix4();
-  group.traverse((o) => {
+  const walk = (o, fn) => { fn(o); for (const c of o.children) if (!c.userData.dynamic) walk(c, fn); };
+  walk(group, (o) => {
     if (!o.isMesh || o.userData.noOutline) return;
     let e = edgeCache.get(o.geometry.uuid);
     if (!e) { e = new THREE.EdgesGeometry(o.geometry, 25).attributes.position; edgeCache.set(o.geometry.uuid, e); }
@@ -61,7 +65,7 @@ export function buildWheel(r, look) {
     const m = new THREE.Mesh(geo, mat(c, { flatShading: flat })); m.castShadow = true; m.receiveShadow = true; g.add(m);
   }
   addOutline(g);
-  return g;
+  return bake(g);
 }
 
 // Monster tyre like the reference: thick drum, 12 big block lugs alternating across the tread,
@@ -149,7 +153,7 @@ function outriggers(g, L) {
 
 function hazardRing(g, x, y, r, h) {
   const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16, 1), [new THREE.MeshLambertMaterial({ map: tex('hazard') }), mat(0x3c3d44), mat(0x3c3d44)]);
-  const t = tex('hazard').clone(); t.needsUpdate = true; t.repeat.set(5, 0.5); m.material[0].map = t;
+  const t = unshare(tex('hazard').clone()); t.needsUpdate = true; t.repeat.set(5, 0.5); m.material[0].map = t;
   m.position.set(x, y, 0); m.castShadow = true; g.add(m);
   return m;
 }
@@ -207,7 +211,7 @@ export function buildTruck(spec) {
       cbox(boom, c.length, 0, 0.21, 0.2, 0.2, 0.04, GL); cbox(boom, c.length, 0, -0.21, 0.2, 0.2, 0.04, GL);
       // ---- hydraulic cylinder: dark barrel from the deck, silver rod up to the boom
       const pis = new THREE.Group(); pis.position.set(-0.3, 0.72, 0); g.add(pis);
-      parts.boom = boom; parts.piston = pis;
+      parts.boom = boom; parts.piston = pis; boom.userData.dynamic = true; pis.userData.dynamic = true;
       const tip = new THREE.Vector3(c.pivot[0] + Math.cos(c.angle) * 1.2, c.pivot[1] + Math.sin(c.angle) * 1.2 - 0.2, 0);
       const d = tip.clone().sub(pis.position); pis.rotation.z = Math.atan2(d.y, d.x);
       cbox(pis, 0.05, 0, 0, 0.22, 0.26, 0.26, GD);
@@ -386,7 +390,10 @@ export function buildTruck(spec) {
       break;
     }
   }
+  // moving sub-parts get their own outline and bake; the rest of the truck becomes a couple of meshes
+  for (const sub of [parts.boom, parts.piston, ...parts.spin.map((p) => p.obj)]) if (sub) { sub.userData.dynamic = true; addOutline(sub); bake(sub); }
   addOutline(g);
+  bake(g);
   return parts;
 }
 
@@ -405,7 +412,7 @@ export function buildHookLink(isHook) {
 // ---------------------------------------------------------------- collectibles & gates
 let gemGeo;
 export function buildGem() {
-  gemGeo ||= new THREE.OctahedronGeometry(0.42, 0);
+  if (!gemGeo) { gemGeo = new THREE.OctahedronGeometry(0.42, 0); gemGeo.userData.shared = true; }
   const g = new THREE.Group();
   const m = new THREE.Mesh(gemGeo, mat(0xffc61a, { emissive: 0x7a4a00, flatShading: true }));
   m.scale.set(1, 1.05, 0.55); m.castShadow = true; g.add(m);
@@ -424,14 +431,14 @@ export function buildFinish(width = 4.2) {
     const flag = box(g, 0.04, 4.9, z - 0.02, 0.7, 5.35, z + 0.02, RED);
     flag.userData.wave = true;
   }
-  const cm = () => { const t = tex('checker').clone(); t.needsUpdate = true; t.repeat.set(width * 1.2, 1); return new THREE.MeshLambertMaterial({ map: t }); };
+  const cm = () => { const t = unshare(tex('checker').clone()); t.needsUpdate = true; t.repeat.set(width * 1.2, 1); return new THREE.MeshLambertMaterial({ map: t }); };
   const dark = mat(0x1d1d22);
   const banner = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, width + 0.4), [dark, dark, dark, dark, dark, dark]);
   const side = cm(); side.map.rotation = Math.PI / 2; side.map.repeat.set(1, width * 1.2);
   banner.material[0] = side; banner.material[1] = side;
   banner.position.set(0, 3.9, 0); banner.castShadow = true; g.add(banner);
   // checkered strip on the ground
-  const stripT = tex('checker').clone(); stripT.needsUpdate = true; stripT.repeat.set(1, width);
+  const stripT = unshare(tex('checker').clone()); stripT.needsUpdate = true; stripT.repeat.set(1, width);
   const strip = new THREE.Mesh(new THREE.PlaneGeometry(1.0, width), new THREE.MeshLambertMaterial({ map: stripT, polygonOffset: true, polygonOffsetFactor: -2 }));
   strip.rotation.x = -Math.PI / 2; strip.position.y = 0.03; strip.receiveShadow = true; strip.userData.noOutline = true; g.add(strip);
   return g;
@@ -454,7 +461,7 @@ export function pendulum(p, depth) {
   const g = new THREE.Group();
   box(g, -0.09, -p.len, -0.09, 0.09, 0, 0.09, 0x3c3d44);
   const bob = new THREE.Group(); bob.position.y = -p.len; g.add(bob);
-  const t = tex('hazard').clone(); t.needsUpdate = true; t.repeat.set(1.5, 1);
+  const t = unshare(tex('hazard').clone()); t.needsUpdate = true; t.repeat.set(1.5, 1);
   const m = new THREE.Mesh(new THREE.BoxGeometry(p.bw, p.bh, depth), [mat(0xe8333c), mat(0xe8333c), new THREE.MeshLambertMaterial({ map: t }), mat(0xe8333c), new THREE.MeshLambertMaterial({ map: t }), new THREE.MeshLambertMaterial({ map: t })]);
   m.castShadow = true; bob.add(m);
   cbox(bob, 0, 0, depth / 2 + 0.02, p.bw * 0.5, p.bh * 0.5, 0.06, 0xffffff);
@@ -483,7 +490,7 @@ export function buildDeco(kind, rnd = Math.random) {
       break;
     case 'barrier': {
       for (const x of [-0.6, 0.6]) { box(g, x - 0.06, 0, -0.25, x + 0.06, 0.9, -0.15, 0x8d6a3a); box(g, x - 0.06, 0, 0.15, x + 0.06, 0.9, 0.25, 0x8d6a3a); }
-      const t = tex('hazard').clone(); t.needsUpdate = true; t.repeat.set(1.5, 0.25);
+      const t = unshare(tex('hazard').clone()); t.needsUpdate = true; t.repeat.set(1.5, 0.25);
       const m = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ map: t })); m.scale.set(1.6, 0.28, 0.12); m.position.set(0, 0.72, 0); m.castShadow = true; g.add(m);
       cbox(g, -0.6, 1.0, 0, 0.16, 0.16, 0.16, RED, { emissive: 0x880000 }); cbox(g, 0.6, 1.0, 0, 0.16, 0.16, 0.16, RED, { emissive: 0x880000 });
       break;

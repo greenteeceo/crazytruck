@@ -19,12 +19,51 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 
 ## Download
 
-Android release build: [`release/CraneRush-2.4.apk`](release/CraneRush-2.4.apk) (signed, minSdk 23, targetSdk 36).
-A Play Store bundle is at [`release/CraneRush-2.4.aab`](release/CraneRush-2.4.aab).
+Android release build: [`release/CraneRush-2.5.apk`](release/CraneRush-2.5.apk) (signed, minSdk 23, targetSdk 36).
+A Play Store bundle is at [`release/CraneRush-2.5.aab`](release/CraneRush-2.5.aab).
+
+TikTok Mini Games package: [`release/CraneRush-tiktok-2.5.zip`](release/CraneRush-tiktok-2.5.zip) (native runtime: `game.js`, `game.json`, `project.config.json`, `fredoka.ttf`; about 1 MB, limit 4 MB for the main package).
+
+## TikTok Mini Games
+
+TikTok stopped accepting HTML (H5) mini games on 28 Aug 2026, so the game runs on the **native runtime**: one WebGL canvas, no DOM. The whole UI is drawn on a 2D canvas (`src/ui/`) and composited over the 3D scene, and `src/platform/` maps the runtime APIs (namespace `TTMinis.game`, also `tt` / `wx`).
+
+**Before uploading**, fill in `src/platform/config.js` and rebuild:
+
+| Field | Where to find it |
+| --- | --- |
+| `clientKey` | Developer Portal → your app → Credentials |
+| `rewardedAdUnitId` | Developer Portal → Monetization → Ad units (rewarded video) |
+| `interstitialAdUnitId` | Developer Portal → Monetization → Ad units (interstitial) |
+
+While an ad unit ID is a placeholder the game shows a local "TEST AD" panel instead, so every ad flow can be tried before the IDs exist.
+
+**Required capabilities (checked in review)**, all on the first screen (top-left):
+
+| Button | API | Reward |
+| --- | --- | --- |
+| Add (to Home Screen) | `addShortcut`, `getShortcutMissionReward` | 300 gems first time, 100 gems per day when launched from the shortcut |
+| Profile (sidebar revisit) | `startEntranceMission`, `getEntranceMissionReward` | 300 gems first time, 100 gems per day when launched from the profile sidebar |
+| Share | `shareAppMessage` | none |
+
+Rewards are checked at start-up and every time the game comes back to the foreground, and are granted at most once per day.
+
+**Ads**
+
+| Type | Where | Rule |
+| --- | --- | --- |
+| Rewarded | Win screen: x3 gems · Fail screen: continue from the last checkpoint · Race results: x2 gems · Shop: +150 gems | Reward only when the video was watched to the end (`isEnded`) |
+| Interstitial | When leaving a win / fail / race result screen | Not in the first 60 s, at least 75 s apart, at most every 2nd level end, never during play, AUTO or TEST |
+
+Pacing and reward amounts live in `src/platform/config.js` (`AD_RULES`, `REWARDS`).
+
+**Upload**: `npm i -g @ttmg/cli`, `ttmg login`, then `ttmg dev` in `dist-tiktok/` to test on a phone and upload from the DevTool page (or upload the zip under Developer Portal → Code version). Icons for the portal are in `store/icons/` (1024, 512, 144).
+
+**Performance**: static scenery and trucks are merged into a few meshes, effects (dust, smoke, tyre marks) are instanced (one draw call each), GPU memory of the previous level (geometry, textures, shadow map) is released on every level change, and the renderer steps down a quality tier (pixel ratio, shadow map size, shadows) when a level runs under 45 fps. A 6-lane race went from 445 to about 160 draw calls; a normal level is about 40.
 
 ## Google Play checklist
 
-- Upload `release/CraneRush-2.4.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
+- Upload `release/CraneRush-2.5.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
 - Enrol in Play App Signing; the local keystore then acts as the upload key. Keep `android/cranerush-release.keystore` + `keystore.properties` private.
 - Store assets in `store/`: 512×512 icon, 1024×500 feature graphic. Add at least 2 phone screenshots (1080×1920+).
 - Fill in the Data safety form (the app collects nothing; progress is stored on device), content rating questionnaire (IARC), and a privacy policy URL.
@@ -39,7 +78,12 @@ A Play Store bundle is at [`release/CraneRush-2.4.aab`](release/CraneRush-2.4.aa
 | `src/levels.js`, `src/builder.js` | Hand-made levels, race tracks, world themes, and the level-building DSL |
 | `src/vehicles.js` | Truck stats and looks (shop catalogue) |
 | `src/models.js`, `src/textures.js`, `src/render.js` | Three.js voxel models, pixel textures, scene, camera, particles |
-| `src/main.js`, `src/index.html` | Game flow, UI screens, input, save data |
+| `src/main.js` | Game flow, all screens, ads and TikTok capability buttons, input, save data, loading screen |
+| `src/ui/kit.js`, `src/ui/icons.js` | Canvas UI kit (buttons, panels, outlined text, scroll lists, touch / hold / swipe, effects) and SVG-path icons |
+| `src/platform/` | Platform layer (web / Android WebView / TikTok runtime), DOM adapter for the runtime, ad and reward config |
+| `src/bake.js` | Merges static meshes to cut draw calls |
+| `src/tt-entry.js` | TikTok package entry (adapter first, then the game) |
+| `src/index.html` | Web / Android page: two canvases and the font |
 | `src/bot.js`, `src/racer.js` | AI driver for rival trucks; race respawn (crash / stuck) |
 | `src/gen.js`, `src/genseeds.json`, `tools/gensel.mjs` | Segment-based level / race generator, the validated seeds, and the seed picker that runs the bot |
 | `tools/raceharness.mjs` | Headless test: every race track with the bot at three skill levels |
@@ -50,7 +94,7 @@ A Play Store bundle is at [`release/CraneRush-2.4.aab`](release/CraneRush-2.4.aa
 
 ```bash
 npm install
-node build.mjs                 # -> dist/index.html (single self-contained file)
+node build.mjs                 # -> dist/index.html (web / Android) and dist-tiktok/ (TikTok package)
 
 # level check + par times
 npx esbuild tools/harness.mjs --bundle --platform=node --format=esm --outfile=/tmp/h.mjs && node /tmp/h.mjs crane src/pars.json
