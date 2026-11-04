@@ -20,7 +20,7 @@ try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save
 save.tt ||= {};
 save.tut ||= {};   // tutorial steps already shown
 // dev tools (AUTO, TEST, infinite gems, unlock all) are hidden in release; tap the version line in Settings 5 times
-const VERSION = '3.2';
+const VERSION = '3.3';
 if (!save.dev) { save.autoplay = false; save.infinite = false; save.unlockAll = false; }
 const dev = () => !!save.dev;
 // leaderboard: per-device seed for the simulated players, and when this player joined
@@ -225,7 +225,7 @@ function tick(dt) {
         if (e.type === 'win') r.finish = rs.finishTime;
         else if (e.type === 'land') r.car.squash = Math.min(1, e.v);
         else if (e.type === 'recover') R.carRecover(r.car, e);
-        else if (e.type === 'breakup') R.burst(rs.x, rs.chassis.getPosition().y + 0.5, 0x55565e, 8, 4, -9, 0.6, r.z);
+        else if (e.type === 'breakup') R.breakAcc(r.car, e.tier);
         else if (e.type === 'wheelOff') { const q = rs.wheels[e.idx].getPosition(); R.burst(q.x, q.y, 0x55565e, 6, 3, -8, 0.5, r.z); }
         else if (e.type === 'impact' && e.v > 4) impactFx(e, rs, r.z, r.spec?.look, true);
       }
@@ -305,7 +305,7 @@ function fx(e, sim, z = 0, car = null) {
     case 'gem': R.burst(e.gem.piece.x, e.gem.piece.y, 0xffd21a, 12, 4, -6, 0.6, z); R.popText('+1', e.gem.piece.x, e.gem.piece.y + 0.8, z); Audio.gem(); break;
     case 'land':
       // landing on the road: tyre smoke puffs at both wheels, no debris
-      for (const w of sim.wheels) { const q = w.getPosition(); for (let i = 0; i < 2 + Math.min(4, e.v * 3); i++) R.smoke(q.x + (Math.random() - 0.5) * 1.2, q.y - sim.spec.wheelR + 0.25, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.25 + Math.min(0.3, e.v * 0.15), (Math.random() - 0.5) * 2.4, 0.2 + Math.random() * 0.5); }
+      for (const w of sim.wheels) { const q = w.getPosition(); for (let i = 0; i < 2 + Math.min(4, e.v * 3); i++) R.smoke(q.x + (Math.random() - 0.5) * 1.2, q.y - sim.spec.wheelR + 0.25, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.35 + Math.min(0.35, e.v * 0.18), (Math.random() - 0.5) * 2.4, 0.2 + Math.random() * 0.5); }
       Audio.land(e.v);
       if (car) car.squash = Math.min(1, 0.4 + e.v * 0.5);
       if (e.v > 1) R.shake = 0.2;
@@ -323,7 +323,7 @@ function fx(e, sim, z = 0, car = null) {
       if (!game.race && !game.snap) { game.snap = R.snapshotCar(sim, z, 'splash'); R.burst(p.x, p.y, 0xffffff, 24, 6, -10, 0.9, z); }
       break;
     case 'wheelOff': { const q = sim.wheels[e.idx].getPosition(); R.burst(q.x, q.y, 0x55565e, 8, 4, -8, 0.6, z); R.popText('Wheel off!', q.x, q.y + 1.6, z, '#ffffff'); Audio.land(0.6); P.vibrate(); break; }
-    case 'breakup': R.burst(p.x, p.y + 0.6, 0xffd21a, 10, 5, -9, 0.7, z); R.burst(p.x, p.y + 0.4, 0x55565e, 10, 4, -9, 0.7, z); break;
+    case 'breakup': if (car) R.breakAcc(car, e.tier); break;   // accessories fly off according to how bad the crash was
     case 'recover': if (car) { R.carRecover(car, e); R.popText(e.to.x < e.from.x - 1 ? 'Back you go!' : 'Flip!', e.from.x, e.from.y + 2.6, z, '#ffffff'); } break;
     case 'win':
       for (const c of [0xffffff, 0xff3d6b, 0x2f7cf6, 0xffd21a]) R.burst(p.x + 1, p.y + 2, c, 14, 7, -5, 1.2, z);

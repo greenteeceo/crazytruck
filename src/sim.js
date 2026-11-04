@@ -205,7 +205,7 @@ export class Sim {
 
   // Crash: the crane boom snaps off (hook still hanging from it) and a few body chunks fly out.
   // Debris are real bodies that bounce on the terrain; chunks fade after a few seconds.
-  breakApart() {
+  breakApart(tier = 3) {
     const s = this.spec, w = this.world, ch = this.chassis, v = ch.getLinearVelocity(), a = ch.getAngle();
     const L = s.look || {};
     const chunk = (lx, ly, sz, color, kick) => {
@@ -216,11 +216,11 @@ export class Sim {
       b.setAngularVelocity((Math.random() - 0.5) * 16);
       this.debris.push({ body: b, kind: 'chunk', size: sz, color, ttl: 4.5 + Math.random() });
     };
-    chunk(1.4, 0.3, 0.32, L.body ?? 0xff9a14, [3 + Math.random() * 2, 5]);
-    chunk(-1.2, 0.5, 0.28, L.frame ?? 0x55565e, [-3, 6]);
-    chunk(0.6, 0.9, 0.24, 0x15161c, [1, 7]);
-    chunk(-0.2, 0.2, 0.36, L.bodyDark ?? 0xe07800, [-1.5, 4]);
-    if (s.crane && !this.debris.some((d) => d.kind === 'boom')) {
+    // more body chunks the harder the crash; the crane boom only snaps in a big one
+    chunk(1.4, 0.3, tier > 1 ? 0.32 : 0.2, L.body ?? 0xff9a14, [3 + Math.random() * 2, 5]);
+    if (tier >= 2) chunk(-1.2, 0.5, 0.28, L.frame ?? 0x55565e, [-3, 6]);
+    if (tier >= 3) { chunk(0.6, 0.9, 0.24, 0x15161c, [1, 7]); chunk(-0.2, 0.2, 0.36, L.bodyDark ?? 0xe07800, [-1.5, 4]); }
+    if (tier >= 3 && s.crane && !this.debris.some((d) => d.kind === 'boom')) {
       const c = s.crane, piv = ch.getWorldPoint(V(c.pivot[0], c.pivot[1]));
       const b = w.createDynamicBody({ position: piv, angle: a + c.angle, angularDamping: 0.3 });
       b.createFixture(pl.Box(c.length / 2, 0.2, V(c.length / 2, 0), 0), { density: 0.5, friction: 0.6, restitution: 0.2, filterCategoryBits: CAT_DYN, filterMaskBits: CAT_TERRAIN | CAT_DYN });
@@ -231,7 +231,7 @@ export class Sim {
       this.hookBoomJoint = w.createJoint(pl.RevoluteJoint({}, b, this.hook[0], b.getWorldPoint(V(c.length, 0))));
       for (const h of this.hook) h.getFixtureList().setFilterData({ groupIndex: 0, categoryBits: CAT_DYN, maskBits: CAT_TERRAIN });
     }
-    this.events.push({ type: 'breakup' });
+    this.events.push({ type: 'breakup', tier });
   }
 
   tickDebris() {
@@ -297,6 +297,7 @@ export class Sim {
     this.impacts.length = 0;
     if (this.time - (this.lastImpactT ?? -9) < 0.12) return;
     this.lastImpactT = this.time;
+    if (best.heavy) { this.lastHardV = best.v; this.lastHardT = this.time; }
     this.events.push({ type: 'impact', ...best });
     if (this.state !== 'run') return;
     if (best.v > FLIP_V && best.heavy && best.wall) {
@@ -452,7 +453,14 @@ export class Sim {
     if (this.state !== 'run') return;
     this.state = 'fail'; this.reason = reason;
     this.failPose = this.classifyPose(reason);
-    if (reason === 'crash') { this.loseWheel(); this.breakApart(); }
+    if (reason === 'crash') {
+      // how bad was it? speed going in, the hardest recent hit, how fast it was spinning
+      const v = this.chassis.getLinearVelocity(), hit = this.time - (this.lastHardT ?? -9) < 0.6 ? this.lastHardV : 0;
+      const sev = Math.max(Math.hypot(v.x, v.y), hit) + Math.abs(this.chassis.getAngularVelocity()) * 0.6;
+      this.severity = sev; this.tier = sev < 4.5 ? 1 : sev < 9 ? 2 : 3;
+      if (this.tier >= 2) this.loseWheel();   // a gentle roll-over keeps all four wheels
+      this.breakApart(this.tier);
+    }
     this.events.push({ type: 'fail', reason, pose: this.failPose });
   }
 

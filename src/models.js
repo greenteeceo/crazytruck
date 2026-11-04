@@ -27,6 +27,18 @@ export function box(parent, x0, y0, z0, x1, y1, z1, color, opts) {
 export function cbox(parent, x, y, z, w, h, d, color, opts) { return box(parent, x - w / 2, y - h / 2, z - d / 2, x + w / 2, y + h / 2, z + d / 2, color, opts); }
 // mirrored on z
 function zbox(p, x0, y0, z0, x1, y1, z1, c) { box(p, x0, y0, z0, x1, y1, z1, c); box(p, x0, y0, -z1, x1, y1, -z0, c); }
+// A part that can break off in a crash. Built in truck coordinates, then re-centred so it can fly on its own.
+// tier: 1 = pops off even in a gentle roll-over (lights, signs, loose cargo), 2 = medium crash (bumpers, bars,
+// fins, exhausts), 3 = only a big smash (ladder, blade, drum, roof, cone...).
+function detachable(parts, g, name, tier, build) {
+  const a = new THREE.Group(); g.add(a); build(a);
+  a.updateWorldMatrix(true, true);
+  const bb = new THREE.Box3().setFromObject(a), c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
+  for (const ch of a.children) ch.position.sub(c);
+  a.position.copy(c); a.userData.dynamic = true;
+  parts.acc.push({ name, obj: a, tier, home: c.clone(), half: Math.max(0.08, Math.min(sz.x, sz.y) / 2) });
+  return a;
+}
 
 // Merge crisp dark edge lines over every box/cylinder of a model (voxel "ink" look).
 const outlineMat = new THREE.LineBasicMaterial({ color: 0x14141c, transparent: true, opacity: 0.55 }); outlineMat.userData.shared = true;
@@ -161,7 +173,8 @@ function hazardRing(g, x, y, r, h) {
 export function buildTruck(spec) {
   const L = spec.look;
   const g = new THREE.Group();
-  const parts = { group: g, spin: [] };
+  const parts = { group: g, spin: [], acc: [] };
+  const det = (name, tier, build) => detachable(parts, g, name, tier, build);
   frame(g, L);
   switch (L.type) {
     case 'crane': {
@@ -173,14 +186,14 @@ export function buildTruck(spec) {
       box(g, 1.2, 0.5, -0.56, 1.23, 1.0, 0.56, GLASS);                     // windshield
       zbox(g, 0.42, 0.5, 0.66, 1.1, 1.0, 0.69, GLASS);                     // side windows
       box(g, 0.14, 0.5, -0.5, 0.2, 1.0, 0.5, OD);                          // rear cab wall
-      cbox(g, 0.5, 1.26, 0, 0.5, 0.2, 0.5, G); cbox(g, 0.5, 1.4, 0, 0.36, 0.08, 0.36, GL);   // beacon box
+      det('beacon', 1, (a) => { cbox(a, 0.5, 1.26, 0, 0.5, 0.2, 0.5, G); cbox(a, 0.5, 1.4, 0, 0.36, 0.08, 0.36, GL); });   // beacon box
       // ---- hood: short step in front of the cab, grille slot + white lamps at the corners
       box(g, 1.2, 0.06, -0.66, 1.86, 0.62, 0.66, ORANGE);
       box(g, 1.2, 0.62, -0.58, 1.8, 0.68, 0.58, OD);
       box(g, 1.86, 0.06, -0.66, 1.9, 0.62, 0.66, OD);                      // nose
       box(g, 1.9, 0.38, -0.26, 1.93, 0.5, 0.26, GLASS);                    // grille
       zbox(g, 1.9, 0.14, 0.3, 1.95, 0.32, 0.62, WHITE);                    // headlights
-      box(g, 1.82, 0.0, -0.72, 1.98, 0.1, 0.72, GD);                       // front bumper
+      det('bumper', 2, (a) => box(a, 1.82, 0.0, -0.72, 1.98, 0.1, 0.72, GD));   // front bumper
       // ---- fenders over the front wheels
       zbox(g, 0.55, 0.06, 0.66, 1.75, 0.16, 0.8, OD);
       // ---- rear deck (dark grey) with side rails
@@ -225,8 +238,8 @@ export function buildTruck(spec) {
       box(g, -1.75, 0.06, -0.66, -0.35, 0.5, 0.66, L.body);
       box(g, -1.6, 0.2, -0.52, -0.42, 0.52, 0.52, L.frameDark);
       // roll bar
-      zbox(g, -0.6, 0.5, 0.5, -0.5, 1.15, 0.6, L.frame); box(g, -0.6, 1.08, -0.6, -0.5, 1.18, 0.6, L.frame);
-      zbox(g, -0.62, 1.05, 0.2, -0.48, 1.2, 0.4, 0xffe066);
+      det('rollbar', 2, (a) => { zbox(a, -0.6, 0.5, 0.5, -0.5, 1.15, 0.6, L.frame); box(a, -0.6, 1.08, -0.6, -0.5, 1.18, 0.6, L.frame); });
+      det('lights', 1, (a) => zbox(a, -0.62, 1.05, 0.2, -0.48, 1.2, 0.4, 0xffe066));
       if (L.accent) zbox(g, -1.7, 0.3, 0.66, 1.75, 0.38, 0.68, L.accent);
       break;
     }
@@ -235,7 +248,9 @@ export function buildTruck(spec) {
       box(g, -1.8, 0.06, -0.72, 0.38, 0.95, 0.72, L.bodyDark);
       box(g, -1.7, 0.95, -0.62, 0.28, 1.0, 0.62, L.body);
       // stone blocks
-      cbox(g, -1.2, 1.2, 0.25, 0.42, 0.42, 0.42, 0xa3a8b6); cbox(g, -0.6, 1.2, -0.2, 0.42, 0.42, 0.42, 0xff8a1f); cbox(g, -0.95, 1.6, 0, 0.4, 0.4, 0.4, 0x46d35c);
+      det('block1', 1, (a) => cbox(a, -0.95, 1.6, 0, 0.4, 0.4, 0.4, 0x46d35c));
+      det('block2', 2, (a) => cbox(a, -1.2, 1.2, 0.25, 0.42, 0.42, 0.42, 0xa3a8b6));
+      det('block3', 2, (a) => cbox(a, -0.6, 1.2, -0.2, 0.42, 0.42, 0.42, 0xff8a1f));
       zbox(g, -1.8, 0.3, 0.72, 0.38, 0.4, 0.74, 0xffd21a);
       break;
     }
@@ -244,11 +259,10 @@ export function buildTruck(spec) {
       box(g, -0.6, 0.45, -0.6, 0.6, 1.0, 0.6, L.body);
       box(g, -0.5, 0.5, -0.61, 0.5, 0.92, 0.61, GLASS);
       box(g, -0.65, 1.0, -0.62, 0.65, 1.08, 0.62, L.bodyDark);
-      box(g, -1.4, 0.45, 0.25, -1.25, 1.1, 0.4, 0x2f3036);
+      det('exhaust', 2, (a) => box(a, -1.4, 0.45, 0.25, -1.25, 1.1, 0.4, 0x2f3036));
       // blade
       zbox(g, 1.4, 0.0, 0.3, 1.95, 0.12, 0.42, L.frameDark);
-      box(g, 1.92, -0.48, -0.95, 2.12, 0.42, 0.95, L.bodyDark);
-      box(g, 2.0, -0.5, -0.95, 2.18, -0.38, 0.95, SILVER2);
+      det('blade', 3, (a) => { box(a, 1.92, -0.48, -0.95, 2.12, 0.42, 0.95, L.bodyDark); box(a, 2.0, -0.5, -0.95, 2.18, -0.38, 0.95, SILVER2); });
       headlights(g, 1.4);
       break;
     }
@@ -259,12 +273,15 @@ export function buildTruck(spec) {
       box(g, 1.3, 0.06, -0.62, 1.85, 0.62, 0.62, L.body);                  // nose
       box(g, 1.0, 0.68, -0.56, 1.32, 1.02, 0.56, GLASS);                   // windshield
       zbox(g, -1.4, 0.72, 0.68, -0.2, 1.22, 0.7, GLASS);                   // serving window
-      for (let i = 0; i < 6; i++) zbox(g, -1.45 + i * 0.22, 1.24, 0.68, -1.23 + i * 0.22, 1.34, 0.86, i % 2 ? 0xffffff : 0xff5a8a); // awning
+      det('awning', 3, (a) => { for (let i = 0; i < 6; i++) zbox(a, -1.45 + i * 0.22, 1.24, 0.68, -1.23 + i * 0.22, 1.34, 0.86, i % 2 ? 0xffffff : 0xff5a8a); });   // awning
       box(g, -1.85, 1.4, -0.7, 1.05, 1.48, 0.7, L.bodyDark);
       // giant cone
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.0, 4), mat(0xe8b062, { flatShading: true }));
-      cone.rotation.x = Math.PI; cone.rotation.y = Math.PI / 4; cone.position.set(-0.5, 1.98, 0); cone.castShadow = true; g.add(cone);
-      cbox(g, -0.5, 2.62, 0, 0.62, 0.42, 0.62, 0xff7ab8); cbox(g, -0.5, 2.94, 0, 0.44, 0.3, 0.44, 0xfff0d8); cbox(g, -0.5, 3.15, 0, 0.14, 0.14, 0.14, 0xe8333c);
+      det('cone', 2, (a) => {
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.0, 4), mat(0xe8b062, { flatShading: true }));
+        cone.rotation.x = Math.PI; cone.rotation.y = Math.PI / 4; cone.position.set(-0.5, 1.98, 0); cone.castShadow = true; a.add(cone);
+        cbox(a, -0.5, 2.62, 0, 0.62, 0.42, 0.62, 0xff7ab8);
+      });
+      det('scoop', 1, (a) => { cbox(a, -0.5, 2.94, 0, 0.44, 0.3, 0.44, 0xfff0d8); cbox(a, -0.5, 3.15, 0, 0.14, 0.14, 0.14, 0xe8333c); });
       headlights(g, 1.85);
       break;
     }
@@ -273,8 +290,7 @@ export function buildTruck(spec) {
       zbox(g, 0.5, 0.0, 0.62, 1.7, 0.12, 0.8, L.bodyDark);
       box(g, -1.75, 0.06, -0.66, -0.4, 0.6, 0.66, L.body);
       for (let i = 0; i < 16; i++) zbox(g, -1.7 + i * 0.22, 0.42, 0.66, -1.48 + i * 0.22, 0.53, 0.68, i % 2 ? 0x1d1e23 : 0xffffff);   // checker stripe
-      box(g, -0.05, 1.06, -0.34, 0.5, 1.32, 0.34, 0xffffff); box(g, 0.0, 1.1, -0.35, 0.45, 1.28, 0.35, 0xffd21a);                    // TAXI sign
-      box(g, 0.1, 1.15, -0.36, 0.35, 1.22, 0.36, 0x1d1e23);
+      det('sign', 1, (a) => { box(a, -0.05, 1.06, -0.34, 0.5, 1.32, 0.34, 0xffffff); box(a, 0.0, 1.1, -0.35, 0.45, 1.28, 0.35, 0xffd21a); box(a, 0.1, 1.15, -0.36, 0.35, 1.22, 0.36, 0x1d1e23); });   // TAXI sign
       break;
     }
     case 'tractor': {
@@ -282,13 +298,13 @@ export function buildTruck(spec) {
       box(g, 0.2, 0.78, -0.42, 1.74, 0.86, 0.42, L.bodyDark);
       zbox(g, 0.4, 0.3, 0.48, 1.6, 0.42, 0.5, 0x1d1e23);                   // grille vents
       box(g, 1.8, 0.1, -0.4, 1.86, 0.7, 0.4, 0x8d91a0);                    // radiator
-      box(g, 1.2, 0.86, -0.06, 1.32, 1.6, 0.06, 0x2a2b31); cbox(g, 1.26, 1.66, 0, 0.18, 0.08, 0.18, 0x2a2b31);   // exhaust stack
+      det('exhaust', 1, (a) => { box(a, 1.2, 0.86, -0.06, 1.32, 1.6, 0.06, 0x2a2b31); cbox(a, 1.26, 1.66, 0, 0.18, 0.08, 0.18, 0x2a2b31); });   // exhaust stack
       box(g, -1.0, 0.06, -0.66, 0.2, 0.6, 0.66, L.body);                   // cab base
       for (const [x, z] of [[-0.95, -0.6], [-0.95, 0.6], [0.15, -0.6], [0.15, 0.6]]) box(g, x - 0.05, 0.6, z - 0.05, x + 0.05, 1.45, z + 0.05, 0x2a2b31);   // cab posts
       box(g, -0.9, 0.62, -0.58, 0.1, 1.4, 0.58, 0x9fd8ff, { transparent: true, opacity: 0.45 });
-      box(g, -1.05, 1.45, -0.7, 0.25, 1.56, 0.7, L.accent);                // roof
+      det('roof', 3, (a) => box(a, -1.05, 1.45, -0.7, 0.25, 1.56, 0.7, L.accent));   // roof
       zbox(g, -1.75, 0.5, 0.6, -0.5, 0.62, 0.95, L.accent);                // rear fenders
-      box(g, 1.86, -0.1, -0.3, 2.06, 0.2, 0.3, 0x55565e);                  // front weight
+      det('weight', 2, (a) => box(a, 1.86, -0.1, -0.3, 2.06, 0.2, 0.3, 0x55565e));   // front weight
       headlights(g, 1.86);
       break;
     }
@@ -298,10 +314,12 @@ export function buildTruck(spec) {
       zbox(g, 0.5, 0.0, 0.62, 1.7, 0.12, 0.8, L.bodyDark);
       box(g, -1.75, 0.06, -0.66, -0.35, 0.55, 0.66, L.body);
       zbox(g, -1.75, 0.12, 0.66, -0.35, 0.5, 0.68, L.accent);
-      box(g, -0.1, 1.06, -0.5, 0.5, 1.14, 0.5, 0x2a2b31);                  // light bar
-      { const rL = cbox(g, 0.2, 1.22, -0.26, 0.5, 0.16, 0.42, 0xff2a3a, { emissive: 0xaa0010 }); rL.userData.flicker = true; }
-      { const bL = cbox(g, 0.2, 1.22, 0.26, 0.5, 0.16, 0.42, 0x2a7aff, { emissive: 0x0030aa }); bL.userData.flicker = true; }
-      box(g, 1.9, -0.25, -0.5, 2.06, 0.4, -0.38, SILVER); box(g, 1.9, -0.25, 0.38, 2.06, 0.4, 0.5, SILVER); box(g, 1.98, 0.3, -0.5, 2.06, 0.4, 0.5, SILVER);   // push bar
+      det('lightbar', 1, (a) => {
+        box(a, -0.1, 1.06, -0.5, 0.5, 1.14, 0.5, 0x2a2b31);                  // light bar
+        const rL = cbox(a, 0.2, 1.22, -0.26, 0.5, 0.16, 0.42, 0xff2a3a, { emissive: 0xaa0010 }); rL.userData.flicker = true;
+        const bL = cbox(a, 0.2, 1.22, 0.26, 0.5, 0.16, 0.42, 0x2a7aff, { emissive: 0x0030aa }); bL.userData.flicker = true;
+      });
+      det('pushbar', 2, (a) => { box(a, 1.9, -0.25, -0.5, 2.06, 0.4, -0.38, SILVER); box(a, 1.9, -0.25, 0.38, 2.06, 0.4, 0.5, SILVER); box(a, 1.98, 0.3, -0.5, 2.06, 0.4, 0.5, SILVER); });   // push bar
       break;
     }
     case 'garbage': {
@@ -309,9 +327,10 @@ export function buildTruck(spec) {
       box(g, -1.8, 0.06, -0.72, 0.7, 1.3, 0.72, L.body);                   // compactor box
       for (let x = -1.6; x < 0.6; x += 0.45) zbox(g, x, 0.2, 0.72, x + 0.12, 1.2, 0.74, L.bodyDark);   // ribs
       zbox(g, -1.4, 0.55, 0.74, 0.4, 0.75, 0.76, L.accent);                // white stripe
-      box(g, -1.95, 0.0, -0.6, -1.8, 1.1, 0.6, 0x55565e);                  // rear hopper
-      box(g, -2.0, 0.85, -0.5, -1.9, 1.05, 0.5, 0xffd21a);
-      cbox(g, -0.6, 1.42, 0.25, 0.3, 0.24, 0.3, 0x8d91a0); cbox(g, -0.1, 1.38, -0.2, 0.36, 0.16, 0.24, 0x5a3a22); cbox(g, -1.1, 1.4, -0.1, 0.24, 0.2, 0.3, 0x3a9aff);  // trash bits
+      det('hopper', 3, (a) => { box(a, -1.95, 0.0, -0.6, -1.8, 1.1, 0.6, 0x55565e); box(a, -2.0, 0.85, -0.5, -1.9, 1.05, 0.5, 0xffd21a); });   // rear hopper
+      det('trash1', 1, (a) => cbox(a, -0.6, 1.42, 0.25, 0.3, 0.24, 0.3, 0x8d91a0));   // trash bits
+      det('trash2', 1, (a) => cbox(a, -0.1, 1.38, -0.2, 0.36, 0.16, 0.24, 0x5a3a22));
+      det('trash3', 2, (a) => cbox(a, -1.1, 1.4, -0.1, 0.24, 0.2, 0.3, 0x3a9aff));
       break;
     }
     case 'fire': {
@@ -320,13 +339,17 @@ export function buildTruck(spec) {
       for (let x = -1.65; x < 0.4; x += 0.55) zbox(g, x, 0.18, 0.7, x + 0.45, 0.9, 0.72, 0xff5a62);   // compartment doors
       zbox(g, -1.8, 0.42, 0.72, 1.85, 0.5, 0.74, L.accent);                // white stripe
       // ladder on top
-      const lad = new THREE.Group(); lad.position.set(-1.7, 1.12, 0); lad.rotation.z = 0.05; g.add(lad);
-      for (const z of [-0.32, 0.32]) box(lad, 0, -0.05, z - 0.05, 3.1, 0.05, z + 0.05, SILVER);
-      for (let x = 0.15; x < 3.1; x += 0.3) box(lad, x - 0.03, -0.03, -0.3, x + 0.03, 0.03, 0.3, 0xc9ccd6);
+      det('ladder', 3, (a) => {
+        const lad = new THREE.Group(); lad.position.set(-1.7, 1.12, 0); lad.rotation.z = 0.05; a.add(lad);
+        for (const z of [-0.32, 0.32]) box(lad, 0, -0.05, z - 0.05, 3.1, 0.05, z + 0.05, SILVER);
+        for (let x = 0.15; x < 3.1; x += 0.3) box(lad, x - 0.03, -0.03, -0.3, x + 0.03, 0.03, 0.3, 0xc9ccd6);
+      });
       cbox(g, -1.75, 1.08, 0, 0.3, 0.16, 0.5, 0x55565e);
-      cbox(g, -0.3, 0.75, 0.74, 0.5, 0.5, 0.06, 0xffd21a); cbox(g, -0.3, 0.75, 0.78, 0.26, 0.26, 0.04, 0xe8a800);   // hose reel
-      { const l1 = cbox(g, 0.85, 1.18, -0.3, 0.3, 0.14, 0.3, 0xff2a3a, { emissive: 0xaa0010 }); l1.userData.flicker = true; }
-      { const l2 = cbox(g, 0.85, 1.18, 0.3, 0.3, 0.14, 0.3, 0xff2a3a, { emissive: 0xaa0010 }); l2.userData.flicker = true; }
+      det('reel', 2, (a) => { cbox(a, -0.3, 0.75, 0.74, 0.5, 0.5, 0.06, 0xffd21a); cbox(a, -0.3, 0.75, 0.78, 0.26, 0.26, 0.04, 0xe8a800); });   // hose reel
+      det('lights', 1, (a) => {
+        const l1 = cbox(a, 0.85, 1.18, -0.3, 0.3, 0.14, 0.3, 0xff2a3a, { emissive: 0xaa0010 }); l1.userData.flicker = true;
+        const l2 = cbox(a, 0.85, 1.18, 0.3, 0.3, 0.14, 0.3, 0xff2a3a, { emissive: 0xaa0010 }); l2.userData.flicker = true;
+      });
       break;
     }
     case 'dino': {
@@ -337,8 +360,8 @@ export function buildTruck(spec) {
       for (let i = 0; i < 5; i++) zbox(g, 1.35 + i * 0.13, 0.52, 0.35, 1.42 + i * 0.13, 0.62, 0.42, 0xffffff);   // teeth
       zbox(g, 1.5, 0.85, 0.5, 1.72, 1.05, 0.52, 0xffffff); zbox(g, 1.6, 0.88, 0.52, 1.7, 0.98, 0.54, 0x1d1e23);   // eyes
       box(g, 0.3, 0.75, -0.5, 0.85, 1.15, 0.5, GLASS);                     // cockpit window
-      for (let i = 0; i < 5; i++) { const sp = cbox(g, -1.3 + i * 0.5, 1.05, 0, 0.28, 0.28, 0.12, L.accent); sp.rotation.z = Math.PI / 4; }   // back spikes
-      box(g, -2.4, 0.4, -0.25, -1.6, 0.75, 0.25, L.body); box(g, -2.8, 0.45, -0.15, -2.4, 0.65, 0.15, L.bodyDark);   // tail
+      det('spikes', 2, (a) => { for (let i = 0; i < 5; i++) { const sp = cbox(a, -1.3 + i * 0.5, 1.05, 0, 0.28, 0.28, 0.12, L.accent); sp.rotation.z = Math.PI / 4; } });   // back spikes
+      det('tail', 3, (a) => { box(a, -2.4, 0.4, -0.25, -1.6, 0.75, 0.25, L.body); box(a, -2.8, 0.45, -0.15, -2.4, 0.65, 0.15, L.bodyDark); });   // tail
       break;
     }
     case 'rocket': {
@@ -347,22 +370,26 @@ export function buildTruck(spec) {
       zbox(g, -1.75, 0.2, 0.6, 2.0, 0.3, 0.62, L.accent);                  // stripe
       box(g, -0.3, 0.45, -0.42, 0.75, 0.8, 0.42, 0x7ad8ff, { transparent: true, opacity: 0.7 });   // canopy
       box(g, -0.4, 0.45, -0.46, -0.3, 0.75, 0.46, L.bodyDark);
-      for (const z of [-0.55, 0.55]) box(g, -1.75, 0.45, z - 0.04, -1.2, 1.25, z + 0.04, L.accent);   // fins
-      box(g, -1.75, 0.45, -0.04, -1.25, 1.35, 0.04, L.accent);
-      const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 0.35, 8), mat(0x55565e, { flatShading: true })); noz.rotation.z = Math.PI / 2; noz.position.set(-1.9, 0.3, 0); g.add(noz);
-      { const fl = cbox(g, -2.2, 0.3, 0, 0.3, 0.26, 0.26, 0xffb21a, { emissive: 0xff6a00 }); fl.userData.flicker = true; fl.userData.noOutline = true; }
+      det('fins', 2, (a) => { for (const z of [-0.55, 0.55]) box(a, -1.75, 0.45, z - 0.04, -1.2, 1.25, z + 0.04, L.accent); });   // side fins
+      det('fin', 1, (a) => box(a, -1.75, 0.45, -0.04, -1.25, 1.35, 0.04, L.accent));
+      det('nozzle', 3, (a) => {
+        const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 0.35, 8), mat(0x55565e, { flatShading: true })); noz.rotation.z = Math.PI / 2; noz.position.set(-1.9, 0.3, 0); a.add(noz);
+        const fl = cbox(a, -2.2, 0.3, 0, 0.3, 0.26, 0.26, 0xffb21a, { emissive: 0xff6a00 }); fl.userData.flicker = true; fl.userData.noOutline = true;
+      });
       headlights(g, 2.0);
       break;
     }
     case 'mixer': {
       cab(g, L, 0.62, 1.4, 1.0, 1.85);
       box(g, -1.75, 0.06, -0.62, 0.55, 0.28, 0.62, L.frame);
-      const drum = new THREE.Group(); drum.position.set(-0.55, 0.78, 0); drum.rotation.z = 0.18; g.add(drum);
-      const spinner = new THREE.Group(); drum.add(spinner);
-      const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.58, 2.0, 8), mat(L.body, { flatShading: true }));
-      cyl.rotation.z = Math.PI / 2; cyl.castShadow = true; spinner.add(cyl);
-      for (let i = 0; i < 4; i++) { const s = new THREE.Group(); s.rotation.x = (i / 4) * Math.PI * 2; spinner.add(s); box(s, -0.9, 0.5, -0.08, 0.9, 0.6, 0.08, L.accent); }
-      parts.spin.push({ obj: spinner, axis: 'x', speed: 3 });
+      det('drum', 3, (a) => {
+        const drum = new THREE.Group(); drum.position.set(-0.55, 0.78, 0); drum.rotation.z = 0.18; a.add(drum);
+        const spinner = new THREE.Group(); drum.add(spinner);
+        const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.58, 2.0, 8), mat(L.body, { flatShading: true }));
+        cyl.rotation.z = Math.PI / 2; cyl.castShadow = true; spinner.add(cyl);
+        for (let i = 0; i < 4; i++) { const s = new THREE.Group(); s.rotation.x = (i / 4) * Math.PI * 2; spinner.add(s); box(s, -0.9, 0.5, -0.08, 0.9, 0.6, 0.08, L.accent); }
+        parts.spin.push({ obj: spinner, axis: 'x', speed: 3 });
+      });
       break;
     }
     case 'rover': {
@@ -373,9 +400,8 @@ export function buildTruck(spec) {
       for (const [x0, x1] of [[-0.5, -0.4], [0.7, 0.8]]) zbox(g, x0, 0.32, 0.48, x1, 1.05, 0.56, L.frame);
       box(g, -0.5, 1.0, -0.56, 0.8, 1.08, 0.56, L.frame);
       cbox(g, 0.15, 0.55, 0, 0.5, 0.4, 0.5, L.accent);
-      cbox(g, -1.2, 0.55, 0, 0.5, 0.45, 0.8, 0x7df9ff, { emissive: 0x1a8a99 });
-      box(g, -1.5, 0.32, 0.3, -1.45, 1.6, 0.35, SILVER);
-      cbox(g, -1.47, 1.65, 0.32, 0.12, 0.12, 0.12, 0xff3d6b, { emissive: 0x991133 });
+      det('crystal', 2, (a) => cbox(a, -1.2, 0.55, 0, 0.5, 0.45, 0.8, 0x7df9ff, { emissive: 0x1a8a99 }));
+      det('antenna', 1, (a) => { box(a, -1.5, 0.32, 0.3, -1.45, 1.6, 0.35, SILVER); cbox(a, -1.47, 1.65, 0.32, 0.12, 0.12, 0.12, 0xff3d6b, { emissive: 0x991133 }); });
       break;
     }
     case 'knight': {
@@ -384,14 +410,12 @@ export function buildTruck(spec) {
       for (let x = -1.65; x < -0.3; x += 0.42) zbox(g, x, 0.55, 0.5, x + 0.22, 0.75, 0.66, L.frame);
       zbox(g, -0.2, 0.9, 0.62, 1.8, 0.98, 0.64, L.accent);
       zbox(g, 1.82, 0.0, 0.5, 2.05, 0.1, 0.6, SILVER);
-      box(g, -1.5, 0.55, -0.05, -1.42, 2.0, 0.05, 0x5b3a1e);
-      box(g, -1.42, 1.45, -0.03, -0.85, 1.95, 0.03, L.accent);
-      box(g, -1.42, 1.55, -0.035, -0.95, 1.85, 0.035, L.body);
+      det('flag', 1, (a) => { box(a, -1.5, 0.55, -0.05, -1.42, 2.0, 0.05, 0x5b3a1e); box(a, -1.42, 1.45, -0.03, -0.85, 1.95, 0.03, L.accent); box(a, -1.42, 1.55, -0.035, -0.95, 1.85, 0.035, L.body); });
       break;
     }
   }
   // moving sub-parts get their own outline and bake; the rest of the truck becomes a couple of meshes
-  for (const sub of [parts.boom, parts.piston, ...parts.spin.map((p) => p.obj)]) if (sub) { sub.userData.dynamic = true; addOutline(sub); bake(sub); }
+  for (const sub of [parts.boom, parts.piston, ...parts.spin.map((p) => p.obj), ...parts.acc.map((a) => a.obj)]) if (sub) { sub.userData.dynamic = true; addOutline(sub); bake(sub); }
   addOutline(g);
   bake(g);
   return parts;

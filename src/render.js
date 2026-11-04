@@ -6,7 +6,7 @@ import { P } from './platform/index.js';
 import { mat, box, cbox, buildTruck, buildWheel, buildHookLink, buildGem, buildFinish, buildDeco, boulder, pendulum, addOutline } from './models.js';
 
 const D = 4; // terrain depth (z)
-const _col = new THREE.Color(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
+const _col = new THREE.Color(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _v3 = new THREE.Vector3();
 
 const STYLE = {
   grass: { top: 'grassTop', side: 'dirt', cap: ['grassTop', 'grassSide'] },
@@ -448,7 +448,7 @@ export class Renderer {
     const PL = {
       scene: this.scene,
       bits: { mesh: mk(box1, new THREE.MeshLambertMaterial({ color: 0xffffff }), 240), items: [], next: 0 },
-      smoke: { mesh: mk(box1, new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x9a9a9a, transparent: true, opacity: 0.55, depthWrite: false }), 160, 2), items: [], next: 0 },
+      smoke: { mesh: mk(this.smokeGeo(), this.smokeMat(), 200, 2), items: [], next: 0 },
       track: { mesh: mk(new THREE.PlaneGeometry(0.5, 0.52), new THREE.MeshLambertMaterial({ map: this.trackTex, transparent: true, opacity: 0.3, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }), 240, 1), items: [], next: 0 },
     };
     PL.bits.mesh.setColorAt(0, new THREE.Color()); PL.bits.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
@@ -456,6 +456,21 @@ export class Renderer {
     this._pools = PL;
     return PL;
   }
+  // Smoke puffs: smooth round balls, each with its own opacity (instance attribute) so they fade softly.
+  smokeGeo() {
+    const g = new THREE.SphereGeometry(0.5, 12, 9);
+    g.setAttribute('aAlpha', new THREE.InstancedBufferAttribute(new Float32Array(200), 1).setUsage(THREE.DynamicDrawUsage));
+    return g;
+  }
+  smokeMat() {
+    const m = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xb4b4b4, transparent: true, opacity: 0.8, depthWrite: false });
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aAlpha;\nvarying float vAlpha;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvAlpha = aAlpha;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vAlpha;').replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse, opacity * vAlpha );');
+    };
+    return m;
+  }
+
   take(pool) { const it = pool.items[pool.next]; pool.next = (pool.next + 1) % pool.items.length; return it; }
 
   spawn(x, y, z, vx, vy, vz, color, life = 0.8, size = 0.22, grav = -9) {
@@ -486,7 +501,9 @@ export class Renderer {
     it.p ||= new THREE.Vector3(); it.v ||= new THREE.Vector3(); it.r ||= new THREE.Euler();
     it.p.set(x, y, z); it.r.set(Math.random(), Math.random(), Math.random());
     it.v.set(vx + (Math.random() - 0.5) * 0.4, vy ?? 0.7 + Math.random() * 0.5, (Math.random() - 0.5) * 0.3);
-    it.life = it.max = 1.1 + Math.random() * 0.5; it.s0 = size; it.s1 = size * (2.4 + Math.random());
+    it.life = it.max = 1.3 + Math.random() * 0.6; it.s0 = size * 0.7; it.s1 = size * (2.6 + Math.random());
+    // curl: each puff drifts on a small spiral (rolling smoke) with its own phase and direction
+    it.ph = Math.random() * Math.PI * 2; it.cw = (Math.random() < 0.5 ? -1 : 1) * (3 + Math.random() * 2.5); it.ca = size * (0.6 + Math.random() * 0.6);
   }
 
   // Faint tread mark on the ground, fades out over a few seconds.
@@ -518,16 +535,21 @@ export class Renderer {
     }
     if (dirty) PL.bits.mesh.instanceMatrix.needsUpdate = true;
     dirty = false;
+    const alpha = PL.smoke.mesh.geometry.attributes.aAlpha.array;
     for (const it of PL.smoke.items) {
       if (it.life <= 0) continue;
       it.life -= dt; const k = 1 - it.life / it.max;
-      it.p.addScaledVector(it.v, dt); it.v.multiplyScalar(1 - dt * 0.8); it.r.y += dt;
-      // fade by shrinking at the end (instances share one material opacity)
-      const sc = (it.s0 + (it.s1 - it.s0) * Math.sqrt(k)) * Math.min(1, k * 8) * Math.min(1, (1 - k) * 2.2);
-      PL.smoke.mesh.setMatrixAt(it.i, it.life <= 0 ? zero : _m.compose(it.p, _q.setFromEuler(it.r), _s.set(sc, sc, sc)));
+      it.p.addScaledVector(it.v, dt); it.v.multiplyScalar(1 - dt * 1.1); it.v.y += dt * 0.35;   // slows down, warm air keeps it rising
+      // rolling curl around the drift path, widening as the puff grows
+      const ph = it.ph + it.cw * k, ca = it.ca * (0.4 + k);
+      _v3.set(it.p.x + Math.cos(ph) * ca, it.p.y + Math.sin(ph) * ca * 0.7, it.p.z);
+      it.r.z += dt * it.cw * 0.3;
+      const ease = 1 - Math.pow(1 - k, 3), sc = it.s0 + (it.s1 - it.s0) * ease;     // grows fast, then billows out slowly
+      alpha[it.i] = it.life <= 0 ? 0 : Math.min(1, k * 7) * Math.pow(1 - k, 1.4);   // soft fade in, long fade out
+      PL.smoke.mesh.setMatrixAt(it.i, it.life <= 0 ? zero : _m.compose(_v3, _q.setFromEuler(it.r), _s.set(sc, sc * 0.9, sc)));
       dirty = true;
     }
-    if (dirty) PL.smoke.mesh.instanceMatrix.needsUpdate = true;
+    if (dirty) { PL.smoke.mesh.instanceMatrix.needsUpdate = true; PL.smoke.mesh.geometry.attributes.aAlpha.needsUpdate = true; }
     dirty = false;
     for (const it of PL.track.items) {
       if (it.life <= 0) continue;
@@ -597,6 +619,7 @@ export class Renderer {
     for (const car of this.cars) {
       const { sim } = car;
       this.syncDebris(car);
+      if (car.flying?.length) this.flyAcc(car, dt);
       const c = sim.chassis, al = this.alpha ?? 1, p = sim.pose(c, al);
       const z = car.z;
       // squash & stretch on landings, little hop on finish
@@ -613,7 +636,8 @@ export class Renderer {
         const ca = Math.cos(ang), sa = Math.sin(ang), sp = car.spec;
         sp.wheelX.forEach((wx, i) => { car.wheels[i].position.set(x + wx * ca - sp.wheelY * sa, y + wx * sa + sp.wheelY * ca, z); car.wheels[i].rotation.z += dt * 12; });
         if (sp.crane) { const cr = sp.crane, tx = cr.pivot[0] + Math.cos(cr.angle) * cr.length, ty = cr.pivot[1] + Math.sin(cr.angle) * cr.length; car.hook.forEach((h, i) => { const ly = ty - cr.linkLen * (i + 0.5); h.position.set(x + tx * ca - ly * sa, y + tx * sa + ly * ca, z); h.rotation.z = ang; }); }
-        if (k >= 1) { car.anim = null; car.squash = 0.9; this.burst(x, y - 0.9, 0xf3e2d2, 10, 3, -4, 0.5, z); }
+        if (k >= 1) { car.anim = null; car.squash = 0.9; for (let i = 0; i < 8; i++) this.smoke(x + (Math.random() - 0.5) * 3, y - 0.9, z + (Math.random() - 0.5) * 1.8, 0.35, (Math.random() - 0.5) * 2, 0.3 + Math.random() * 0.4); }
+        if (an.t >= an.dur * 0.5 && car.flying?.length) this.fixAcc(car);   // parts snap back on mid-flip
         if (car.tag) car.tag.position.set(x, y + 3.2, z);
         continue;
       }
@@ -666,7 +690,7 @@ export class Renderer {
           const slip = Math.abs(w.getAngularVelocity() * r + vx);   // rim speed vs ground speed
           if (slip > 2.5 || Math.abs(w.getAngularVelocity()) > 9) {
             const q = w.getPosition(), back = -Math.sign(throttle || 1);
-            this.smoke(q.x + back * r * 0.7, q.y - r + 0.2, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.2 + Math.min(0.25, slip * 0.03), back * (0.6 + Math.random()), 0.25 + Math.random() * 0.35);
+            this.smoke(q.x + back * r * 0.7, q.y - r + 0.2, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.3 + Math.min(0.35, slip * 0.04), back * (0.6 + Math.random()), 0.25 + Math.random() * 0.35);
           }
         });
         car.dustT = 0.06;
@@ -751,6 +775,47 @@ export class Renderer {
   snapshot(w = 360, h = 380) { return this.capture(this.scene, this.camera, w, h); }
 
   // Start the flip-back animation from a sim 'recover' event. Angle goes the short way round.
+  // Crash: accessories up to this severity tier break off the truck and fly / bounce / skid on the ground.
+  // At the edge tier only some go (a medium crash does not always lose the bumper).
+  breakAcc(car, tier = 3) {
+    const sim = car.sim, v = sim.chassis.getLinearVelocity();
+    car.flying ||= [];
+    const list = (car.parts.acc || []).filter((a) => !a.off && a.tier <= tier && !(a.tier === tier && tier < 3 && Math.random() < 0.35));
+    if (!list.length) { const one = (car.parts.acc || []).find((a) => !a.off && a.tier === 1); if (one) list.push(one); }   // a crash always knocks something loose
+    for (const a of list) {
+      a.off = true;
+      const o = a.obj; o.updateWorldMatrix(true, false); o.getWorldPosition(_v); o.getWorldQuaternion(_q);
+      this.scene.add(o); o.position.copy(_v); o.quaternion.copy(_q);
+      const k = 0.6 + tier * 0.45;
+      car.flying.push({ a, v: new THREE.Vector3(v.x * 0.45 + (Math.random() - 0.5) * 4 * k, 2.5 + Math.random() * 3 * k, 0.4 + Math.random() * 1.4),
+        w: new THREE.Vector3((Math.random() - 0.5) * 7 * k, (Math.random() - 0.5) * 7 * k, (Math.random() - 0.5) * 9 * k) });
+    }
+  }
+  flyAcc(car, dt) {
+    const sim = car.sim, water = (sim.level.water ?? -4) - 3;
+    for (const f of car.flying) {
+      const o = f.a.obj;
+      if (o.position.y < water) { o.visible = false; continue; }
+      f.v.y -= 18 * dt; o.position.addScaledVector(f.v, dt);
+      o.rotation.x += f.w.x * dt; o.rotation.y += f.w.y * dt; o.rotation.z += f.w.z * dt;
+      const gy = sim.groundAt(o.position.x);
+      if (gy != null && o.position.y - f.a.half < gy && o.position.y > gy - 1.5) {
+        o.position.y = gy + f.a.half;
+        if (f.v.y < 0) { f.v.y = Math.abs(f.v.y) < 1.6 ? 0 : -f.v.y * 0.32; f.v.x *= 0.6; f.v.z *= 0.6; f.w.multiplyScalar(0.55); }
+        if (!f.v.y) { const d = Math.exp(-dt * 5); f.v.x *= d; f.v.z *= d; f.w.multiplyScalar(Math.exp(-dt * 7)); }
+      }
+    }
+  }
+  // Back on its wheels: everything is bolted back on.
+  fixAcc(car) {
+    for (const a of car.parts.acc || []) {
+      if (!a.off) continue;
+      a.off = false; const o = a.obj;
+      car.parts.group.add(o); o.position.copy(a.home); o.rotation.set(0, 0, 0); o.visible = true;
+    }
+    car.flying = [];
+  }
+
   carRecover(car, e) {
     let a = e.from.a % (Math.PI * 2);
     if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
