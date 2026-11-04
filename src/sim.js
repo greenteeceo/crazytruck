@@ -27,7 +27,7 @@ export class Sim {
     this.headTime = 0;
     this.padCooldown = 0;
     this.freeze = 0;
-    this.debris = []; this.impacts = [];
+    this.debris = []; this.impacts = []; this.lostWheels = new Set();
     this.failPose = '';
     this.landed = 0;     // set when wheel lands after air; used for fx
     this.airTime = 0;
@@ -208,18 +208,7 @@ export class Sim {
   breakApart(tier = 3) {
     const s = this.spec, w = this.world, ch = this.chassis, v = ch.getLinearVelocity(), a = ch.getAngle();
     const L = s.look || {};
-    const chunk = (lx, ly, sz, color, kick) => {
-      const p = ch.getWorldPoint(V(lx, ly));
-      const b = w.createDynamicBody({ position: p, angle: Math.random() * 3, angularDamping: 0.2 });
-      b.createFixture(pl.Box(sz / 2, sz / 2), { density: 0.6, friction: 0.7, restitution: 0.3, filterCategoryBits: CAT_DYN, filterMaskBits: CAT_TERRAIN | CAT_DYN });
-      b.setLinearVelocity(V(v.x * 0.5 + kick[0], Math.max(0, v.y) * 0.5 + kick[1]));
-      b.setAngularVelocity((Math.random() - 0.5) * 16);
-      this.debris.push({ body: b, kind: 'chunk', size: sz, color, ttl: 4.5 + Math.random() });
-    };
-    // more body chunks the harder the crash; the crane boom only snaps in a big one
-    chunk(1.4, 0.3, tier > 1 ? 0.32 : 0.2, L.body ?? 0xff9a14, [3 + Math.random() * 2, 5]);
-    if (tier >= 2) chunk(-1.2, 0.5, 0.28, L.frame ?? 0x55565e, [-3, 6]);
-    if (tier >= 3) { chunk(0.6, 0.9, 0.24, 0x15161c, [1, 7]); chunk(-0.2, 0.2, 0.36, L.bodyDark ?? 0xe07800, [-1.5, 4]); }
+    // no abstract chunks: real parts break off (wheels here, accessories in the renderer, the boom below)
     if (tier >= 3 && s.crane && !this.debris.some((d) => d.kind === 'boom')) {
       const c = s.crane, piv = ch.getWorldPoint(V(c.pivot[0], c.pivot[1]));
       const b = w.createDynamicBody({ position: piv, angle: a + c.angle, angularDamping: 0.3 });
@@ -257,11 +246,14 @@ export class Sim {
   }
 
   // A crash knocks one wheel off; it rolls away as a loose body until recover() bolts it back on.
-  loseWheel() {
-    if (this.lostWheel != null) return;
-    const i = this.wheelTouch[0] <= 0 && this.wheelTouch[1] > 0 ? 0 : this.wheelTouch[1] <= 0 ? 1 : (Math.random() < 0.5 ? 0 : 1);
-    const j = this.joints[i]; if (!j) return;
-    this.world.destroyJoint(j); this.joints[i] = null; this.lostWheel = i;
+  get lostWheel() { return this.lostWheels.size ? this.lostWheels.values().next().value : null; }
+  loseWheel(i = null) {
+    if (i == null) {
+      if (this.lostWheels.size) return;
+      i = this.wheelTouch[0] <= 0 && this.wheelTouch[1] > 0 ? 0 : this.wheelTouch[1] <= 0 ? 1 : (Math.random() < 0.5 ? 0 : 1);
+    }
+    const j = this.joints[i]; if (!j || this.lostWheels.has(i)) return;
+    this.world.destroyJoint(j); this.joints[i] = null; this.lostWheels.add(i);
     const wb = this.wheels[i], v = wb.getLinearVelocity();
     wb.setLinearVelocity(V(v.x + (i === 0 ? -2.5 : 2.5), v.y + 4));
     wb.setAngularVelocity(wb.getAngularVelocity() * 0.5 - 12);
@@ -458,7 +450,9 @@ export class Sim {
       const v = this.chassis.getLinearVelocity(), hit = this.time - (this.lastHardT ?? -9) < 0.6 ? this.lastHardV : 0;
       const sev = Math.max(Math.hypot(v.x, v.y), hit) + Math.abs(this.chassis.getAngularVelocity()) * 0.6;
       this.severity = sev; this.tier = sev < 4.5 ? 1 : sev < 9 ? 2 : 3;
-      if (this.tier >= 2) this.loseWheel();   // a gentle roll-over keeps all four wheels
+      // a gentle roll-over keeps everything on; a medium crash loses an axle; a big one sends both flying
+      if (this.tier >= 2) this.loseWheel();
+      if (this.tier >= 3) this.loseWheel(this.lostWheel === 0 ? 1 : 0);
       this.breakApart(this.tier);
     }
     this.events.push({ type: 'fail', reason, pose: this.failPose });
@@ -500,7 +494,7 @@ export class Sim {
     const place = (b, px, py, ang = 0) => { b.setTransform(V(px, py), ang); b.setLinearVelocity(zero); b.setAngularVelocity(0); b.setAwake(true); };
     place(this.chassis, gx, cy);
     s.wheelX.forEach((wx, i) => { place(this.wheels[i], gx + wx, cy + s.wheelY); if (!this.joints[i]) this.joints[i] = this.makeJoint(this.wheels[i]); });
-    this.lostWheel = null;
+    this.lostWheels.clear();
     if (s.crane) {
       const c = s.crane, tx = c.pivot[0] + Math.cos(c.angle) * c.length, ty = c.pivot[1] + Math.sin(c.angle) * c.length;
       this.hook.forEach((b, i) => place(b, gx + tx, cy + ty - c.linkLen * (i + 0.5)));

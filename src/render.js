@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { tex, skyTexture } from './textures.js';
 import { bake } from './bake.js';
 import { P } from './platform/index.js';
-import { mat, box, cbox, buildTruck, buildWheel, buildHookLink, buildGem, buildFinish, buildDeco, boulder, pendulum, addOutline } from './models.js';
+import { mat, box, cbox, buildTruck, buildWheel, buildTyre, buildHookLink, buildGem, buildFinish, buildDeco, boulder, pendulum, addOutline } from './models.js';
 
 const D = 4; // terrain depth (z)
 const _col = new THREE.Color(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _v3 = new THREE.Vector3();
@@ -620,6 +620,7 @@ export class Renderer {
       const { sim } = car;
       this.syncDebris(car);
       if (car.flying?.length) this.flyAcc(car, dt);
+      if (car.tyres?.length) this.rollTyres(car, dt);
       const c = sim.chassis, al = this.alpha ?? 1, p = sim.pose(c, al);
       const z = car.z;
       // squash & stretch on landings, little hop on finish
@@ -637,7 +638,7 @@ export class Renderer {
         sp.wheelX.forEach((wx, i) => { car.wheels[i].position.set(x + wx * ca - sp.wheelY * sa, y + wx * sa + sp.wheelY * ca, z); car.wheels[i].rotation.z += dt * 12; });
         if (sp.crane) { const cr = sp.crane, tx = cr.pivot[0] + Math.cos(cr.angle) * cr.length, ty = cr.pivot[1] + Math.sin(cr.angle) * cr.length; car.hook.forEach((h, i) => { const ly = ty - cr.linkLen * (i + 0.5); h.position.set(x + tx * ca - ly * sa, y + tx * sa + ly * ca, z); h.rotation.z = ang; }); }
         if (k >= 1) { car.anim = null; car.squash = 0.9; for (let i = 0; i < 8; i++) this.smoke(x + (Math.random() - 0.5) * 3, y - 0.9, z + (Math.random() - 0.5) * 1.8, 0.35, (Math.random() - 0.5) * 2, 0.3 + Math.random() * 0.4); }
-        if (an.t >= an.dur * 0.5 && car.flying?.length) this.fixAcc(car);   // parts snap back on mid-flip
+        if (an.t >= an.dur * 0.5 && (car.flying?.length || car.tyres?.length)) this.fixAcc(car);   // parts snap back on mid-flip
         if (car.tag) car.tag.position.set(x, y + 3.2, z);
         continue;
       }
@@ -661,7 +662,7 @@ export class Renderer {
         car.trk ||= sim.wheels.map(() => ({ x: null }));
         const ang = p.a, sn = Math.sin(ang), cs = Math.cos(ang), r = sim.spec.wheelR;
         sim.wheels.forEach((w, i) => {
-          if (sim.lostWheel === i) return;
+          if (sim.lostWheels.has(i)) return;
           const q = sim.pose(w, al), tk = car.trk[i];
           if (sim.wheelTouch[i] <= 0) { tk.x = null; return; }
           if (tk.x == null) { tk.x = q.x; return; }
@@ -686,7 +687,7 @@ export class Renderer {
       if (car === this.cars[0] && car.dustT <= 0 && sim.state === 'run' && throttle !== 0) {
         const vx = sim.chassis.getLinearVelocity().x, r = sim.spec.wheelR;
         sim.wheels.forEach((w, i) => {
-          if (sim.lostWheel === i || sim.wheelTouch[i] <= 0) return;
+          if (sim.lostWheels.has(i) || sim.wheelTouch[i] <= 0) return;
           const slip = Math.abs(w.getAngularVelocity() * r + vx);   // rim speed vs ground speed
           if (slip > 2.5 || Math.abs(w.getAngularVelocity()) > 9) {
             const q = w.getPosition(), back = -Math.sign(throttle || 1);
@@ -780,13 +781,14 @@ export class Renderer {
   breakAcc(car, tier = 3) {
     const sim = car.sim, v = sim.chassis.getLinearVelocity();
     car.flying ||= [];
-    const list = (car.parts.acc || []).filter((a) => !a.off && a.tier <= tier && !(a.tier === tier && tier < 3 && Math.random() < 0.35));
-    if (!list.length) { const one = (car.parts.acc || []).find((a) => !a.off && a.tier === 1); if (one) list.push(one); }   // a crash always knocks something loose
+    if (tier <= 1) return;   // a gentle roll-over breaks nothing
+    // medium: small parts (some of them); big: everything loose, large parts included
+    const list = (car.parts.acc || []).filter((a) => !a.off && (tier >= 3 || (a.tier <= 2 && Math.random() < 0.7)));
     for (const a of list) {
       a.off = true;
       const o = a.obj; o.updateWorldMatrix(true, false); o.getWorldPosition(_v); o.getWorldQuaternion(_q);
       this.scene.add(o); o.position.copy(_v); o.quaternion.copy(_q);
-      const k = 0.6 + tier * 0.45;
+      const k = tier >= 3 ? 2.2 : 1.1;   // big crash: parts fly everywhere
       car.flying.push({ a, v: new THREE.Vector3(v.x * 0.45 + (Math.random() - 0.5) * 4 * k, 2.5 + Math.random() * 3 * k, 0.4 + Math.random() * 1.4),
         w: new THREE.Vector3((Math.random() - 0.5) * 7 * k, (Math.random() - 0.5) * 7 * k, (Math.random() - 0.5) * 9 * k) });
     }
@@ -806,8 +808,41 @@ export class Renderer {
       }
     }
   }
+  // A wheel comes off: the axle splits into its two tyres, which bounce, roll away and fall over.
+  splitWheel(car, idx) {
+    const sim = car.sim, w = sim.wheels[idx], q = w.getPosition(), v = w.getLinearVelocity(), r = car.spec.wheelR;
+    car.wheels[idx].visible = false;
+    car.tyres ||= [];
+    for (const side of [-1, 1]) {
+      const t = buildTyre(r, side); this.scene.add(t);
+      t.position.set(q.x, q.y, car.z + side * 0.86); t.rotation.z = w.getAngle();
+      const big = (sim.tier ?? 2) >= 3;   // a big smash sends the tyres everywhere
+      car.tyres.push({ obj: t, r, side, tip: 0, v: new THREE.Vector3(v.x * 0.5 + (Math.random() - 0.5) * (big ? 10 : 5), (big ? 6.5 : 4) + Math.random() * (big ? 5 : 3.5), side * ((big ? 2 : 1) + Math.random() * (big ? 3.5 : 2))), spin: (Math.random() - 0.5) * (big ? 30 : 18) });
+    }
+  }
+  rollTyres(car, dt) {
+    const sim = car.sim;
+    for (const t of car.tyres) {
+      const o = t.obj; t.v.y -= 18 * dt; o.position.addScaledVector(t.v, dt);
+      const gy = sim.groundAt(o.position.x), hh = t.r + (0.32 - t.r) * t.tip;   // standing: radius, lying flat: half the width
+      if (gy != null && o.position.y - hh < gy && o.position.y > gy - 2) {
+        o.position.y = gy + hh;
+        if (t.v.y < 0) { t.v.y = Math.abs(t.v.y) < 1.5 ? 0 : -t.v.y * 0.45; t.v.z *= 0.7; }   // rubber bounces
+        if (!t.v.y) {
+          t.spin = -t.v.x / t.r;                                             // rolling
+          t.v.x *= Math.exp(-dt * 0.9); t.v.z *= Math.exp(-dt * 3);
+          if (Math.abs(t.v.x) < 1.2) t.tip = Math.min(1, t.tip + dt * 1.6);  // slows down, wobbles and falls over
+        }
+      } else if (o.position.y < (sim.level.water ?? -4) - 3) o.visible = false;
+      o.rotation.z += t.spin * dt * (1 - t.tip);
+      o.rotation.x = t.side * t.tip * Math.PI / 2 + (t.tip > 0 && t.tip < 1 ? Math.sin(t.tip * 14) * 0.15 * (1 - t.tip) : 0);
+    }
+  }
   // Back on its wheels: everything is bolted back on.
   fixAcc(car) {
+    for (const t of car.tyres || []) this.scene.remove(t.obj);
+    car.tyres = [];
+    for (const w of car.wheels) w.visible = true;
     for (const a of car.parts.acc || []) {
       if (!a.off) continue;
       a.off = false; const o = a.obj;

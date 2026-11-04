@@ -20,7 +20,7 @@ try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save
 save.tt ||= {};
 save.tut ||= {};   // tutorial steps already shown
 // dev tools (AUTO, TEST, infinite gems, unlock all) are hidden in release; tap the version line in Settings 5 times
-const VERSION = '3.3';
+const VERSION = '3.4';
 if (!save.dev) { save.autoplay = false; save.infinite = false; save.unlockAll = false; }
 const dev = () => !!save.dev;
 // leaderboard: per-device seed for the simulated players, and when this player joined
@@ -226,7 +226,7 @@ function tick(dt) {
         else if (e.type === 'land') r.car.squash = Math.min(1, e.v);
         else if (e.type === 'recover') R.carRecover(r.car, e);
         else if (e.type === 'breakup') R.breakAcc(r.car, e.tier);
-        else if (e.type === 'wheelOff') { const q = rs.wheels[e.idx].getPosition(); R.burst(q.x, q.y, 0x55565e, 6, 3, -8, 0.5, r.z); }
+        else if (e.type === 'wheelOff') R.splitWheel(r.car, e.idx);
         else if (e.type === 'impact' && e.v > 4) impactFx(e, rs, r.z, r.spec?.look, true);
       }
       racerWatch(r.r);
@@ -322,7 +322,7 @@ function fx(e, sim, z = 0, car = null) {
     case 'dunk':
       if (!game.race && !game.snap) { game.snap = R.snapshotCar(sim, z, 'splash'); R.burst(p.x, p.y, 0xffffff, 24, 6, -10, 0.9, z); }
       break;
-    case 'wheelOff': { const q = sim.wheels[e.idx].getPosition(); R.burst(q.x, q.y, 0x55565e, 8, 4, -8, 0.6, z); R.popText('Wheel off!', q.x, q.y + 1.6, z, '#ffffff'); Audio.land(0.6); P.vibrate(); break; }
+    case 'wheelOff': { const q = sim.wheels[e.idx].getPosition(); if (car) R.splitWheel(car, e.idx); R.smoke(q.x, q.y, z, 0.4, 0, 0.6); if (!car?.tyres || car.tyres.length <= 2) R.popText('Wheel off!', q.x, q.y + 1.6, z, '#ffffff'); Audio.land(0.6); P.vibrate(); break; }
     case 'breakup': if (car) R.breakAcc(car, e.tier); break;   // accessories fly off according to how bad the crash was
     case 'recover': if (car) { R.carRecover(car, e); R.popText(e.to.x < e.from.x - 1 ? 'Back you go!' : 'Flip!', e.from.x, e.from.y + 2.6, z, '#ffffff'); } break;
     case 'win':
@@ -331,7 +331,14 @@ function fx(e, sim, z = 0, car = null) {
       Audio.win(); break;
     case 'fail':
       if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }
-      else { for (let i = 0; i < 10; i++) R.smoke(p.x + (Math.random() - 0.5) * 2.5, p.y - 0.4, z + (Math.random() - 0.5) * 1.8, 0.4, (Math.random() - 0.5) * 2, 0.4 + Math.random() * 0.6); Audio.crash(); R.shake = 0.35; P.vibrate(); }
+      else if ((sim.tier ?? 3) <= 1) {   // gentle roll-over: a soft puff and a thud, nothing breaks
+        for (let i = 0; i < 4; i++) R.smoke(p.x + (Math.random() - 0.5) * 2, p.y - 0.4, z + (Math.random() - 0.5) * 1.4, 0.35, (Math.random() - 0.5) * 1.2, 0.3 + Math.random() * 0.3);
+        Audio.land(0.5); R.shake = 0.08;
+      } else {
+        const big = sim.tier >= 3;
+        for (let i = 0; i < (big ? 14 : 8); i++) R.smoke(p.x + (Math.random() - 0.5) * 2.5, p.y - 0.4, z + (Math.random() - 0.5) * 1.8, big ? 0.5 : 0.4, (Math.random() - 0.5) * 2, 0.4 + Math.random() * 0.6);
+        Audio.crash(); R.shake = big ? 0.45 : 0.25; P.vibrate();
+      }
       if (!game.race) setTimeout(() => { if (game && !game.snap) game.snap = R.snapshotCar(sim, z); }, 420);
       else R.popText(e.reason === 'splash' ? 'SPLASH!' : 'OOPS!', p.x, p.y + 2.4, z, '#ffffff');
       break;
