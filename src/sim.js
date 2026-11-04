@@ -71,7 +71,7 @@ export class Sim {
         case 'bridge': this.buildBridge(p); break;
         case 'dyn': {
           const b = w.createDynamicBody({ position: V(p.x, p.y), angle: p.a || 0 });
-          b.createFixture(pl.Box(p.w / 2, p.h / 2), this.fixtureOpts(p.s, { density: p.d ?? 0.5, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: p.s, prop: !!this.level.race } }));
+          b.createFixture(pl.Box(p.w / 2, p.h / 2), this.fixtureOpts(p.s, { density: p.d ?? 0.5, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: p.s, prop: !!this.level.race, smash: true } }));
           this.dynamics.push({ body: b, piece: p });
           break;
         }
@@ -96,7 +96,7 @@ export class Sim {
         }
         case 'ball': {
           const b = w.createDynamicBody({ position: V(p.x, p.y), angularDamping: 0.05 });
-          b.createFixture(pl.Circle(p.r), this.fixtureOpts(p.s || 'stone', { density: p.d ?? 0.35, friction: 0.6, restitution: 0.25, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: 'stone', prop: true } }));
+          b.createFixture(pl.Circle(p.r), this.fixtureOpts(p.s || 'stone', { density: p.d ?? 0.35, friction: 0.6, restitution: 0.25, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: 'stone', prop: true, smash: true } }));
           if (p.vx) b.setLinearVelocity(V(p.vx, 0));
           this.dynamics.push({ body: b, piece: p });
           break;
@@ -284,7 +284,8 @@ export class Sim {
     const heavy = !ob.isDynamic() || ob.getMass() > this.mass * 0.6;
     // a wall, not a ledge: near-vertical face hit at axle height or above (a wheel cannot roll over it), or the body itself
     const wall = Math.abs(n.x) > 0.95 && (u.part !== 'wheel' || pt.y > cb.getPosition().y - this.spec.wheelR * 0.15);
-    this.impacts.push({ x: pt.x, y: pt.y, nx: n.x, ny: n.y, v, side, wall, heavy, part: u.part, style: o.style, prop: !!o.prop });
+    // smash: a loose obstacle you can knock over (crates, logs, barrels, dominoes, boulders) - the only kind that throws debris
+    this.impacts.push({ x: pt.x, y: pt.y, nx: n.x, ny: n.y, v, side, wall, heavy, part: u.part, style: o.style, prop: !!o.prop, smash: !!o.smash });
   }
 
   // After the step: debris for every real hit, and a very hard hit into something heavy tips the truck over.

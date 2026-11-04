@@ -20,7 +20,7 @@ try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save
 save.tt ||= {};
 save.tut ||= {};   // tutorial steps already shown
 // dev tools (AUTO, TEST, infinite gems, unlock all) are hidden in release; tap the version line in Settings 5 times
-const VERSION = '3.1';
+const VERSION = '3.2';
 if (!save.dev) { save.autoplay = false; save.infinite = false; save.unlockAll = false; }
 const dev = () => !!save.dev;
 // leaderboard: per-device seed for the simulated players, and when this player joined
@@ -273,8 +273,9 @@ const DEBRIS = {
   toy: [0xff4d6a, 0x2f7cf6, 0xffd21a], neon: [0x7f5cff, 0x2ee6c8], cloudgrass: [0x8fe07a, 0xffffff],
 };
 // every real hit leaves debris: bits of the obstacle, and paint / frame chips off the truck when it is hard
+// Debris only flies off obstacles that can be knocked over; walls, steps and the road just stop the truck.
 function impactFx(e, sim, z, look, small = false) {
-  if (e.v < 3) return 0;
+  if (e.v < 3 || !e.smash) return 0;
   const k = Math.min(1, (e.v - 2.5) / 10), dir = e.nx ? -Math.sign(e.nx) : (Math.random() < 0.5 ? -1 : 1);
   const g = sim.groundAt(e.x - e.nx * 0.8), floor = Math.min(e.y, g ?? e.y - 0.5);
   const m = small ? 0.5 : 1;
@@ -287,7 +288,7 @@ function fx(e, sim, z = 0, car = null) {
   switch (e.type) {
     case 'impact': {
       const k = impactFx(e, sim, z, game?.spec?.look);
-      if (!k) break;
+      if (!k) { if (e.v > 8 && e.heavy) { Audio.land(Math.min(1, e.v / 12)); R.shake = Math.max(R.shake, 0.12); } break; }   // blocker: a thud, no debris
       Audio.land(Math.min(1, e.v / 10));
       if (e.v > 8) { R.shake = Math.max(R.shake, 0.15 + k * 0.35); P.vibrate(); }
       if (e.v > 9 && (game.impT || 0) < ui.t) { game.impT = ui.t + 0.8; R.popText(e.heavy ? 'CRASH!' : 'SMASH!', e.x, e.y + 2.2, z, '#ff6b74'); }
@@ -303,7 +304,9 @@ function fx(e, sim, z = 0, car = null) {
     }
     case 'gem': R.burst(e.gem.piece.x, e.gem.piece.y, 0xffd21a, 12, 4, -6, 0.6, z); R.popText('+1', e.gem.piece.x, e.gem.piece.y + 0.8, z); Audio.gem(); break;
     case 'land':
-      R.burst(p.x, p.y - 0.9, 0xf3e2d2, 8 + Math.min(10, e.v * 6), 2.5 + e.v, -4, 0.5, z); Audio.land(e.v);
+      // landing on the road: tyre smoke puffs at both wheels, no debris
+      for (const w of sim.wheels) { const q = w.getPosition(); for (let i = 0; i < 2 + Math.min(4, e.v * 3); i++) R.smoke(q.x + (Math.random() - 0.5) * 1.2, q.y - sim.spec.wheelR + 0.25, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.25 + Math.min(0.3, e.v * 0.15), (Math.random() - 0.5) * 2.4, 0.2 + Math.random() * 0.5); }
+      Audio.land(e.v);
       if (car) car.squash = Math.min(1, 0.4 + e.v * 0.5);
       if (e.v > 1) R.shake = 0.2;
       if (e.v > 1.3) R.popText(e.v > 2 ? 'HUGE AIR!' : 'Nice air!', p.x, p.y + 2.6, z, '#7df9ff');
@@ -328,7 +331,7 @@ function fx(e, sim, z = 0, car = null) {
       Audio.win(); break;
     case 'fail':
       if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }
-      else { R.burst(p.x, p.y, 0x9a9eab, 18, 5, -8, 0.8, z); Audio.crash(); R.shake = 0.35; P.vibrate(); }
+      else { for (let i = 0; i < 10; i++) R.smoke(p.x + (Math.random() - 0.5) * 2.5, p.y - 0.4, z + (Math.random() - 0.5) * 1.8, 0.4, (Math.random() - 0.5) * 2, 0.4 + Math.random() * 0.6); Audio.crash(); R.shake = 0.35; P.vibrate(); }
       if (!game.race) setTimeout(() => { if (game && !game.snap) game.snap = R.snapshotCar(sim, z); }, 420);
       else R.popText(e.reason === 'splash' ? 'SPLASH!' : 'OOPS!', p.x, p.y + 2.4, z, '#ffffff');
       break;

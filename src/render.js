@@ -448,7 +448,7 @@ export class Renderer {
     const PL = {
       scene: this.scene,
       bits: { mesh: mk(box1, new THREE.MeshLambertMaterial({ color: 0xffffff }), 240), items: [], next: 0 },
-      smoke: { mesh: mk(box1, new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x9a9a9a, transparent: true, opacity: 0.55, depthWrite: false }), 96, 2), items: [], next: 0 },
+      smoke: { mesh: mk(box1, new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x9a9a9a, transparent: true, opacity: 0.55, depthWrite: false }), 160, 2), items: [], next: 0 },
       track: { mesh: mk(new THREE.PlaneGeometry(0.5, 0.52), new THREE.MeshLambertMaterial({ map: this.trackTex, transparent: true, opacity: 0.3, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }), 240, 1), items: [], next: 0 },
     };
     PL.bits.mesh.setColorAt(0, new THREE.Color()); PL.bits.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
@@ -481,11 +481,11 @@ export class Renderer {
   kickFinish(k) { this.finishKick = Math.min(1.5, (this.finishKick || 0) + k); }
 
   // Soft voxel exhaust puff: grows, rises and fades.
-  smoke(x, y, z, size = 0.3, vx = 0) {
+  smoke(x, y, z, size = 0.3, vx = 0, vy = null) {
     const it = this.take(this.pools().smoke);
     it.p ||= new THREE.Vector3(); it.v ||= new THREE.Vector3(); it.r ||= new THREE.Euler();
     it.p.set(x, y, z); it.r.set(Math.random(), Math.random(), Math.random());
-    it.v.set(vx + (Math.random() - 0.5) * 0.4, 0.7 + Math.random() * 0.5, (Math.random() - 0.5) * 0.3);
+    it.v.set(vx + (Math.random() - 0.5) * 0.4, vy ?? 0.7 + Math.random() * 0.5, (Math.random() - 0.5) * 0.3);
     it.life = it.max = 1.1 + Math.random() * 0.5; it.s0 = size; it.s1 = size * (2.4 + Math.random());
   }
 
@@ -657,16 +657,19 @@ export class Renderer {
         this.smoke(ex, ey, z + 0.45, thr ? 0.28 : 0.16, thr ? -1.2 : -0.2);
         car.smokeT = thr ? (car === this.cars[0] ? 0.06 : 0.12) : 0.32;
       }
-      // dust from spinning wheels on ground
+      // tyre smoke on the road: puffs behind a grounded wheel that spins up, slips or brakes hard (no debris on the road)
       car.dustT -= dt;
       if (car === this.cars[0] && car.dustT <= 0 && sim.state === 'run' && throttle !== 0) {
+        const vx = sim.chassis.getLinearVelocity().x, r = sim.spec.wheelR;
         sim.wheels.forEach((w, i) => {
-          if (sim.wheelTouch[i] > 0 && Math.abs(w.getAngularVelocity()) > 6) {
-            const q = w.getPosition();
-            this.spawn(q.x - 0.5 * Math.sign(throttle), q.y - sim.spec.wheelR + 0.15, z + (Math.random() - 0.5) * 2.2, -throttle * (1 + Math.random() * 2), 1 + Math.random() * 1.5, 0, this.theme?.deco?.includes('tank') ? 0xbfe6d8 : 0xf3e2d2, 0.5, 0.18 + Math.random() * 0.15, -2);
+          if (sim.lostWheel === i || sim.wheelTouch[i] <= 0) return;
+          const slip = Math.abs(w.getAngularVelocity() * r + vx);   // rim speed vs ground speed
+          if (slip > 2.5 || Math.abs(w.getAngularVelocity()) > 9) {
+            const q = w.getPosition(), back = -Math.sign(throttle || 1);
+            this.smoke(q.x + back * r * 0.7, q.y - r + 0.2, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.2 + Math.min(0.25, slip * 0.03), back * (0.6 + Math.random()), 0.25 + Math.random() * 0.35);
           }
         });
-        car.dustT = 0.05;
+        car.dustT = 0.06;
       }
     }
     for (const lane of this.lanes || []) {
