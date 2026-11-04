@@ -20,7 +20,7 @@ try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save
 save.tt ||= {};
 save.tut ||= {};   // tutorial steps already shown
 // dev tools (AUTO, TEST, infinite gems, unlock all) are hidden in release; tap the version line in Settings 5 times
-const VERSION = '3.4';
+const VERSION = '3.5';
 if (!save.dev) { save.autoplay = false; save.infinite = false; save.unlockAll = false; }
 const dev = () => !!save.dev;
 // leaderboard: per-device seed for the simulated players, and when this player joined
