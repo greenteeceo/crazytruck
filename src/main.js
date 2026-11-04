@@ -20,7 +20,7 @@ try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save
 save.tt ||= {};
 save.tut ||= {};   // tutorial steps already shown
 // dev tools (AUTO, TEST, infinite gems, unlock all) are hidden in release; tap the version line in Settings 5 times
-const VERSION = '3.0';
+const VERSION = '3.1';
 if (!save.dev) { save.autoplay = false; save.infinite = false; save.unlockAll = false; }
 const dev = () => !!save.dev;
 // leaderboard: per-device seed for the simulated players, and when this player joined
@@ -227,7 +227,7 @@ function tick(dt) {
         else if (e.type === 'recover') R.carRecover(r.car, e);
         else if (e.type === 'breakup') R.burst(rs.x, rs.chassis.getPosition().y + 0.5, 0x55565e, 8, 4, -9, 0.6, r.z);
         else if (e.type === 'wheelOff') { const q = rs.wheels[e.idx].getPosition(); R.burst(q.x, q.y, 0x55565e, 6, 3, -8, 0.5, r.z); }
-        else if (e.type === 'bonk' && Math.random() < 0.3) R.burst(rs.x, rs.chassis.getPosition().y + 0.5, 0xffffff, 5, 3, -6, 0.4, r.z);
+        else if (e.type === 'impact' && e.v > 4) impactFx(e, rs, r.z, r.spec?.look, true);
       }
       racerWatch(r.r);
       if (rs.time > 120 && r.finish == null) r.finish = Infinity;
@@ -263,9 +263,44 @@ function tick(dt) {
   }
 }
 
+// Debris colours per obstacle / ground style (what breaks off when a truck slams into it)
+const DEBRIS = {
+  grass: [0x5bbf3a, 0x8b5a2b], wood: [0xa8743f, 0x7a4f28], crate: [0xc08a4a, 0x7a4f28], log: [0x8b5a2b, 0xc69c6d], girder: [0xff6a3c, 0x7d8292],
+  concrete: [0xb9bcc4, 0x8e93a0], barrel: [0x2f7cf6, 0xffffff], castle: [0x9aa0ae, 0x6f7486], metal: [0x8d93a3, 0x5e6372], pad: [0x2ee6c8, 0xffffff],
+  labcrate: [0x2ee6c8, 0xffffff], desert: [0xe8c97a, 0xc79b52], snow: [0xffffff, 0xd6e6ff], jungle: [0x3f9a3a, 0x6b4a2b], stone: [0x9aa0ae, 0x7d8292],
+  basalt: [0x4a4045, 0xff6a2a], candy: [0xff8fc8, 0xffffff], beach: [0xf2d98c, 0x5bbf3a], asphalt: [0x4a4d57, 0xffd21a], docks: [0x8b6a46, 0x4a4d57],
+  moon: [0xc9ccd6, 0x8e93a0], mars: [0xc1502e, 0x8a3a22], coral: [0xff7f6b, 0x2ee6c8], autumn: [0xe07a2a, 0x8b5a2b], icecave: [0xcfe9ff, 0x8fd0ff],
+  toy: [0xff4d6a, 0x2f7cf6, 0xffd21a], neon: [0x7f5cff, 0x2ee6c8], cloudgrass: [0x8fe07a, 0xffffff],
+};
+// every real hit leaves debris: bits of the obstacle, and paint / frame chips off the truck when it is hard
+function impactFx(e, sim, z, look, small = false) {
+  if (e.v < 3) return 0;
+  const k = Math.min(1, (e.v - 2.5) / 10), dir = e.nx ? -Math.sign(e.nx) : (Math.random() < 0.5 ? -1 : 1);
+  const g = sim.groundAt(e.x - e.nx * 0.8), floor = Math.min(e.y, g ?? e.y - 0.5);
+  const m = small ? 0.5 : 1;
+  R.debris(e.x, e.y, z, DEBRIS[e.style] || [0x9aa0ae, 0x7d8292], Math.round((5 + k * 14) * m), 2.5 + k * 6, dir, floor);
+  if (e.heavy && e.v > 6.5) R.debris(e.x - e.nx * 0.4, e.y + 0.3, z, [look?.body ?? 0xff9a14, look?.frame ?? 0x55565e], Math.round((2 + k * 7) * m), 3 + k * 5, dir, floor);
+  return k;
+}
 function fx(e, sim, z = 0, car = null) {
   const p = sim.chassis.getPosition();
   switch (e.type) {
+    case 'impact': {
+      const k = impactFx(e, sim, z, game?.spec?.look);
+      if (!k) break;
+      Audio.land(Math.min(1, e.v / 10));
+      if (e.v > 8) { R.shake = Math.max(R.shake, 0.15 + k * 0.35); P.vibrate(); }
+      if (e.v > 9 && (game.impT || 0) < ui.t) { game.impT = ui.t + 0.8; R.popText(e.heavy ? 'CRASH!' : 'SMASH!', e.x, e.y + 2.2, z, '#ff6b74'); }
+      break;
+    }
+    case 'tumble': R.popText('Too fast!', p.x, p.y + 2.8, z, '#ffd21a'); R.shake = 0.5; Audio.crash(); P.vibrate(); break;
+    case 'bannerHit': {
+      const look = game?.spec?.look;
+      R.debris(e.x - 0.3, e.y, z, [0x1d1d22, 0xffffff, 0x8d93a3, look?.body ?? 0xff9a14], 18, 4 + Math.min(5, e.v * 0.5), -1, sim.groundAt(e.x - 1.5) ?? e.y - 3.6);
+      R.kickFinish(0.5 + Math.min(1, e.v / 10)); R.popText('CLANG!', e.x, e.y + 1.2, z, '#ffd21a');
+      R.shake = Math.max(R.shake, 0.3); Audio.crash(); P.vibrate();
+      break;
+    }
     case 'gem': R.burst(e.gem.piece.x, e.gem.piece.y, 0xffd21a, 12, 4, -6, 0.6, z); R.popText('+1', e.gem.piece.x, e.gem.piece.y + 0.8, z); Audio.gem(); break;
     case 'land':
       R.burst(p.x, p.y - 0.9, 0xf3e2d2, 8 + Math.min(10, e.v * 6), 2.5 + e.v, -4, 0.5, z); Audio.land(e.v);
@@ -277,7 +312,7 @@ function fx(e, sim, z = 0, car = null) {
     case 'bonk':
       if ((game.bonkT || 0) < ui.t) {
         game.bonkT = ui.t + 0.45;
-        R.burst(p.x + 1, p.y + 0.6, 0xffffff, 6, 3, -6, 0.4, z); Audio.land(0.3);
+        Audio.land(0.3);   // debris comes from the 'impact' event
         if (e.style === 'metal' || e.style === 'stone') { R.popText(e.style === 'metal' ? 'BONK!' : 'THUD!', p.x, p.y + 2.6, z, '#ff6b74'); R.shake = 0.25; }
       }
       break;

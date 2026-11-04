@@ -5,6 +5,7 @@ const V = pl.Vec2;
 export const DT = 1 / 60;
 const CAT_TERRAIN = 0x0001, CAT_CAR = 0x0002, CAT_DYN = 0x0004;
 
+const FLIP_V = 12.5;   // m/s into a wall: harder than this and the truck tumbles over it (full speed is ~14-16)
 const FRICTION = { snow: 0.75, icecave: 0.6, asphalt: 0.95, docks: 0.95, toy: 0.9, grass: 0.9, dirt: 0.9, wood: 0.95, stone: 0.85, concrete: 0.85, girder: 0.8, metal: 0.75, castle: 0.85, ice: 0.08, sand: 0.9, pad: 0.8 };
 
 export class Sim {
@@ -26,7 +27,7 @@ export class Sim {
     this.headTime = 0;
     this.padCooldown = 0;
     this.freeze = 0;
-    this.debris = [];
+    this.debris = []; this.impacts = [];
     this.failPose = '';
     this.landed = 0;     // set when wheel lands after air; used for fx
     this.airTime = 0;
@@ -128,7 +129,7 @@ export class Sim {
         case 'finish': {
           const b = w.createBody({ position: V(p.x, p.y + 2.5) });
           b.createFixture(pl.Box(0.4, 2.5), { isSensor: true, userData: { kind: 'finish' } });
-          this.finishX = p.x;
+          this.finishX = p.x; this.finishY = p.y;
           break;
         }
         case 'boost': {
@@ -267,6 +268,70 @@ export class Sim {
     this.events.push({ type: 'wheelOff', idx: i });
   }
 
+  // How hard did the truck run into something? Approach speed along the contact normal.
+  // Collected during the step and handled after it (the world is locked inside callbacks).
+  noteImpact(c, u, o, fo) {
+    const wm = c.getWorldManifold(null); if (!wm || !wm.points.length) return;
+    const carIsA = c.getFixtureA().getUserData() === u;
+    const n = carIsA ? wm.normal : V(-wm.normal.x, -wm.normal.y);   // from the truck into the obstacle
+    const pt = wm.points[0], cb = (carIsA ? c.getFixtureA() : c.getFixtureB()).getBody(), ob = fo.getBody();
+    // the truck as a whole (chassis velocity): wheel spin and suspension bounce are not impacts
+    const vc = this.chassis.getLinearVelocity(), vo = ob.getLinearVelocityFromWorldPoint(pt);
+    const v = (vc.x - vo.x) * n.x + (vc.y - vo.y) * n.y;
+    if (v < 2.5) return;
+    const side = Math.abs(n.x) > 0.6;                     // a wall / step face, not the road under the wheels
+    if (u.part === 'wheel' && !side) return;               // wheels landing on the road: that is a landing, not a crash
+    const heavy = !ob.isDynamic() || ob.getMass() > this.mass * 0.6;
+    // a wall, not a ledge: near-vertical face hit at axle height or above (a wheel cannot roll over it), or the body itself
+    const wall = Math.abs(n.x) > 0.95 && (u.part !== 'wheel' || pt.y > cb.getPosition().y - this.spec.wheelR * 0.15);
+    this.impacts.push({ x: pt.x, y: pt.y, nx: n.x, ny: n.y, v, side, wall, heavy, part: u.part, style: o.style, prop: !!o.prop });
+  }
+
+  // After the step: debris for every real hit, and a very hard hit into something heavy tips the truck over.
+  handleImpacts() {
+    if (!this.impacts.length) return;
+    const ch = this.chassis;
+    let best = null;
+    for (const im of this.impacts) if (!best || im.v > best.v) best = im;
+    this.impacts.length = 0;
+    if (this.time - (this.lastImpactT ?? -9) < 0.12) return;
+    this.lastImpactT = this.time;
+    this.events.push({ type: 'impact', ...best });
+    if (this.state !== 'run') return;
+    if (best.v > FLIP_V && best.heavy && best.wall) {
+      // too hard: the momentum carries the truck over the obstacle (forward tumble), a wheel may come off
+      const over = best.v - FLIP_V, dir = -Math.sign(best.nx), v = ch.getLinearVelocity();
+      ch.setAngularVelocity(ch.getAngularVelocity() + dir * (3.2 + over * 0.7));
+      ch.setLinearVelocity(V(v.x * 0.55, Math.max(v.y, 0) + 2.5 + over * 0.35));
+      this.events.push({ type: 'tumble', v: best.v });
+    }
+  }
+
+  // The crane boom is taller than the finish gate: when its tip passes the banner it clangs into it.
+  // Debris + a backwards knock (a fast truck pops a wheelie at the line).
+  checkBanner() {
+    const s = this.spec;
+    if (!s.crane || this.bannerHit || this.finishX == null || this.debris.some((d) => d.kind === 'boom')) return;
+    const c = s.crane, ch = this.chassis;
+    const a = ch.getWorldPoint(V(c.pivot[0], c.pivot[1])), b = ch.getWorldPoint(V(c.pivot[0] + Math.cos(c.angle) * c.length, c.pivot[1] + Math.sin(c.angle) * c.length));
+    const x0 = this.finishX - 0.25, x1 = this.finishX + 0.25, y0 = this.finishY + 3.45, y1 = this.finishY + 4.35;
+    // sample the boom segment against the banner box
+    for (let i = 0; i <= 8; i++) {
+      const px = a.x + (b.x - a.x) * i / 8, py = a.y + (b.y - a.y) * i / 8;
+      if (px >= x0 && px <= x1 && py >= y0 && py <= y1) {
+        this.bannerHit = true;
+        // the boom is over the line: that counts as crossing it (so the knock below can never cost the win)
+        if (this.state === 'run') { this.state = 'win'; this.finishTime = this.time; this.events.push({ type: 'win' }); }
+        const v = ch.getLinearVelocity(), sp = Math.abs(v.x);
+        ch.setLinearVelocity(V(v.x * 0.8, v.y));
+        ch.setAngularVelocity(ch.getAngularVelocity() + Math.sign(v.x || 1) * Math.min(3, 0.6 + sp * 0.22));
+        for (const h of this.hook) { const hv = h.getLinearVelocity(); h.setLinearVelocity(V(hv.x - sp * 0.8, hv.y + 2)); }
+        this.events.push({ type: 'bannerHit', x: this.finishX, y: py, v: sp });
+        return;
+      }
+    }
+  }
+
   contacts() {
     const handle = (c, delta) => {
       const fa = c.getFixtureA(), fb = c.getFixtureB();
@@ -274,6 +339,7 @@ export class Sim {
       for (const [u, o, fo] of [[ua, ub, fb], [ub, ua, fa]]) {
         if (u.kind !== 'car') continue;
         if (o.kind === 'ground') {
+          if (delta > 0) this.noteImpact(c, u, o, fo);
           if (u.part === 'wheel') this.wheelTouch[u.idx] = Math.max(0, this.wheelTouch[u.idx] + delta);
           else if (u.part === 'head') { if (o.prop) this.headProp = Math.max(0, (this.headProp || 0) + delta); else this.headTouch = Math.max(0, this.headTouch + delta); }
           if (delta > 0 && o.prop) this.events.push({ type: 'bonk', style: o.style });
@@ -301,7 +367,7 @@ export class Sim {
     const s = this.spec;
     if (this.freeze > 0) {
       this.freeze -= DT; this.time += DT;
-      this.world.step(DT, 8, 3); this.tickDebris();
+      this.world.step(DT, 8, 3); this.tickDebris(); this.impacts.length = 0;
       this.holdPose();
       if (this.freeze <= 0) { this.state = 'run'; this.events.push({ type: 'recovered' }); }
       return;
@@ -348,6 +414,8 @@ export class Sim {
     this.world.step(DT, 8, 3);
     this.time += DT;
     this.tickDebris();
+    this.handleImpacts();
+    this.checkBanner();
 
     for (const e of this.events) {
       if ((e.type === 'pad' || e.type === 'boost') && this.padCooldown <= 0) {

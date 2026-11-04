@@ -8,6 +8,7 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 - **Trophies and leaderboard**: every 1st place in a race (cup or random track) is +1 trophy. The Top 100 board (tap the trophy counter, or Top on the Race tab) ranks you against 99 simulated players (`src/leaderboard.js`) whose totals grow over real time from a per-device seed (some play every day, some rarely), so the board moves while you are away and you climb it by winning. Results show your new rank. Clearing a level for the first time pays 20 + 5 × world gems; gems buy trucks
 - **Shop**: 16 trucks (crane, pickup, hauler, dozer, mixer, lab rover, knight, gold titan, ice-cream van, taxi, tractor, police, garbage, fire engine, dino, rocket) bought with gems; every owned truck has 4 upgradeable stats (speed, power, grip, air), 5 levels each
 - **Stars**: finish, collect every gem, beat the par time
+- **Crashes**: every hit on an obstacle throws debris in the obstacle's material (wood splinters, concrete, metal, snow...) plus paint and frame chips off the truck when it is hard; hitting a wall at more than 12.5 m/s tumbles the truck over it ("Too fast!"). The crane boom is taller than the finish gate: it clangs into the banner (debris, the gate sways, a fast truck pops a wheelie) and the boom over the line counts as the finish
 - Fail screen with a close-up crash photo (roof / nose-dive / belly flop stickers and captions), level-complete and race-result animations, synthesized sound
 
 - **Lives**: 5 hearts. A crash in a level costs one (given back if you continue from the checkpoint), one comes back every 8 minutes, a rewarded video refills all 5. Races never cost lives, so the out-of-lives panel offers a race meanwhile
@@ -24,10 +25,10 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 
 ## Download
 
-Android release build: [`release/CraneRush-3.0.apk`](release/CraneRush-3.0.apk) (signed, minSdk 23, targetSdk 36).
-A Play Store bundle is at [`release/CraneRush-3.0.aab`](release/CraneRush-3.0.aab).
+Android release build: [`release/CraneRush-3.1.apk`](release/CraneRush-3.1.apk) (signed, minSdk 23, targetSdk 36).
+A Play Store bundle is at [`release/CraneRush-3.1.aab`](release/CraneRush-3.1.aab).
 
-TikTok Mini Games package: [`release/CraneRush-tiktok-3.0.zip`](release/CraneRush-tiktok-3.0.zip) (native runtime: `game.js`, `game.json`, `project.config.json`, `fredoka.ttf`; about 1 MB, limit 4 MB for the main package).
+TikTok Mini Games package: [`release/CraneRush-tiktok-3.1.zip`](release/CraneRush-tiktok-3.1.zip) (native runtime: `game.js`, `game.json`, `project.config.json`, `fredoka.ttf`; about 1 MB, limit 4 MB for the main package).
 
 ## TikTok Mini Games
 
@@ -70,7 +71,7 @@ Pacing and reward amounts live in `src/platform/config.js` (`AD_RULES`, `REWARDS
 
 ## Google Play checklist
 
-- Upload `release/CraneRush-3.0.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
+- Upload `release/CraneRush-3.1.aab` (Play requires an App Bundle, not the APK). Target SDK 36, no native libraries (16 KB page-size safe), not debuggable.
 - Enrol in Play App Signing; the local keystore then acts as the upload key. Keep `android/cranerush-release.keystore` + `keystore.properties` private.
 - Store assets in `store/`: 512×512 icon, 1024×500 feature graphic. Add at least 2 phone screenshots (1080×1920+).
 - Fill in the Data safety form (the app collects nothing; progress is stored on device), content rating questionnaire (IARC), and a privacy policy URL.

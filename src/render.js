@@ -461,9 +461,24 @@ export class Renderer {
   spawn(x, y, z, vx, vy, vz, color, life = 0.8, size = 0.22, grav = -9) {
     const PL = this.pools(), it = this.take(PL.bits);
     it.p ||= new THREE.Vector3(); it.v ||= new THREE.Vector3(); it.r ||= new THREE.Euler();
-    it.p.set(x, y, z); it.v.set(vx, vy, vz); it.life = it.max = life; it.size = size; it.grav = grav; it.r.set(0, 0, 0);
+    it.p.set(x, y, z); it.v.set(vx, vy, vz); it.life = it.max = life; it.size = size; it.grav = grav; it.r.set(0, 0, 0); it.floor = null; it.chunk = false;
     PL.bits.mesh.setColorAt(it.i, _col.setHex(color)); PL.bits.mesh.instanceColor.needsUpdate = true;
+    return it;
   }
+
+  // Collision debris: chunky voxel pieces sprayed away from the hit (dirX), bouncing on the ground at floorY.
+  // They keep full size most of their life, then shrink away.
+  debris(x, y, z, colors, n, speed, dirX, floorY) {
+    for (let i = 0; i < n; i++) {
+      const s = speed * (0.45 + Math.random() * 0.75), a = (0.25 + Math.random() * 0.9) * Math.PI / 2;
+      // start on the camera side of the hit and fly towards the camera a little, so the truck does not hide them
+      const it = this.spawn(x, y, z + 0.5 + Math.random() * 0.9, dirX * Math.cos(a) * s + (Math.random() - 0.5) * 1.5, Math.sin(a) * s * 1.2 + 2, (0.15 + Math.random() * 0.85) * s * 0.55,
+        colors[i % colors.length], 1.2 + Math.random() * 0.8, 0.24 + Math.random() * 0.26, -16);
+      it.floor = floorY; it.chunk = true; it.r.set(Math.random() * 3, Math.random() * 3, 0);
+    }
+  }
+  // The finish gate sways after the crane boom clangs into its banner.
+  kickFinish(k) { this.finishKick = Math.min(1.5, (this.finishKick || 0) + k); }
 
   // Soft voxel exhaust puff: grows, rises and fades.
   smoke(x, y, z, size = 0.3, vx = 0) {
@@ -489,8 +504,15 @@ export class Renderer {
     let dirty = false;
     for (const it of PL.bits.items) {
       if (it.life <= 0) continue;
-      it.life -= dt; it.v.y += it.grav * dt; it.p.addScaledVector(it.v, dt); it.r.x += dt * 4; it.r.y += dt * 3;
-      const sc = it.size * Math.max(0.05, it.life / it.max);
+      it.life -= dt; it.v.y += it.grav * dt; it.p.addScaledVector(it.v, dt);
+      let spin = 1;
+      if (it.floor != null && it.p.y < it.floor + it.size / 2) {
+        it.p.y = it.floor + it.size / 2;   // bounce and skid on the ground
+        if (it.v.y < 0) { it.v.y = Math.abs(it.v.y) < 1.2 ? 0 : -it.v.y * 0.35; it.v.x *= 0.55; it.v.z *= 0.55; }
+        if (!it.v.y) { it.v.x *= Math.exp(-dt * 6); it.v.z *= Math.exp(-dt * 6); spin = 0.1; }
+      }
+      it.r.x += dt * 4 * spin; it.r.y += dt * 3 * spin;
+      const sc = it.size * (it.chunk ? Math.min(1, it.life / it.max * 3.5) : Math.max(0.05, it.life / it.max));
       PL.bits.mesh.setMatrixAt(it.i, it.life <= 0 ? zero : _m.compose(it.p, _q.setFromEuler(it.r), _s.set(sc, sc, sc)));
       dirty = true;
     }
@@ -670,7 +692,11 @@ export class Renderer {
         gv.v.rotation.y = gv.t * 2.2; gv.v.position.y = gv.g.piece.y + Math.sin(gv.t * 3) * 0.12; gv.v.scale.setScalar(1 + Math.sin(gv.t * 6) * 0.06);
       }
     }
-    if (this.finish) this.finish.traverse((o) => { if (o.userData.wave) o.rotation.y = Math.sin(t * 6 + o.position.z) * 0.25; });
+    if (this.finish) {
+      this.finish.traverse((o) => { if (o.userData.wave) o.rotation.y = Math.sin(t * 6 + o.position.z) * 0.25; });
+      if (this.finishKick > 0.001) { this.finishKick *= Math.exp(-dt * 2.2); this.finish.rotation.z = -Math.sin(t * 17) * this.finishKick * 0.07; }
+      else if (this.finish.rotation.z) this.finish.rotation.z = 0;
+    }
     this.scene.traverse((o) => { if (o.userData.flicker) { o.userData.sy ??= o.scale.y; o.scale.y = o.userData.sy * (0.85 + Math.sin(t * 20 + o.id) * 0.15); } });
     for (const c of this.clouds || []) c.position.x += dt * 0.4;
     this.updatePools(dt);
@@ -894,7 +920,7 @@ export class Renderer {
     if (this.scene?.background?.isTexture) this.scene.background.dispose();
     // every scene has its own sun: its shadow map is a full render target (up to 2048² depth)
     if (this.sun?.shadow?.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
-    this.cars = []; this._pools = null; this.finish = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.punch = 0;
+    this.cars = []; this._pools = null; this.finish = null; this.finishKick = 0; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.punch = 0;
     this.clouds = []; this.dioramaRoot = null; this.menuSpin = []; this.garage = false;
     this.snapCam = true;
   }
