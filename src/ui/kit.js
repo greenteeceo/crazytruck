@@ -108,7 +108,7 @@ export class UI {
     const r = this.find(p.x, p.y);
     const st = { x0: p.x, y0: p.y, x: p.x, y: p.y, r, t0: this.t, moved: false, lastMs: Date.now(), v: 0 };
     this.pointers.set(p.id, st);
-    if (r?.hold) { r.hold(true); this.down.add(r.id); }
+    if (r?.hold) { r.hold(true, st); this.down.add(r.id); }
     else if (r && !r.disabled && r.onTap) this.down.add(r.id);
     // a drag that starts on a list row (or anywhere, if the screen says so) scrolls the list; the tap is cancelled once it moves
     const key = r?.hold ? null : (r?.scrollKey || r?.inScroll || (!this.overlays.length && this.screen?.dragScroll) || null);
@@ -139,7 +139,7 @@ export class UI {
   pointerUp(p) {
     const st = this.pointers.get(p.id); this.pointers.delete(p.id); if (!st) return;
     const r = st.r;
-    if (r?.hold) { r.hold(false); this.down.delete(r.id); }
+    if (r?.hold) { r.hold(false, st); this.down.delete(r.id); }
     const sc = st.scroll;
     if (sc) { sc.drag = false; sc.vel = st.moved && Date.now() - st.lastMs < 90 ? clamp(st.v, -4000, 4000) : 0; this.request(2); }
     if (r && !r.hold && !st.moved && this.down.has(r.id)) { this.down.delete(r.id); if (!r.disabled) r.onTap?.(r); }
@@ -149,7 +149,7 @@ export class UI {
     if ((!r || r.id === '__swipe') && Math.abs(tx) > 60 && Math.abs(tx) > Math.abs(ty) * 1.5) this.screen?.swipe?.(tx < 0 ? 1 : -1);
     this.dirty = true;
   }
-  releaseAll() { for (const st of this.pointers.values()) if (st.r?.hold) st.r.hold(false); this.pointers.clear(); this.down.clear(); }
+  releaseAll() { for (const st of this.pointers.values()) if (st.r?.hold) st.r.hold(false, st); this.pointers.clear(); this.down.clear(); }
 
   // ---------------------------------------------------------------- scroll areas
   // Draws content(y) clipped to the rect; `size` is the content length. Returns nothing.

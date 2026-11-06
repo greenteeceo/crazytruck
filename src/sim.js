@@ -299,6 +299,16 @@ export class Sim {
     if (this.state !== 'run') return;
   }
 
+  // The truck has finished when all of it is past the line: the back of the chassis and both
+  // (attached) wheels. Touching the gate or poking the nose / boom over it is not enough.
+  checkFinish() {
+    if (this.state !== 'run' || this.finishX == null) return;
+    let rear = Infinity;
+    for (let f = this.chassis.getFixtureList(); f; f = f.getNext()) rear = Math.min(rear, f.getAABB(0).lowerBound.x);
+    this.wheels.forEach((w, i) => { if (!this.lostWheels.has(i)) rear = Math.min(rear, w.getPosition().x - this.spec.wheelR); });
+    if (rear > this.finishX + 0.4) { this.state = 'win'; this.finishTime = this.time; this.events.push({ type: 'win' }); }
+  }
+
   // The crane boom is taller than the finish gate: when its tip passes the banner it clangs into it.
   // Debris and the hook swinging back (the banner is light: it does not stop the truck).
   checkBanner() {
@@ -312,8 +322,6 @@ export class Sim {
       const px = a.x + (b.x - a.x) * i / 8, py = a.y + (b.y - a.y) * i / 8;
       if (px >= x0 && px <= x1 && py >= y0 && py <= y1) {
         this.bannerHit = true;
-        // the boom is over the line: that counts as crossing it (so the knock below can never cost the win)
-        if (this.state === 'run') { this.state = 'win'; this.finishTime = this.time; this.events.push({ type: 'win' }); }
         const sp = Math.abs(ch.getLinearVelocity().x);
         for (const h of this.hook) { const hv = h.getLinearVelocity(); h.setLinearVelocity(V(hv.x - sp * 0.8, hv.y + 2)); }
         this.events.push({ type: 'bannerHit', x: this.finishX, y: py, v: sp });
@@ -337,9 +345,6 @@ export class Sim {
         } else if (delta > 0 && o.kind === 'gem' && !o.gem.taken) {
           o.gem.taken = true; this.gemsTaken++;
           this.events.push({ type: 'gem', gem: o.gem });
-        } else if (delta > 0 && o.kind === 'finish' && this.state === 'run') {
-          this.state = 'win'; this.finishTime = this.time;
-          this.events.push({ type: 'win' });
         } else if (delta > 0 && o.kind === 'boost') {
           this.events.push({ type: 'boost', p: o.p });
         }
@@ -407,6 +412,7 @@ export class Sim {
     this.tickDebris();
     this.handleImpacts();
     this.checkBanner();
+    this.checkFinish();
 
     for (const e of this.events) {
       if ((e.type === 'pad' || e.type === 'boost') && this.padCooldown <= 0) {

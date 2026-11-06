@@ -856,6 +856,9 @@ export class Renderer {
   // Start the flip-back animation from a sim 'recover' event. Angle goes the short way round.
   // Crash: accessories up to this severity tier break off the truck and fly / bounce / skid on the ground.
   // At the edge tier only some go (a medium crash does not always lose the bumper).
+  // Where a world point is across the screen (0 = left edge, 1 = right edge).
+  screenX(x, y, z = 0) { const v = (this._v2 ||= new THREE.Vector3()).set(x, y, z).project(this.camera); return (v.x + 1) / 2; }
+
   // A hit dents the body where it landed: vertices of the truck's own (per-truck) baked meshes near the
   // contact point are pushed in along the hit direction, with a little crumple noise. Dents add up but each
   // vertex can only go in so far, and they stay for the rest of the run - the truck keeps driving.

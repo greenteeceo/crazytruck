@@ -92,7 +92,13 @@ export const P = {
     } catch { return null; }
   },
 
-  vibrate() { try { if (isTT) T.vibrateShort?.({ type: 'light' }); else g.navigator?.vibrate?.(15); } catch { /* not supported */ } },
+  // kind: 'light' (a bump), 'medium' (a hard hit, a roll-over), 'heavy' (a crash); 'flip' = two pulses
+  vibrate(kind = 'light') {
+    try {
+      if (isTT) { T.vibrateShort?.({ type: kind === 'flip' ? 'medium' : kind }); if (kind === 'flip') setTimeout(() => { try { T.vibrateShort?.({ type: 'light' }); } catch { /* */ } }, 140); }
+      else g.navigator?.vibrate?.(kind === 'heavy' ? 70 : kind === 'medium' ? 35 : kind === 'flip' ? [35, 90, 20] : 15);
+    } catch { /* not supported */ }
+  },
 
   // Ads, rewards, TikTok missions, share, login and payments go through HSGame (hs-game.js) — never here.
 };

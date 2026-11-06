@@ -228,7 +228,20 @@ let game = null;
 let trialCar = null;
 const keys = { left: false, right: false };
 let touchL = false, touchR = false;
-const throttleInput = () => { const r = keys.right || touchR, l = keys.left || touchL; return r && !l ? 1 : l && !r ? -1 : 0; };
+// Fingers held on the road: in front of the truck drives forward, behind it brakes / reverses.
+// The side is re-read every frame, so sliding the finger past the truck switches direction.
+const drivePtrs = new Set();
+function truckFrac() {
+  const sim = game?.sim; if (!sim) return 0.5;
+  try { const p = sim.chassis.getPosition(), f = R.screenX(p.x, p.y, game.z || 0); return typeof f === 'number' && f > 0.05 && f < 0.95 ? f : 0.5; } catch { return 0.5; }
+}
+function fingerSides() {
+  let l = false, r = false; if (!drivePtrs.size) return [l, r];
+  const tx = truckFrac() * ui.w;
+  for (const st of drivePtrs) { if (st.x >= tx) r = true; else l = true; }
+  return [l, r];
+}
+const throttleInput = () => { const [fl, fr] = fingerSides(), r = keys.right || touchR || fr, l = keys.left || touchL || fl; return r && !l ? 1 : l && !r ? -1 : 0; };
 
 const RIVALS = [
   { name: 'Blaze Engine', car: 'fire', color: '#ff8a8a' },
@@ -291,7 +304,7 @@ function tutorialTick(g, dt, input) {
   if (save.autoplay || testRun || g.hint || g.race) return;
   if (g.tut === 'drive') {
     if (input > 0) g.tutT = (g.tutT || 0) + dt;
-    if (g.tutT > 0.8) { g.tut = null; save.tut.drive = true; persist(); tip(g, 'Nice! Hold ◀ to brake and reverse', 2.6); }
+    if (g.tutT > 0.8) { g.tut = null; save.tut.drive = true; persist(); tip(g, 'Hold behind the truck (or ◀) to brake and reverse', 3.2); }
   }
   if (!save.tut.tilt) {
     g.airT = g.sim.airborne ? (g.airT || 0) + dt : 0;
@@ -391,11 +404,12 @@ function fx(e, sim, z = 0, car = null) {
   switch (e.type) {
     case 'impact': {
       if (car) R.hitCar(car, e);   // dent where it hit + the body rocks on its mounts
+      if (e.v > 4.5) P.vibrate(e.v > 11 ? 'heavy' : e.v > 7.5 ? 'medium' : 'light');   // every real hit is felt, harder hits harder
       const k = impactFx(e, sim, z, game?.spec?.look);
       if (!k) R.hitSurface(e, z);   // a wall / the road: dust and sparks, no debris
       if (!k) { if (e.v > 8 && e.heavy) { Audio.land(Math.min(1, e.v / 12)); R.shake = Math.max(R.shake, 0.12); } break; }   // blocker: a thud, no debris
       Audio.land(Math.min(1, e.v / 10));
-      if (e.v > 8) { R.shake = Math.max(R.shake, 0.15 + k * 0.35); P.vibrate(); }
+      if (e.v > 8) R.shake = Math.max(R.shake, 0.15 + k * 0.35);
       if (e.v > 9 && (game.impT || 0) < ui.t) { game.impT = ui.t + 0.8; R.popText(e.heavy ? 'CRASH!' : 'SMASH!', e.x, e.y + 2.2, z, '#ff6b74'); }
       break;
     }
@@ -403,7 +417,7 @@ function fx(e, sim, z = 0, car = null) {
       const look = game?.spec?.look;
       R.debris(e.x - 0.3, e.y, z, [0x1d1d22, 0xffffff, 0x8d93a3, look?.body ?? 0xff9a14], 18, 4 + Math.min(5, e.v * 0.5), -1, sim.groundAt(e.x - 1.5) ?? e.y - 3.6);
       R.kickFinish(0.5 + Math.min(1, e.v / 10)); R.popText('CLANG!', e.x, e.y + 1.2, z, '#ffd21a');
-      R.shake = Math.max(R.shake, 0.3); Audio.crash(); P.vibrate();
+      R.shake = Math.max(R.shake, 0.3); Audio.crash(); P.vibrate('medium');
       break;
     }
     case 'gem': R.burst(e.gem.piece.x, e.gem.piece.y, 0xffd21a, 12, 4, -6, 0.6, z); R.popText('+1', e.gem.piece.x, e.gem.piece.y + 0.8, z); Audio.gem(); break;
@@ -411,7 +425,7 @@ function fx(e, sim, z = 0, car = null) {
       // landing on the road: tyre smoke puffs at both wheels, no debris
       for (const w of sim.wheels) { const q = w.getPosition(); for (let i = 0; i < 2 + Math.min(4, e.v * 3); i++) R.smoke(q.x + (Math.random() - 0.5) * 1.2, q.y - sim.spec.wheelR + 0.25, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.35 + Math.min(0.35, e.v * 0.18), (Math.random() - 0.5) * 2.4, 0.2 + Math.random() * 0.5); }
       Audio.land(e.v);
-      if (e.v > 1) R.shake = 0.2;
+      if (e.v > 1) { R.shake = 0.2; P.vibrate(e.v > 1.8 ? 'medium' : 'light'); }
       if (e.v > 1.3) R.popText(e.v > 2 ? 'HUGE AIR!' : 'Nice air!', p.x, p.y + 2.6, z, '#7df9ff');
       break;
     case 'pad': case 'boost': R.burst(p.x, p.y - 0.6, 0x5ff0ff, 18, 6, -3, 0.7, z); Audio.boost(); break;
@@ -425,9 +439,9 @@ function fx(e, sim, z = 0, car = null) {
     case 'dunk':
       if (!game.race && !game.snap) { game.snap = R.snapshotCar(sim, z, 'splash'); R.burst(p.x, p.y, 0xffffff, 24, 6, -10, 0.9, z); }
       break;
-    case 'wheelOff': { const q = sim.wheels[e.idx].getPosition(); if (car) R.splitWheel(car, e.idx); R.smoke(q.x, q.y, z, 0.4, 0, 0.6); if (!car?.tyres || car.tyres.length <= 2) R.popText('Wheel off!', q.x, q.y + 1.6, z, '#ffffff'); Audio.land(0.6); P.vibrate(); break; }
+    case 'wheelOff': { const q = sim.wheels[e.idx].getPosition(); if (car) R.splitWheel(car, e.idx); R.smoke(q.x, q.y, z, 0.4, 0, 0.6); if (!car?.tyres || car.tyres.length <= 2) R.popText('Wheel off!', q.x, q.y + 1.6, z, '#ffffff'); Audio.land(0.6); P.vibrate('medium'); break; }
     case 'breakup': if (car) R.breakAcc(car, e.tier); break;   // accessories fly off according to how bad the crash was
-    case 'recover': if (car) { R.carRecover(car, e); R.popText(e.to.x < e.from.x - 1 ? 'Back you go!' : 'Flip!', e.from.x, e.from.y + 2.6, z, '#ffffff'); } break;
+    case 'recover': if (car) { P.vibrate('light'); R.carRecover(car, e); R.popText(e.to.x < e.from.x - 1 ? 'Back you go!' : 'Flip!', e.from.x, e.from.y + 2.6, z, '#ffffff'); } break;
     case 'win':
       for (const c of [0xffffff, 0xff3d6b, 0x2f7cf6, 0xffd21a]) R.burst(p.x + 1, p.y + 2, c, 14, 7, -5, 1.2, z);
       Audio.win(); break;
@@ -435,11 +449,11 @@ function fx(e, sim, z = 0, car = null) {
       if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }
       else if ((sim.tier ?? 3) <= 1) {   // gentle roll-over: a soft puff and a thud, nothing breaks
         for (let i = 0; i < 4; i++) R.smoke(p.x + (Math.random() - 0.5) * 2, p.y - 0.4, z + (Math.random() - 0.5) * 1.4, 0.35, (Math.random() - 0.5) * 1.2, 0.3 + Math.random() * 0.3);
-        Audio.land(0.5); R.shake = 0.08;
+        Audio.land(0.5); R.shake = 0.08; P.vibrate('flip');   // the truck rolls over: a double bump
       } else {
         const big = sim.tier >= 3;
         for (let i = 0; i < (big ? 14 : 8); i++) R.smoke(p.x + (Math.random() - 0.5) * 2.5, p.y - 0.4, z + (Math.random() - 0.5) * 1.8, big ? 0.5 : 0.4, (Math.random() - 0.5) * 2, 0.4 + Math.random() * 0.6);
-        Audio.crash(); R.shake = big ? 0.45 : 0.25; P.vibrate();
+        Audio.crash(); R.shake = big ? 0.45 : 0.25; P.vibrate('heavy');
       }
       if (!game.race) setTimeout(() => { if (game && !game.snap) game.snap = R.snapshotCar(sim, z); }, 420);
       else R.popText(e.reason === 'splash' ? 'SPLASH!' : 'OOPS!', p.x, p.y + 2.4, z, '#ffffff');
@@ -785,15 +799,18 @@ function drawHud(u) {
     u.text(txt, tx2 + 14, ty2 + 19, 15, '#b8ffc0', { align: 'left' });
     u.button('teststop', tx2 + tw2 - 66, ty2 + 5, 58, 26, { color: 'red', label: 'Stop', size: 14, radius: 9, ring: false, onTap: tap(() => endTest(true)) });
   }
-  // drive controls: hold anywhere on the left / right half of the lower screen
-  const cs = Math.min(u.w * 0.3, 170), cy = u.h - B - 28 - cs, half = u.w / 2;
+  // drive controls: hold on the road in front of the truck to drive, behind it to brake / reverse;
+  // the two arrows still work as buttons (they take the touch first)
+  const cs = Math.min(u.w * 0.3, 170), cy = u.h - B - 28 - cs, thr = throttleInput();
+  const dy0 = topY(u) + 130;
+  u.hit(0, dy0, u.w, u.h - dy0, { id: 'drive', hold: (v, st) => { if (!st) return; if (v) drivePtrs.add(st); else drivePtrs.delete(st); Audio.unlock(); u.request(); } });
   for (const [side, ic, x] of [['L', 'left', u.w * 0.04], ['R', 'right', u.w * 0.96 - cs]]) {
-    const id = 'ctrl' + side, down = u.isDown(id) || (side === 'L' ? keys.left : keys.right);
+    const id = 'ctrl' + side, down = u.isDown(id) || (side === 'L' ? keys.left || thr < 0 : keys.right || thr > 0);
     c.save(); c.globalAlpha = down ? 1 : 0.75;
     const s = down ? 0.88 : 1; c.translate(x + cs / 2, cy + cs / 2); c.scale(s, s); c.translate(-(x + cs / 2), -(cy + cs / 2));
     u.icon(ic, x + cs * 0.06, cy + cs * 0.06, cs * 0.88, '#fff', false);
     c.restore();
-    u.hit(side === 'L' ? 0 : half, u.h * 0.45, half, u.h * 0.55, { id, hold: (v) => { if (side === 'L') touchL = v; else touchR = v; Audio.unlock(); u.request(); } });
+    u.hit(x - 12, cy - 12, cs + 24, cs + 24, { id, hold: (v) => { if (side === 'L') touchL = v; else touchR = v; Audio.unlock(); u.request(); } });
   }
   // tutorial: hand on the ▶ control, then short tips
   if (g.tut === 'drive') {
@@ -801,7 +818,7 @@ function drawHud(u) {
     c.save(); c.globalAlpha = 0.35 + 0.35 * k; c.beginPath(); c.arc(x + cs / 2, cy + cs / 2, cs * (0.55 + 0.08 * k), 0, Math.PI * 2); c.lineWidth = 6; c.strokeStyle = GOLD; c.stroke(); c.restore();
     const hs = cs * 0.62, hx = x + cs / 2 - hs * 0.4, hy = cy + cs * 0.45 + k * 10;
     u.icon('hand', hx, hy, hs, '#fff');
-    const txt = 'Hold to drive!', bw = u.measure(txt, 22) + 36, bx = Math.min(u.w - PAD - bw, x + cs / 2 - bw / 2), byy = cy - 58;
+    const txt = 'Hold in front to drive!', bw = u.measure(txt, 22) + 36, bx = Math.min(u.w - PAD - bw, x + cs / 2 - bw / 2), byy = cy - 58;
     u.rr(bx, byy, bw, 46, 16); c.fillStyle = 'rgba(10,30,80,0.8)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
     u.text(txt, bx + bw / 2, byy + 24, 22, GOLD);
     u.request(0.1);
@@ -1500,7 +1517,7 @@ function drawSettings(u) {
 // ------------------------------------------------------------ pause
 function pauseMenu() {
   if (!game || game.over || game.paused) return;
-  game.paused = true; Audio.engineStop(); touchL = touchR = false; keys.left = keys.right = false;
+  game.paused = true; Audio.engineStop(); touchL = touchR = false; drivePtrs.clear(); keys.left = keys.right = false;
   const l = game.level;
   ui.overlay((u, age) => {
     const items = [['resume', 'Resume', 'play', 'blue'], ['retry', 'Retry', 'retry', 'gray'], ...(game.race ? [] : [['levels', 'Levels', 'levels', 'gray']]), ['home', 'Home', 'home', 'gray']];
@@ -1591,10 +1608,10 @@ P.onKey((code) => {
   }
 }, (code) => { if (KL.includes(code)) keys.left = false; if (KR.includes(code)) keys.right = false; });
 P.onTouch({ start: (p) => ui.pointerDown(p), move: (p) => ui.pointerMove(p), end: (p) => ui.pointerUp(p) });
-P.onHide(() => { keys.left = keys.right = touchL = touchR = false; ui.releaseAll(); if (game && !game.over && !game.paused && !testRun) pauseMenu(); Audio.engineStop(); });
+P.onHide(() => { keys.left = keys.right = touchL = touchR = false; drivePtrs.clear(); ui.releaseAll(); if (game && !game.over && !game.paused && !testRun) pauseMenu(); Audio.engineStop(); });
 // HSGame: an ad, a purchase or the app going away pauses everything; a reward toast; the account opened elsewhere
 let hsPaused = false, hsStarted = false;
-HSGame.on('pause', () => { Audio.setEnabled(false); Audio.engineStop(); keys.left = keys.right = touchL = touchR = false; ui.releaseAll(); if (game && !game.over && !game.paused) { game.paused = true; hsPaused = true; } });
+HSGame.on('pause', () => { Audio.setEnabled(false); Audio.engineStop(); keys.left = keys.right = touchL = touchR = false; drivePtrs.clear(); ui.releaseAll(); if (game && !game.over && !game.paused) { game.paused = true; hsPaused = true; } });
 HSGame.on('resume', () => { Audio.setEnabled(save.sound); if (hsPaused && game) { game.paused = false; if (!game.over && game.countdown <= 0) Audio.engineStart(); } hsPaused = false; });
 HSGame.on('given', (items, from) => {
   if (String(from).startsWith('product:') && Number(String(from).slice(8)) === STARTER_ID) profile.set('starter', 1);
@@ -1629,7 +1646,7 @@ function drawLoading(u) {
   const bw = Math.min(u.w * 0.7, 320), by = u.h * 0.74;
   u.bar(u.w / 2 - bw / 2, by, bw, 26, loading.shown, { fill: GRAD.gold });
   u.text(`${Math.round(loading.shown * 100)}%`, u.w / 2, by + 14, 16);
-  const tips = ['Hold ▶ to drive, ◀ to brake and reverse', 'In the air, ▶ tilts back and ◀ tilts forward', 'Land on your wheels, not your roof!', 'Collect every gem for an extra star'];
+  const tips = ['Hold in front of the truck to drive, behind it to reverse', 'In the air, ▶ tilts back and ◀ tilts forward', 'Land on your wheels, not your roof!', 'Collect every gem for an extra star'];
   u.text(tips[Math.floor(u.t / 2.5) % tips.length], u.w / 2, by + 56, 15, '#fff', { maxW: u.w - 40 });
   return true;
 }
