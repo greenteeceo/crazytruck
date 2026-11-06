@@ -403,25 +403,40 @@ export class Sim {
     }
     const running = this.state === 'run';
     const t = running ? throttle : 0;
+    const air = this.airborne, vx = this.chassis.getLinearVelocity().x;
+    let ang = this.chassis.getAngle() % (Math.PI * 2); if (ang > Math.PI) ang -= Math.PI * 2; if (ang < -Math.PI) ang += Math.PI * 2;
+    const rear = s.wheelX[0] < s.wheelX[1] ? 0 : 1, front = 1 - rear;
+    // stood up on the back wheels (or on the nose): the wheels on the ground cannot carry it along like that
+    // (also when it hops a little off the road while up there: still standing on end, not flying)
+    const cp = this.chassis.getPosition(), gy = this.groundAt(cp.x), nearGround = gy != null && cp.y - gy < 2.8;
+    const upright = Math.abs(ang) > 0.35 && Math.abs(ang) < 2.2 && (air ? nearGround : (ang > 0 ? this.wheelTouch[front] <= 0 : this.wheelTouch[rear] <= 0));
+    // pressing against the way the truck is rolling brakes it first (wheels held, not spun backwards); it only
+    // drives the other way once it has nearly stopped. So ◀ while going forward = brake, then reverse.
+    const braking = (t < 0 && vx > 1) || (t > 0 && vx < -1);
     for (const j of this.joints) {
       if (!j) continue;
-      if (t !== 0) { j.setMotorSpeed(-t * s.speed); j.setMaxMotorTorque(s.torque); }
+      if (t !== 0 && braking) { j.setMotorSpeed(0); j.setMaxMotorTorque(s.torque * 0.5); }
+      else if (t !== 0) { j.setMotorSpeed(-t * s.speed); j.setMaxMotorTorque(s.torque * (upright ? 0.1 : 1)); }
       else { j.setMotorSpeed(0); j.setMaxMotorTorque(this.state === 'win' ? s.torque * 0.6 : s.torque * 0.06); }
     }
-    const air = this.airborne;
-    if (!air && t !== 0 && running) {
-      // engine torque reaction: strongest when the wheels are spinning up (standstill, hard reverse),
-      // fades out at speed. Hold it long enough and the truck wheelies over -> flip.
+    if (!air && t !== 0 && running && !braking && !upright) {
+      // engine torque reaction: strongest when the wheels are spinning up from a standstill, fades out at speed.
+      // The same both ways (reversing lifts the nose's opposite end just as gently). Hold it and it wheelies.
       const wv = Math.abs(this.wheels[0].getAngularVelocity() + this.wheels[1].getAngularVelocity()) / 2;
       const slip = Math.max(0, 1 - wv / s.speed);
-      const vx = this.chassis.getLinearVelocity().x;
-      const against = (t > 0 && vx < -1) || (t < 0 && vx > 1) ? 1.3 : 1;   // braking into reverse kicks harder
-      const kick = t < 0 ? (s.wheelie ?? 2.4) : (s.wheelie ?? 2.4) * 0.25;   // reverse kicks hardest
-      this.chassis.setAngularVelocity(this.chassis.getAngularVelocity() + t * kick * slip * against * DT);
+      const kick = (s.wheelie ?? 2.4) * (t > 0 ? 0.25 : 0.12);   // backing up barely lifts the back
+      this.chassis.setAngularVelocity(this.chassis.getAngularVelocity() + t * kick * slip * DT);
+    }
+    if (upright && t !== 0 && running) {
+      // standing up and the player keeps pressing: the truck comes back down onto its wheels and goes on
+      // (it is never driven along standing on end)
+      const k = 4 + 6 * Math.min(1, (Math.abs(ang) - 0.35) / 1.0);   // the more upright, the firmer it is brought down
+      const av = this.chassis.getAngularVelocity() - Math.sign(ang) * k * DT;
+      this.chassis.setAngularVelocity(Math.max(-2.2, Math.min(2.2, av)));
     }
     if (air) {
       this.airTime += DT;
-      if (t !== 0) {
+      if (t !== 0 && !upright) {
         // throttle / brake in the air tip the truck back / forward (spinning the big wheels): enough to line up a landing
         const av = this.chassis.getAngularVelocity() + t * s.air * 1.0 * DT;
         this.chassis.setAngularVelocity(Math.max(-4, Math.min(4, av)));
