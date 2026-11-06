@@ -3,7 +3,7 @@ import { DT } from './sim.js';
 import { WORLDS, RACE_TRACKS } from './levels.js';
 import { makeRacer, racerWatch, respawnAt, trackSafe } from './racer.js';
 import { VEHICLES, vehicleById, UPGRADES, MAX_UPGRADE, upgradeCost, withUpgrades } from './vehicles.js';
-import { makeBot } from './bot.js';
+import { makeBot, makePlayer } from './bot.js';
 import { Renderer, setLabelFont } from './render.js';
 import { Audio } from './audio.js';
 import { P } from './platform/index.js';
@@ -255,10 +255,10 @@ const RIVALS = [
   { name: 'Iron Knight', car: 'knight', color: '#c6a8ff' },
 ];
 const CUPS = [
-  { name: 'Grass Cup', world: 0, races: [0, 1, 4], skill: [0.55, 0.62, 0.7, 0.78, 0.84], color: '#46d35c', reward: 1 },
-  { name: 'Girder Cup', world: 1, races: [2, 5, 11], skill: [0.62, 0.7, 0.8, 0.88, 0.92], color: '#ff6a3c', reward: 1.5 },
-  { name: 'Castle Cup', world: 2, races: [6, 7, 10], skill: [0.7, 0.8, 0.88, 0.95, 0.98], color: '#7f96ff', reward: 2 },
-  { name: 'Lab Cup', world: 3, races: [3, 8, 9], skill: [0.8, 0.88, 0.95, 1.0, 1.0], color: '#2ee6c8', reward: 3 },
+  { name: 'Grass Cup', world: 0, races: [0, 1, 4], skill: [0.3, 0.38, 0.46, 0.54, 0.62], color: '#46d35c', reward: 1 },
+  { name: 'Girder Cup', world: 1, races: [2, 5, 11], skill: [0.38, 0.46, 0.54, 0.62, 0.7], color: '#ff6a3c', reward: 1.5 },
+  { name: 'Castle Cup', world: 2, races: [6, 7, 10], skill: [0.46, 0.54, 0.62, 0.7, 0.78], color: '#7f96ff', reward: 2 },
+  { name: 'Lab Cup', world: 3, races: [3, 8, 9], skill: [0.55, 0.62, 0.7, 0.78, 0.86], color: '#2ee6c8', reward: 3 },
 ];
 const PLACE_GEMS = [100, 60, 30, 15, 8, 4];
 const LANE_W = 3.4;
@@ -280,7 +280,7 @@ function startLevel(level, race = null, opts = {}) {
   const lane = R.attachSim(sim, { z: z0 });
   const player = R.addCar(sim, spec, race ? { label: 'You', color: '#ffe14d', z: z0 } : {});
   R.focusZ = z0;
-  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makeBot(1, 11), t0: ui.t, continued: false };
+  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makePlayer(testRun?.kind || save.autoKind || 'pro', 11), t0: ui.t, continued: false };
   if (race) {
     race.rivals.forEach((rv, i) => {
       const s2 = aiSpec(rv.car);
@@ -288,7 +288,9 @@ function startLevel(level, race = null, opts = {}) {
       const z = laneZ(i + 1);
       const ln = R.attachSim(r.sim, { z, gems: false });
       const car = R.addCar(r.sim, s2, { label: rv.name, color: rv.color, z });
-      game.racers.push({ ...rv, r, lane: ln, car, z, bot: makeBot(rv.skill, i + 3), spec: s2, finish: null });
+      game.racers.push({ ...rv, r, lane: ln, car, z, bot: null, spec: s2, finish: null });
+      // rubber band: a rival far ahead of the player eases off, so a cup is never decided by one runaway bot
+      { const gg = game, me2 = gg.racers[gg.racers.length - 1]; me2.bot = makeBot(rv.skill, i + 3 + ((Math.random() * 50) | 0), { race: true, pace: () => { const lead = me2.r.sim.x - gg.sim.x; return lead > 15 ? 0.55 : lead > 7 ? 0.72 : lead > 2 ? 0.86 : 1; } }); }
     });
   }
   if (!race && !testRun && !save.autoplay && !save.tut.drive) game.tut = 'drive';
@@ -372,9 +374,9 @@ function tick(dt) {
   const st = g.sim.state;
   if (testRun && !g.over) {
     const limit = g.race ? 100 : 75;
-    if (st === 'fail' && !g.race) { g.failT += dt; if (g.failT > 0.9) { g.over = true; testResult(false, g.sim.failPose || g.sim.reason); } return; }
+    if (st === 'fail' && !g.race) { g.failT += dt; if (g.failT > 0.9) { g.over = true; testResult(false, `${g.sim.failStuck ? 'stuck' : g.sim.failPose || g.sim.reason} @ ${g.sim.x.toFixed(0)} m`); } return; }
     if (st === 'win') { g.winT = (g.winT || 0) + dt; if (g.winT > 0.9) { g.over = true; testResult(true, fmt(g.sim.finishTime)); } return; }
-    if (g.sim.time > limit) { g.over = true; testResult(false, 'timeout'); }
+    if (g.sim.time > limit) { g.over = true; testResult(false, `timeout @ ${g.sim.x.toFixed(0)} m`); }
     return;
   }
   if (st === 'fail' && !g.over) {
@@ -806,7 +808,7 @@ function drawHud(u) {
     u.pill(u.w - PAD - pw, topY(u) + 8, 34, { gem: true, text: txt }, { minW: pw });
   }
   if (testRun) {
-    const tr = testRun, txt = `TEST  ${tr.i + 1}/${tr.queue.length}   ✓ ${tr.pass}   ✗ ${tr.fails.length}`, tw2 = u.measure(txt, 15) + 90, tx2 = u.w / 2 - tw2 / 2, ty2 = topY(u) + 92;
+    const tr = testRun, txt = `TEST ${(AUTO_KINDS.find((k) => k[0] === tr.kind) || AUTO_KINDS[2])[1]}  ${tr.i + 1}/${tr.queue.length}   ✓ ${tr.pass}   ✗ ${tr.fails.length}`, tw2 = u.measure(txt, 15) + 90, tx2 = u.w / 2 - tw2 / 2, ty2 = topY(u) + 92;
     u.rr(tx2, ty2, tw2, 36, 12); c.fillStyle = 'rgba(10,30,80,0.75)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
     u.text(txt, tx2 + 14, ty2 + 19, 15, '#b8ffc0', { align: 'left' });
     u.button('teststop', tx2 + tw2 - 66, ty2 + 5, 58, 26, { color: 'red', label: 'Stop', size: 14, radius: 9, ring: false, onTap: tap(() => endTest(true)) });
@@ -1212,14 +1214,17 @@ function championParty(cup, next) {
 function startRandomRace() {
   const level = RACE_TRACKS[(Math.random() * RACE_TRACKS.length) | 0];
   const n = laneCount() - 1, start = (Math.random() * RIVALS.length) | 0;
-  const rivals = Array.from({ length: n }, (_, i) => ({ ...RIVALS[(start + i) % RIVALS.length], skill: 0.65 + Math.random() * 0.3 }));
+  const rivals = Array.from({ length: n }, (_, i) => ({ ...RIVALS[(start + i) % RIVALS.length], skill: 0.3 + Math.random() * 0.5 }));
   startLevel(level, { cup: { name: 'Random', reward: 1, color: '#ff8a1f' }, idx: 0, rivals, random: true });
 }
 function startRace() {
   const cupIdx = save.cup.idx, cup = CUPS[cupIdx];
   const idx = save.cup.race || 0;
   if (!save.cup.pts) save.cup.pts = { You: 0 };
-  const rivals = Array.from({ length: laneCount() - 1 }, (_, i) => ({ ...RIVALS[(cupIdx + i) % RIVALS.length], skill: cup.skill[i] }));
+  // every race is a little different: each rival's form is rolled (a good day or a bad one) around the cup's level,
+  // and who gets which level is shuffled, so the player always has a real chance at the cup
+  const skills = cup.skill.slice(0, laneCount() - 1).map((k) => Math.max(0.25, Math.min(1, k * (0.75 + Math.random() * 0.4)))).sort(() => Math.random() - 0.5);
+  const rivals = Array.from({ length: laneCount() - 1 }, (_, i) => ({ ...RIVALS[(cupIdx + i) % RIVALS.length], skill: skills[i] ?? cup.skill[i] }));
   rivals.forEach((r) => { if (save.cup.pts[r.name] == null) save.cup.pts[r.name] = 0; });
   persist();
   startLevel(RACE_TRACKS[cup.races[idx]], { cup, cupIdx, idx, rivals });
@@ -1505,6 +1510,17 @@ function doUpgrade(id, u) {
 }
 
 // ------------------------------------------------------------ settings (draft: Save applies, Cancel discards)
+const AUTO_KINDS = [['noob', 'Noob'], ['avg', 'Normal'], ['pro', 'Pro']];
+// how the autoplay bot drives: badly (full throttle, no air control, never backs up), like an average player, or well
+function kindPicker(u, x, y, w, h) {
+  const c = u.ctx, bw = (w - 12) / 3;
+  AUTO_KINDS.forEach(([k, label], i) => {
+    const on = (save.autoKind || 'pro') === k, bx = x + i * (bw + 6);
+    u.rr(bx, y, bw, h, 12); c.fillStyle = on ? u.grad(y, y + h, GRAD.gold) : 'rgba(0,0,0,0.25)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+    u.text(label, bx + bw / 2, y + h / 2 + 1, 15, on ? '#5a3000' : '#fff', { outline: !on });
+    u.hit(bx, y, bw, h, { id: 'ak' + k, onTap: tap(() => { save.autoKind = k; persist(); u.request(); }) });
+  });
+}
 const SETTING_KEYS = ['sound', 'shadows', 'autoplay', 'allRes'];
 let setDraft = null, resetArmed = false;
 function showSettings() {
@@ -1523,12 +1539,13 @@ function drawSettings(u) {
   u.panel(px, py, pw, ph, { ribbon: 'Settings' });
   const footH = sh ? 56 : 64, bodyY = py + 36, bodyH = ph - 36 - footH - 8;
   const rowH = sh ? 44 : 52;
-  const rows = [['sound', 'sound', 'Sound'], ['shadows', 'settings', 'Shadows (quality)'], ...(dev() ? [null, ['autoplay', 'play', 'Autoplay (bot drives)'], ['allRes', 'gem', 'All resources (dev)']] : [])];
-  const size = rows.length * (rowH + 6) + 160;
+  const rows = [['sound', 'sound', 'Sound'], ['shadows', 'settings', 'Shadows (quality)'], ...(dev() ? [null, ['autoplay', 'play', 'Autoplay (bot drives)'], 'kind', ['allRes', 'gem', 'All resources (dev)']] : [])];
+  const size = rows.length * (rowH + 6) + 200;
   u.scroll('set', px + 10, bodyY, pw - 20, bodyH, size, () => {
     let y = bodyY + 4;
     for (const r of rows) {
       if (!r) { u.text('DEV TEST', px + 22, y + 14, 13, 'rgba(255,255,255,0.8)', { align: 'left', outline: false }); y += 28; continue; }
+      if (r === 'kind') { u.text('Autoplay driver', px + 22, y + 12, 13, 'rgba(255,255,255,0.8)', { align: 'left', outline: false }); kindPicker(u, px + 16, y + 26, pw - 32, 40); y += 74; continue; }
       const [k, ic, label] = r, on = setDraft[k];
       u.rr(px + 16, y, pw - 32, rowH, 14); c.fillStyle = 'rgba(0,0,0,0.18)'; c.fill();
       u.icon(ic, px + 28, y + rowH / 2 - 13, 26, k === 'allRes' ? GOLD : '#fff');
@@ -1594,22 +1611,25 @@ function pauseMenu() {
 function testMenu() {
   const w = WORLDS[save.world];
   ui.overlay((u, age) => {
-    const opts = [['tour', `Tour: level 1 of all ${WORLDS.length} worlds`, 'blue'], ['random', '20 random levels (any world)', 'blue'], ['world', `All ${w.levels.length} levels of ${w.name}`, 'blue'], ['races', '10 random races (3–6 lanes)', 'orange'], ['close', 'Close', 'gray']];
-    const pw = Math.min(u.w * 0.9, 380), ph = 86 + opts.length * 62, px = u.w / 2 - pw / 2, py = u.h / 2 - ph / 2;
+    const opts = [['hard', `Hard levels of ${w.name} (4–${w.levels.length})`, 'purple'], ['hardall', 'Hard levels: 20 random (level 4+)', 'purple'], ['tour', `Tour: level 1 of all ${WORLDS.length} worlds`, 'blue'], ['random', '20 random levels (any world)', 'blue'], ['world', `All ${w.levels.length} levels of ${w.name}`, 'blue'], ['races', '10 random races (3–6 lanes)', 'orange'], ['close', 'Close', 'gray']];
+    const rowH = Math.min(62, (u.h - 260) / opts.length), pw = Math.min(u.w * 0.9, 380), ph = 150 + opts.length * rowH, px = u.w / 2 - pw / 2, py = u.h / 2 - ph / 2;
     u.panel(px, py, pw, ph, { ribbon: 'Test mode', ribbonColor: '#46d35c', scale: u.pop(0, 0.3, age) });
-    u.text('The bot drives. Results are not saved.', u.w / 2, py + 44, 14, '#fff', { maxW: pw - 20 });
-    opts.forEach(([id, label, col], i) => u.button('t' + id, px + 20, py + 70 + i * 62, pw - 40, 48, { color: col, label, size: 16, onTap: tap(() => { u.closeOverlay(); if (id !== 'close') startTest(id); }) }));
-    return age < 0.4;
+    u.text('The bot drives like a… (results are not saved)', u.w / 2, py + 44, 14, '#fff', { maxW: pw - 20 });
+    kindPicker(u, px + 20, py + 62, pw - 40, 40);
+    opts.forEach(([id, label, col], i) => u.button('t' + id, px + 20, py + 124 + i * rowH, pw - 40, rowH - 12, { color: col, label, size: 15, onTap: tap(() => { u.closeOverlay(); if (id !== 'close') startTest(id); }) }));
+    return true;
   });
 }
 function startTest(mode) {
   const pickLevel = () => { const w = WORLDS[(Math.random() * WORLDS.length) | 0]; return { level: w.levels[(Math.random() * w.levels.length) | 0] }; };
   let queue;
-  if (mode === 'tour') queue = WORLDS.map((w) => ({ level: w.levels[0] }));
+  if (mode === 'hard') queue = WORLDS[save.world].levels.slice(3).map((level) => ({ level }));
+  else if (mode === 'hardall') queue = Array.from({ length: 20 }, () => { const w = WORLDS[(Math.random() * WORLDS.length) | 0]; return { level: w.levels[3 + ((Math.random() * (w.levels.length - 3)) | 0)] }; });
+  else if (mode === 'tour') queue = WORLDS.map((w) => ({ level: w.levels[0] }));
   else if (mode === 'random') queue = Array.from({ length: 20 }, pickLevel);
   else if (mode === 'world') queue = WORLDS[save.world].levels.map((level) => ({ level }));
   else queue = Array.from({ length: 10 }, () => ({ level: RACE_TRACKS[(Math.random() * RACE_TRACKS.length) | 0], lanes: 3 + ((Math.random() * 4) | 0) }));
-  testRun = { mode, queue, i: -1, pass: 0, fails: [], times: [] };
+  testRun = { mode, queue, i: -1, pass: 0, fails: [], times: [], kind: save.autoKind || 'pro' };
   testNext();
 }
 function testNext() {
@@ -1640,7 +1660,7 @@ function endTest(stopped) {
     const T = u.safeTop, B = u.safeBottom, c = u.ctx, barH = short() ? 72 : 82;
     c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
     const pw = Math.min(u.w * 0.92, 420), px = u.w / 2 - pw / 2, py = T + 50, ph = u.h - B - barH - 50 - py;
-    u.panel(px, py, pw, ph, { ribbon: `Test ${stopped ? 'stopped' : 'finished'}`, ribbonColor: t.fails.length ? 'red' : '#46d35c' });
+    u.panel(px, py, pw, ph, { ribbon: `Test ${stopped ? 'stopped' : 'finished'} · ${(AUTO_KINDS.find((k) => k[0] === t.kind) || AUTO_KINDS[2])[1]}`, ribbonColor: t.fails.length ? 'red' : '#46d35c' });
     [['Run', `${t.pass + t.fails.length} / ${t.queue.length}`], ['Passed', t.pass], ['Failed', t.fails.length]].forEach(([a, b], i) => {
       u.text(a, px + 24, py + 50 + i * 34, 19, '#fff', { align: 'left' }); u.text(String(b), px + pw - 24, py + 50 + i * 34, 19, '#fff', { align: 'right' });
     });
@@ -1749,7 +1769,7 @@ boot();
 globalThis.__crane = {
   get game() { return game; }, get testRun() { return testRun; }, save: () => save, ui, R, P, worlds: WORLDS,
   startLevel: (w, l) => startLevel(WORLDS[w].levels[l]), startTest, keys,
-  actions: { champion: () => { R.showDiorama(WORLDS[0], vehicleById(save.car), 2.6); championParty(CUPS[0], showRace); }, daily: () => { save.daily = null; dailyGift(); }, board: () => showBoard(), standings: () => cupStandings(), tab: ({ tab }) => tabs2[tab](), race: startRace, randomRace: startRandomRace, levels: ({ w }) => showLevels(+w), shopSel: ({ id }) => showShop(id), use: ({ id }) => { save.car = id; persist(); } },
+  actions: { testMenu: () => testMenu(), test: ({ mode }) => startTest(mode), champion: () => { R.showDiorama(WORLDS[0], vehicleById(save.car), 2.6); championParty(CUPS[0], showRace); }, daily: () => { save.daily = null; dailyGift(); }, board: () => showBoard(), standings: () => cupStandings(), tab: ({ tab }) => tabs2[tab](), race: startRace, randomRace: startRandomRace, levels: ({ w }) => showLevels(+w), shopSel: ({ id }) => showShop(id), use: ({ id }) => { save.car = id; persist(); } },
   stats: () => ({ calls: R.r.info.render.calls, tris: R.r.info.render.triangles, geos: R.r.info.memory.geometries, tex: R.r.info.memory.textures, pr: R.r.getPixelRatio() }),
   views: (id) => R.views(vehicleById(id || 'crane')), icon: (n) => { const c = R.thumbnail(VEHICLES[0], n, n); return c.toDataURL ? c.toDataURL() : ''; },
   tapAt: (x, y) => { ui.pointerDown({ id: 99, x, y }); ui.pointerUp({ id: 99, x, y }); },
