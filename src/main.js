@@ -280,6 +280,7 @@ function startLevel(level, race = null, opts = {}) {
   }
   if (!race && !testRun && !save.autoplay && !opts.hint && !save.tut.drive) game.tut = 'drive';
   if (opts.hint) tip(game, 'Hint: watch how it is done!', 3);
+  else if (level.seaGaps && !race) tip(game, 'Sea jump at the end: full speed off the ramp!', 3.2);
   R.snapCam = true;
   showHud();
   Audio.engineStart();

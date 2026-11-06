@@ -3,7 +3,7 @@ import fs from 'fs';
 import { Sim } from '../src/sim.js';
 import { genLevel, genRace } from '../src/gen.js';
 import { WORLD_DEFS } from '../src/worlds.js';
-import { WORLDS, RACE_TRACKS, genDiff } from '../src/levels.js';
+import { WORLDS, RACE_TRACKS, genDiff, levelSea, raceSea } from '../src/levels.js';
 import { VEHICLES } from '../src/vehicles.js';
 import { makeBot } from '../src/bot.js';
 import { makeRacer, racerWatch } from '../src/racer.js';
@@ -23,10 +23,10 @@ for (const [wi, d] of WORLD_DEFS.entries()) {
     const diff = genDiff(k, !handmade);
     // a shipped seed stays if the hero, a starter truck, the fastest and the fully upgraded trucks all finish it
     const old = prev.levels[d.id]?.[k];
-    if (old != null && !(handmade && process.env.ONLY_NEW)) { const l0 = genLevel(d.id, old, diff); const t0 = solo(l0, 1); if (t0 != null && t0 <= 45 && allPass(l0).ok) { out.levels[d.id].push(old); names.add(l0.name); continue; } console.log('replace', d.id, k + 1, l0.name, allPass(l0).why || 'hero'); }
+    if (old != null && !(handmade && process.env.ONLY_NEW)) { const l0 = genLevel(d.id, old, diff, { sea: levelSea(!handmade, k) }); const t0 = solo(l0, 1); if (t0 != null && t0 <= 45 && allPass(l0).ok) { out.levels[d.id].push(old); names.add(l0.name); continue; } console.log('replace', d.id, k + 1, l0.name, allPass(l0).why || 'hero'); }
     for (let seed = 1000 * (wi + 1) + k * 101 + (old != null ? 7919 : 0); ; seed++) {
       tried++;
-      const l = genLevel(d.id, seed, diff);
+      const l = genLevel(d.id, seed, diff, { sea: levelSea(!handmade, k) });
       if (names.has(l.name)) continue;
       const t1 = solo(l, 1);
       if (t1 == null || t1 > 45) continue;
@@ -43,10 +43,10 @@ const raceOk = (l) => { const res = [1, 0.85, 0.7].map((sk) => raced(l, sk)); co
 for (let i = 0; i < 20; i++) {
   const w = 4 + (i % 16);
   const old = prev.races?.[i];
-  if (old && old.w === w) { const l0 = genRace(w, old.seed); if (raceOk(l0)) { out.races.push(old); names.add(l0.name); continue; } console.log('replace race', i + 1, l0.name); }
+  if (old && old.w === w) { const l0 = genRace(w, old.seed, { sea: raceSea(i) }); if (raceOk(l0)) { out.races.push(old); names.add(l0.name); continue; } console.log('replace race', i + 1, l0.name); }
   for (let seed = 50000 + i * 131 + (old ? 7919 : 0); ; seed++) {
     tried++;
-    const l = genRace(w, seed);
+    const l = genRace(w, seed, { sea: raceSea(i) });
     if (names.has(l.name)) continue;
     const res = raceOk(l);
     if (!res) continue;

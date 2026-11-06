@@ -21,7 +21,7 @@ const RACE_WORDS = [['Mega', 'Wild', 'Crazy', 'Turbo', 'Wacky', 'Bumpy', 'Chaos'
 function nameFor(words, r) { return `${words[0][(r() * words[0].length) | 0]} ${words[1][(r() * words[1].length) | 0]}`; }
 
 // Build a track from segments. Returns a level object (same shape as hand-made levels).
-function build(def, seed, diff, { race = false, length } = {}) {
+function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
   const r = rng(seed);
   const st = def;
   const b = new B(st.ground);
@@ -164,18 +164,32 @@ function build(def, seed, diff, { race = false, length } = {}) {
       default: break;
     }
   }
+  // sea jump finale: a long run-up, a kicker and open water the truck clears on its own speed (no items)
+  const seaGaps = [];
+  if (sea) {
+    const grav = def.gravity ?? (def.lowGravChance && rng(seed + 11)() < def.lowGravChance ? 5.5 : 10);
+    const G = Math.round(sea * Math.sqrt(10 / grav));
+    ground(x, x + 24);
+    b.ramp(x + 24, top, x + 28, top + 1.6, st.ground, water);
+    const lip = x + 28, land = lip + G;
+    for (let i = 1; i <= 3; i++) b.gem(lip + (G * i) / 4, top + 2.6 + (i === 2 ? 0.6 : 0));
+    b.ramp(land, top + 0.8, land + 12, top, st.ground, water);   // gentle landing slope
+    ground(land + 12, land + 24);
+    seaGaps.push({ lip, land, top });
+    x = land + 24;
+  }
   ground(x, x + 14, top, def.startGround);
   b.finish(x + 8, top);
   const ai = { zones: zones.filter((z) => z.length === 3) };
   if (zones.some((z) => z[0] === 'air')) ai.airAngle = -0.1;
   const words = race ? RACE_WORDS : def.words;
   const nr = rng(seed * 7 + 3);
-  const opts = { water, ai, name: nameFor(words, nr), gen: seed };
+  const opts = { water, ai, name: nameFor(words, nr), gen: seed, ...(seaGaps.length ? { seaGaps } : {}) };
   if (def.lowGravChance && rng(seed + 11)() < def.lowGravChance) { opts.gravity = 5.5; ai.airAngle = -0.05; }
   if (def.gravity) { opts.gravity = def.gravity; ai.airAngle = -0.05; }
   return { pieces: b.p, start: { x: 0, y: 0 }, ...opts };
 }
 
 const defOf = (w) => (typeof w === 'string' ? WORLD_DEFS.find((d) => d.id === w) : WORLD_DEFS[w]);
-export const genLevel = (world, seed, diff) => build(defOf(world), seed, diff);
-export const genRace = (worldIdx, seed) => ({ ...build(defOf(worldIdx), seed, 0.9, { race: true }), raceWorld: worldIdx });
+export const genLevel = (world, seed, diff, o = {}) => build(defOf(world), seed, diff, o);
+export const genRace = (worldIdx, seed, o = {}) => ({ ...build(defOf(worldIdx), seed, 0.9, { race: true, ...o }), raceWorld: worldIdx });

@@ -268,7 +268,11 @@ export const RACE_TRACKS = [
   }, { ai: { zones: [[56, 70, 6]] } }),
 ];
 // 20 extra seeded random tracks (validated by tools/gensel.mjs)
-for (const { w, seed } of SEEDS.races || []) RACE_TRACKS.push(genRace(w, seed));
+// sea jump finale (open water every truck clears on its own speed): levels 10 and 20 from world 5, every 4th seeded track
+export const SEA_GAP = 14;
+export const levelSea = (fresh, k) => (fresh && (k === 9 || k === 19) ? SEA_GAP : 0);
+export const raceSea = (i) => (i % 4 === 1 ? SEA_GAP : 0);
+(SEEDS.races || []).forEach(({ w, seed }, i) => RACE_TRACKS.push(genRace(w, seed, { sea: raceSea(i) })));
 RACE_TRACKS.forEach((l, i) => { l.world = l.raceWorld; l.index = i; l.id = `race-${i + 1}`; l.race = true; });
 
 const HANDMADE = { classic, construction, medieval, science };
@@ -279,7 +283,7 @@ export const WORLDS = WORLD_DEFS.map((d) => ({ ...d, levels: [...(HANDMADE[d.id]
 export const genDiff = (k, fresh = false) => (fresh ? 0.15 + (0.85 * k) / 19 : 0.4 + (0.6 * k) / 9);
 for (const w of WORLDS) {
   const fresh = !HANDMADE[w.id];
-  (SEEDS.levels?.[w.id] || []).forEach((seed, k) => w.levels.push(genLevel(w.id, seed, genDiff(k, fresh))));
+  (SEEDS.levels?.[w.id] || []).forEach((seed, k) => w.levels.push(genLevel(w.id, seed, genDiff(k, fresh), { sea: levelSea(fresh, k) })));
 }
 WORLDS.forEach((w, wi) => w.levels.forEach((l, li) => { l.world = wi; l.index = li; l.id = `${w.id}-${li + 1}`; }));
 export const allLevels = () => WORLDS.flatMap((w) => w.levels);
