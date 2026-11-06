@@ -74,18 +74,6 @@
         ]
       },
       {
-        "label": "refill_lives",
-        "ads": [
-          {
-            "id": "<rewarded AD UNIT ID for refill_lives>",
-            "type": "rewarded",
-            "config": {
-              "cooldown": 30
-            }
-          }
-        ]
-      },
-      {
         "label": "revive",
         "ads": [
           {
@@ -193,9 +181,6 @@
       },
       "free_gems": {
         "gems": 150
-      },
-      "refill_lives": {
-        "lives": 5
       }
     },
     "items": {

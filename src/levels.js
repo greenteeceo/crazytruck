@@ -275,7 +275,8 @@ export const raceSea = (i) => (i % 4 === 1 ? SEA_GAP : 0);
 (SEEDS.races || []).forEach(({ w, seed }, i) => RACE_TRACKS.push(genRace(w, seed, { sea: raceSea(i) })));
 RACE_TRACKS.forEach((l, i) => { l.world = l.raceWorld; l.index = i; l.id = `race-${i + 1}`; l.race = true; });
 
-export const HANDMADE = { classic, construction, medieval, science };
+// World 1 keeps its three warm-up levels; levels 4-20 are laid out stretch by stretch below (PLANS)
+export const HANDMADE = { classic: classic.slice(0, 3), construction, medieval, science };
 export const WORLDS = WORLD_DEFS.map((d) => ({ ...d, levels: [...(HANDMADE[d.id] || [])] }));
 
 // Levels 1-3 are the warm-up. From level 4 the hand-made levels carry on past their old finish with a generated
@@ -292,9 +293,41 @@ for (const w of WORLDS) if (HANDMADE[w.id]) (SEEDS.tails?.[w.id] || []).forEach(
 // worlds 1-4: levels 11-20; worlds 5-20: all 20 levels, starting easier
 // levels 1-3 of a fresh world are easy, from level 4 it is hard (0.6 and up, the hard stretches join the pool)
 export const genDiff = (k, fresh = false) => (fresh ? (k < 3 ? 0.15 + 0.1 * k : 0.6 + (0.4 * (k - 3)) / 16) : 0.6 + (0.4 * k) / 9);
-for (const w of WORLDS) {
-  const fresh = !HANDMADE[w.id];
-  (SEEDS.levels?.[w.id] || []).forEach((seed, k) => w.levels.push(genLevel(w.id, seed, genDiff(k, fresh), { sea: levelSea(fresh, k) })));
+// The first 20 levels of the game (world 1), designed in order: each level brings one new thing or a harder
+// mix, and from level 4 on there is always something to fight - soft sand, mud, steep hills, jumps, rocks, logs.
+// The seed only varies sizes and spacing; every level is validated like the rest (tools/gensel.mjs).
+export const PLANS = {
+  classic: [
+    ['hill', 'crates', 'rolling'],                                                      // 4  first obstacles
+    ['gap', 'logs', 'hill', 'sandPit'],                                                 // 5  soft sand
+    ['bridge', 'puddle', 'stepUp', 'crates'],                                           // 6  mud puddle
+    ['rolling', 'valley', 'barrels', 'gap'],                                            // 7
+    ['sandPit', 'steepHill', 'logPile', 'bridge'],                                      // 8  steep hill
+    ['puddle', 'rocky', 'gap', 'seesaw', 'crates'],                                     // 9
+    ['climb', 'rampDown', 'bigJump', 'sandPit'],                                        // 10 big jump
+    ['rocky', 'puddle', 'steepHill', 'barrels', 'gap'],                                 // 11
+    ['bridge', 'logPile', 'valley', 'sandPit', 'seesaw'],                               // 12
+    ['rolling', 'bigJump', 'puddle', 'steepHill', 'crates'],                            // 13
+    ['sandPit', 'rocky', 'climb', 'logPile', 'gap', 'barrels'],                         // 14
+    ['puddle', 'seesaw', 'steepHill', 'valley', 'bridge', 'crates'],                    // 15
+    ['bigJump', 'sandPit', 'rocky', 'puddle', 'logPile', 'steepHill'],                  // 16
+    ['climb', 'gap', 'puddle', 'barrels', 'seesaw', 'rocky', 'valley'],                 // 17
+    ['steepHill', 'sandPit', 'bigJump', 'logPile', 'puddle', 'bridge', 'crates'],       // 18
+    ['rocky', 'puddle', 'climb', 'gap', 'sandPit', 'seesaw', 'barrels', 'steepHill'],   // 19
+    ['bigJump', 'steepHill', 'puddle', 'logPile', 'sandPit', 'valley', 'rocky', 'bridge'], // 20 the final exam
+  ],
+};
+export const planDiff = (li) => 0.45 + (0.55 * (li - 3)) / 16;
+export const genCount = (wid) => 20 - (HANDMADE[wid]?.length || 0);
+// how the k-th generated level of a world is built: a designed plan (world 1) or the random pool
+export function genSpec(wid, k) {
+  const hand = HANDMADE[wid]?.length || 0, fresh = !HANDMADE[wid], plan = PLANS[wid]?.[k];
+  if (plan) return { diff: planDiff(hand + k), plan, sea: 0 };
+  return { diff: genDiff(k, fresh), sea: levelSea(fresh, k) };
 }
+for (const w of WORLDS) (SEEDS.levels?.[w.id] || []).slice(0, genCount(w.id)).forEach((seed, k) => {
+  const sp = genSpec(w.id, k);
+  w.levels.push(genLevel(w.id, seed, sp.diff, { sea: sp.sea, plan: sp.plan }));
+});
 WORLDS.forEach((w, wi) => w.levels.forEach((l, li) => { l.world = wi; l.index = li; l.id = `${w.id}-${li + 1}`; }));
 export const allLevels = () => WORLDS.flatMap((w) => w.levels);

@@ -490,6 +490,12 @@ export class Sim {
       const wheelsDown = (this.wheelTouch[0] > 0 ? 1 : 0) + (this.wheelTouch[1] > 0 ? 1 : 0);
       // Judged by where it gets to, not by its speed: a truck on its side rocks back and forth on the spinning wheels.
       const hopeless = (Math.abs(a) > 1.3 && wheelsDown < 2) || wheelsDown === 0;
+      // standing straight up on its back wheels (or on its nose): a truck cannot drive like that. Balancing there
+      // for more than a moment ends the run as a roll-over, however much it creeps along
+      if (Math.abs(a) > 1.2 && wheelsDown < 2 && !this.airborne) {
+        this.uprightT = (this.uprightT || 0) + DT;
+        if (this.uprightT > 1.2) { this.failStuck = true; this.fail('crash'); }
+      } else this.uprightT = 0;
       if (hopeless) {
         const an = this.stuckAt;
         if (!an || Math.hypot(pos.x - an.x, pos.y - an.y) > 0.5) { this.stuckAt = { x: pos.x, y: pos.y }; this.stuckT = 0; }
@@ -570,7 +576,7 @@ export class Sim {
       for (const h of this.hook) h.getFixtureList().setFilterData(HOOK_FILTER);
     }
     this.recoverPose = { x: gx, y: cy };
-    this.headTouch = 0; this.headProp = 0; this.shellTop = 0; this.stuckT = 0; this.stuckAt = null; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
+    this.headTouch = 0; this.headProp = 0; this.shellTop = 0; this.stuckT = 0; this.stuckAt = null; this.uprightT = 0; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
     for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
     this.state = 'recover'; this.reason = ''; this.freeze = hold;
     this.maxX = Math.max(this.maxX, gx);

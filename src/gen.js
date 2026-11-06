@@ -24,7 +24,7 @@ function nameFor(words, r) { return `${words[0][(r() * words[0].length) | 0]} ${
 
 // Build a track from segments. Returns a level object (same shape as hand-made levels).
 // `base`: a hand-made level to carry on from (its finish is taken away and the track continues after it).
-function build(def, seed, diff, { race = false, length, sea = 0, base = null } = {}) {
+function build(def, seed, diff, { race = false, length, sea = 0, base = null, plan = null } = {}) {
   const r = rng(seed);
   const st = def;
   const b = new B(st.ground);
@@ -44,11 +44,11 @@ function build(def, seed, diff, { race = false, length, sea = 0, base = null } =
   } else b.ground(-8, x, 0, def.startGround, 3);
   // from level 4 on (diff >= 0.55) the harder stretches come up much more often
   const pool = [...(race ? [...POOLS[def.kind], ...RACE_EXTRA] : POOLS[def.kind]), ...(diff >= 0.55 ? HARD : [])];
-  const nSeg = length ?? (race ? 9 : 3 + Math.round(diff * 7));
+  const nSeg = plan ? plan.length : length ?? (race ? 9 : 3 + Math.round(diff * 7));
   let last = '';
   for (let i = 0; i < nSeg; i++) {
-    let seg = pick(pool);
-    if (seg === last) seg = pick(pool);
+    let seg = plan ? plan[i] : pick(pool);
+    if (!plan && seg === last) seg = pick(pool);
     last = seg;
     // keep the track inside a sensible height band
     if (seg === 'stepUp' && top > 2.2) seg = 'rampDown';

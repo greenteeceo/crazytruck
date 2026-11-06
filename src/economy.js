@@ -11,7 +11,6 @@ export const AD_PLACES = [
   { label: 'daily_x2', type: 'rewarded', cooldown: 30, where: 'Daily gift popup: "Claim x2" button' },
   { label: 'gem_boost', type: 'rewarded', cooldown: 30, where: 'Home (next to Play) and Shop > Gems: "2x" button, doubles level and race gems for 10 min' },
   { label: 'free_gems', type: 'rewarded', cooldown: 30, where: 'Shop (top-left) and Shop > Gems: "+150 gems" button, 5 a day' },
-  { label: 'refill_lives', type: 'rewarded', cooldown: 30, where: 'Out of lives popup (and tapping the hearts): "Refill 5" button' },
   { label: 'revive', type: 'rewarded', cooldown: 30, where: 'Fail screen: "Continue" button (back on the wheels at the last checkpoint)' },
   { label: 'try_truck', type: 'rewarded', cooldown: 30, where: 'Shop > Trucks, a truck not owned: "Try" button (free for the next level)' },
   { label: 'level_end', type: 'interstitial', cooldown: 45, where: 'After a level: tapping Next / Retry / Home / Levels (none in the first 3 level ends)' },
@@ -39,7 +38,6 @@ export const DEFAULTS = {
     daily_x2: { mult: 2 },
     gem_boost: { boost_min: 10 },
     free_gems: { gems: 150 },
-    refill_lives: { lives: 5 },
   },
   items: {
     gems: { category: 'currency', name: 'Gems' },
