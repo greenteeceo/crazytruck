@@ -40,7 +40,7 @@ save.tt ||= {};
 save.tut ||= {};   // tutorial steps already shown
 // dev tools (Autoplay, All resources, AUTO / TEST chips): on while DEV_TOOLS is true (config.js),
 // otherwise hidden until the version line in Settings is tapped 5 times
-const VERSION = '3.10';
+const VERSION = '3.11';
 const dev = () => DEV_TOOLS || !!save.dev;
 if (save.allRes == null) save.allRes = !!(save.infinite && save.unlockAll);
 if (!dev()) save.autoplay = save.allRes = false;

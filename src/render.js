@@ -886,7 +886,7 @@ export class Renderer {
         // crumple: neighbouring vertices go in by slightly different amounts (hash of the home position)
         const h = Math.sin(home[i] * 43.1 + home[i + 1] * 71.7 + home[i + 2] * 13.3) * 0.5 + 0.5;
         const k = depth * f2 * (0.7 + 0.6 * h);
-        let px = arr[i] + nx * k, py = arr[i + 1] + ny * k;
+        let px = arr[i] - nx * k, py = arr[i + 1] - ny * k;   // pushed in, away from what it hit
         const ox = px - home[i], oy = py - home[i + 1], ol = Math.hypot(ox, oy);
         if (ol > MAX) { px = home[i] + ox / ol * MAX; py = home[i + 1] + oy / ol * MAX; }
         arr[i] = px; arr[i + 1] = py; moved = true;
