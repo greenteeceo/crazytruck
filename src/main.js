@@ -119,7 +119,7 @@ const levelUnlocked = (l) => save.unlockAll || l.index === 0 || lvlSave(WORLDS[l
 const par = (l) => Math.ceil((PARS[l.id] ?? 10) * 1.25 * 2) / 2;
 // Every level has a countdown: reach the finish before it runs out. How much time depends on the level - the
 // crane's own drive time (pars) with room to spare: generous on the warm-ups, tighter on the hard levels (5, 10, 15, 20).
-const timeLimit = (l) => { const li = l.index, k = li < 3 ? 2.6 : (li + 1) % 5 === 0 ? 1.9 : 2.2; return Math.ceil((PARS[l.id] ?? 12) * k + 6); };
+const timeLimit = (l) => { const li = l.index, k = li < 3 ? 3.2 : (li + 1) % 5 === 0 ? 2.5 : 2.8; return Math.ceil((PARS[l.id] ?? 12) * k + 10); };
 const TIME_GEMS = 2;          // gems per second left on the clock at the finish
 const MAX_CONTINUES = 2;      // video continues per level attempt, then it is game over
 const totalDone = () => WORLDS.slice(0, OPEN_WORLDS).reduce((a, _, i) => a + worldDone(i), 0);
@@ -234,7 +234,8 @@ const laneZ = (i) => ((laneCount() - 1) / 2 - i) * LANE_W;
 
 function aiSpec(id) { const base = VEHICLES[0], v = vehicleById(id); return { ...base, look: v.look, crane: null, blade: false }; }
 
-const timeLeft = (g) => g.limit + g.extraT - g.sim.time;
+// the clock only runs while the truck is being driven: not during a crash, the fail screen, a continue or pause
+const timeLeft = (g) => g.limit + g.extraT - (g.clock || 0);
 function startLevel(level, race = null, opts = {}) {
   R.camPush = 0;
   // a truck tried from the shop (rewarded video) drives the next level or race, once
@@ -319,6 +320,7 @@ function tick(dt) {
   while (g.acc >= DT) {
     g.acc -= DT;
     g.sim.step(t);
+    if (g.sim.state === 'run') g.clock = (g.clock || 0) + DT;
     for (const e of g.sim.drainEvents()) fx(e, g.sim, g.z, g.player);
     if (g.race) { if (racerWatch(g.me) === 'respawn') Audio.boost(); } else trackSafe(g.me);
     for (const r of g.racers) {
@@ -763,7 +765,7 @@ function drawHud(u) {
   u.text(fmt(g.sim.state === 'win' ? g.sim.finishTime : g.sim.time), u.w / 2, topY(u) + 38, 30);
   if (!g.race && g.limit) {
     // countdown clock on the left: white, yellow under 10 s, red and pulsing under 5 s
-    const left = Math.max(0, g.sim.state === 'win' ? g.limit + g.extraT - g.sim.finishTime : timeLeft(g)), lw = 92, lh = 46, lx = PAD, ly = topY(u) + 108;
+    const left = Math.max(0, timeLeft(g)), lw = 92, lh = 46, lx = PAD, ly = topY(u) + 108;
     const hot = left <= 5, warm = left <= 10, pulse = hot && g.sim.state === 'run' ? 1 + Math.abs(Math.sin(u.t * 6)) * 0.08 : 1;
     c.save(); c.translate(lx + lw / 2, ly + lh / 2); c.scale(pulse, pulse); c.translate(-(lx + lw / 2), -(ly + lh / 2));
     u.rr(lx, ly, lw, lh, 16); c.fillStyle = hot ? 'rgba(200,20,40,0.85)' : 'rgba(10,30,80,0.7)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
@@ -959,8 +961,8 @@ function drawFail(u, st) {
 function continueAfterCrash(st) {
   const g = game; if (!g) return;
   st.continued = true; g.continues = (g.continues || 0) + 1;
-  // out of time: the clock gets 10 more seconds (and a few to spare beyond the time spent so far)
-  if (g.sim.reason === 'time') g.extraT += Math.max(10, g.sim.time - (g.limit + g.extraT) + 10);
+  // the clock carries on from where it stopped, with extra time on top: 15 s after running out, 10 s after a crash
+  g.extraT += g.sim.reason === 'time' ? Math.max(15, -timeLeft(g) + 15) : 10; g.tickS = -1;
   const back = g.sim.reason === 'splash' ? 9 : g.sim.reason === 'time' ? 0 : 5;
   const cp = [...g.me.safe].reverse().find((x) => x <= g.sim.x - back) ?? g.sim.startX;
   respawnAt(g.me, cp);
@@ -975,7 +977,7 @@ function onWin() {
   const t = sim.finishTime, prev = lvlSave(l), allGems = sim.gemsTaken >= sim.gems.length;
   const stars = 1 + (allGems ? 1 : 0) + (t <= par(l) ? 1 : 0);
   let earn = sim.gemsTaken * 5;
-  const left = Math.max(0, Math.floor(g.limit + g.extraT - t)), timeGems = left * TIME_GEMS;   // finishing early pays
+  const left = Math.max(0, Math.floor(timeLeft(g))), timeGems = left * TIME_GEMS;   // finishing early pays
   earn += timeGems;
   if (!prev || prev.time == null) earn += 20 + l.world * 5;   // first clear: coins to buy trucks
   if (stars === 3 && (!prev || (prev.stars || 0) < 3)) earn += 30;
