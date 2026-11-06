@@ -17,6 +17,7 @@ const prev = JSON.parse(fs.readFileSync('src/genseeds.json', 'utf8'));
 const out = { levels: {}, tails: {}, races: [] };
 // ONLY=classic,desert,races: re-pick just those (comma list), keep everything else as shipped
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
+const REPICK = process.env.REPICK ? process.env.REPICK.split(',') : null;
 let tried = 0;
 for (const [wi, d] of WORLD_DEFS.entries()) {
   const handmade = !!HANDMADE[d.id];
@@ -47,6 +48,8 @@ for (const [wi, d] of WORLD_DEFS.entries()) {
     const sp = genSpec(d.id, k), diff = sp.diff, gopt = { sea: sp.sea, plan: sp.plan };
     // a shipped seed stays if the hero, a starter truck, the fastest and the fully upgraded trucks all finish it
     const old = prev.levels[d.id]?.[k];
+    // REPICK=science-11,docks-20: re-pick only those levels, keep every other shipped seed without re-checking
+    if (REPICK && old != null && !REPICK.includes(`${d.id}-${(HANDMADE[d.id]?.length || 0) + k + 1}`)) { out.levels[d.id].push(old); names.add(genLevel(d.id, old, diff, gopt).name); continue; }
     if (old != null && !(handmade && process.env.ONLY_NEW)) { const l0 = genLevel(d.id, old, diff, gopt); const t0 = solo(l0, 1); if (t0 != null && t0 <= sp.maxT && allPass(l0).ok) { out.levels[d.id].push(old); names.add(l0.name); continue; } console.log('replace', d.id, k + 1, l0.name, allPass(l0).why || 'hero'); }
     for (let seed = 1000 * (wi + 1) + k * 101 + (old != null ? 7919 : 0); ; seed++) {
       tried++;
