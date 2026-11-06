@@ -405,4 +405,14 @@ for (const w of WORLDS) (SEEDS.levels?.[w.id] || []).slice(0, genCount(w.id)).fo
   w.levels.push(genLevel(w.id, seed, sp.diff, { sea: sp.sea, plan: sp.plan }));
 });
 WORLDS.forEach((w, wi) => w.levels.forEach((l, li) => { l.world = wi; l.index = li; l.id = `${w.id}-${li + 1}`; }));
+// every level has its own name: a generated name already taken gets the next free pair of the world's words
+{ const seen = new Set();
+  WORLDS.forEach((w, wi) => w.levels.forEach((l) => {
+    const [a, b] = WORLD_DEFS[wi].words || [[], []];
+    if (seen.has(l.name) && a.length) {
+      const [x, y] = l.name.split(' '), i0 = Math.max(0, a.indexOf(x)), j0 = Math.max(0, b.indexOf(y));
+      for (let k = 1; k < a.length * b.length && seen.has(l.name); k++) l.name = `${a[(i0 + k) % a.length]} ${b[(j0 + ((k / a.length) | 0)) % b.length]}`;
+    }
+    seen.add(l.name);
+  })); }
 export const allLevels = () => WORLDS.flatMap((w) => w.levels);
