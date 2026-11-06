@@ -244,7 +244,7 @@ function startLevel(level, race = null, opts = {}) {
   const theme = WORLDS[level.world].theme;
   R.buildLevel(level, theme, race ? { lanes: laneCount(), laneW: LANE_W } : {});
   const z0 = race ? laneZ(0) : 0;
-  const me = makeRacer(level, spec, { stuckLimit: 5 });
+  const me = makeRacer(level, spec, { stuckLimit: 7, lenient: !!race, stillStuck: true });   // (the player can back up: only a truck wedged still for 7 s is put back)
   const sim = me.sim;
   const lane = R.attachSim(sim, { z: z0 });
   const player = R.addCar(sim, spec, race ? { label: 'You', color: '#ffe14d', z: z0 } : {});

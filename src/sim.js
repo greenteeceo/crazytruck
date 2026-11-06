@@ -522,6 +522,21 @@ export class Sim {
       // roof on solid ground: instant crash. Roof on a prop (crate, domino...) or resting upside down: a short grace period.
       let a = this.chassis.getAngle() % (Math.PI * 2); if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
       const v = this.chassis.getLinearVelocity(), slow = Math.abs(v.x) + Math.abs(v.y) < 1.5;
+      const wheelsDown = (this.wheelTouch[0] > 0 ? 1 : 0) + (this.wheelTouch[1] > 0 ? 1 : 0);
+      if (this.opts.lenient) {
+        // RACES: a truck in trouble gets to struggle. It is only out when it lies on its side or roof AND has
+        // stopped moving (then the race puts it back on a checkpoint); until then it rocks, kicks and may well
+        // flop back onto its wheels.
+        const flipped = Math.abs(a) > 1.25 && wheelsDown < 2, w = this.chassis.getAngularVelocity();
+        const still = Math.abs(v.x) + Math.abs(v.y) < 0.9 && Math.abs(w) < 1.2;
+        if (flipped && still) { this.headTime += DT; if (this.headTime > 1.1) { this.failStuck = true; this.fail('crash'); } } else this.headTime = 0;
+        // ... or once it has been struggling on its side / roof for a good while without getting back up
+        if (flipped) { this.flipT = (this.flipT || 0) + DT; if (this.flipT > 3.5) { this.failStuck = true; this.fail('crash'); } } else this.flipT = 0;
+        if (flipped && !this.airborne && throttle !== 0) {
+          // the struggle: the wheels thrash and the body rocks, with a slight lean back towards the wheels
+          this.chassis.setAngularVelocity(w + (Math.sin(this.time * 13) * 6 - Math.sign(a) * 2.2) * DT);
+        }
+      } else
       // the roof (or what is on it: boom, ladder, cone...) on solid ground with the truck on its side or upside down
       if (this.headTouch > 0 || ((this.shellTop || 0) > 0 && Math.abs(a) > 1.5)) {
         this.headTime += DT;
@@ -532,16 +547,15 @@ export class Sim {
       } else this.headTime = 0;
       // stuck for good: lying on its side (propped on the boom / an accessory), or high-centred with no wheel on
       // the ground. The wheels just spin in the air and nothing the player does can move it: that is a roll-over.
-      const wheelsDown = (this.wheelTouch[0] > 0 ? 1 : 0) + (this.wheelTouch[1] > 0 ? 1 : 0);
       // Judged by where it gets to, not by its speed: a truck on its side rocks back and forth on the spinning wheels.
       const hopeless = (Math.abs(a) > 1.3 && wheelsDown < 2) || wheelsDown === 0;
       // standing straight up on its back wheels (or on its nose): a truck cannot drive like that. Balancing there
       // for more than a moment ends the run as a roll-over, however much it creeps along
-      if (Math.abs(a) > 1.2 && wheelsDown < 2 && !this.airborne) {
+      if (!this.opts.lenient && Math.abs(a) > 1.2 && wheelsDown < 2 && !this.airborne) {
         this.uprightT = (this.uprightT || 0) + DT;
         if (this.uprightT > 1.2) { this.failStuck = true; this.fail('crash'); }
       } else this.uprightT = 0;
-      if (hopeless) {
+      if (hopeless && !this.opts.lenient) {
         const an = this.stuckAt;
         if (!an || Math.hypot(pos.x - an.x, pos.y - an.y) > 0.5) { this.stuckAt = { x: pos.x, y: pos.y }; this.stuckT = 0; }
         this.stuckT = (this.stuckT || 0) + DT;
@@ -622,7 +636,7 @@ export class Sim {
       for (const h of this.hook) h.getFixtureList().setFilterData(HOOK_FILTER);
     }
     this.recoverPose = { x: gx, y: cy };
-    this.headTouch = 0; this.headProp = 0; this.shellTop = 0; this.stuckT = 0; this.stuckAt = null; this.uprightT = 0; this.upHeld = false; this.wasUpright = false; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
+    this.headTouch = 0; this.headProp = 0; this.shellTop = 0; this.stuckT = 0; this.stuckAt = null; this.flipT = 0; this.uprightT = 0; this.upHeld = false; this.wasUpright = false; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
     for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
     this.state = 'recover'; this.reason = ''; this.freeze = hold;
     this.maxX = Math.max(this.maxX, gx);
