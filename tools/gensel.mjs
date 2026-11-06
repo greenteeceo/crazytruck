@@ -80,5 +80,5 @@ else for (let i = 0; i < 20; i++) {
     break;
   }
 }
-fs.writeFileSync('src/genseeds.json', JSON.stringify(out, null, 1));
+fs.writeFileSync(process.env.OUT || 'src/genseeds.json', JSON.stringify(out, null, 1));   // OUT=file: parallel runs write apart, merged after
 console.log('tried', tried);
