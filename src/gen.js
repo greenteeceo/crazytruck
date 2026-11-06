@@ -43,7 +43,9 @@ function build(def, seed, diff, { race = false, length, sea = 0, base = null, pl
     x = Math.round(x * 10) / 10;
   } else b.ground(-8, x, 0, def.startGround, 3);
   // from level 4 on (diff >= 0.55) the harder stretches come up much more often
-  const pool = [...(race ? [...POOLS[def.kind], ...RACE_EXTRA] : POOLS[def.kind]), ...(diff >= 0.55 ? HARD : [])];
+  // races stay on the ground: no bounce pads and no jumps over gaps (racing is about pushing through obstacles)
+  const NO_AIR = ['pad', 'gap', 'bigJump'];
+  const pool = [...(race ? [...POOLS[def.kind], ...RACE_EXTRA].filter((k) => !NO_AIR.includes(k)) : POOLS[def.kind]), ...(diff >= 0.55 ? HARD : [])];
   const nSeg = plan ? plan.length : length ?? (race ? 9 : 3 + Math.round(diff * 7));
   let last = '';
   for (let i = 0; i < nSeg; i++) {

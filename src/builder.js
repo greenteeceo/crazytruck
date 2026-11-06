@@ -35,6 +35,8 @@ export class B {
   barrels(x, n = 3, top = 0) { for (let k = 0; k < n; k++) this.dyn(x + k * 1.1, top + 0.45, 0.7, 0.9, 'barrel', 0.2); if (n >= 3) this.dyn(x + 0.55, top + 1.35, 0.7, 0.9, 'barrel', 0.2); return this; }
   // a pyramid of logs across the road
   logPile(x, top = 0) { for (let row = 0; row < 3; row++) for (let k = 0; k < 3 - row; k++) this.dyn(x + k * 0.62 + row * 0.31, top + 0.3 + row * 0.56, 0.6, 0.56, 'log', 0.2); return this; }
+  // a tall heavy plank wall across the road, on a sill: pushed, it tips over forward and lies down as a ramp
+  plankWall(x, top = 0) { this.dyn(x, top + 1.9, 0.5, 3.8, 'wood', 1.4); return this.block(x + 0.34, top + 0.07, 0.16, 0.14, 'wood'); }
   hammer(x, top = 0, a0 = 1.1, len = 4.4) { return this.add({ t: 'pend', x, y: top + len + 1.8, len, bw: 1.0, bh: 1.4, a0 }); }
 }
 

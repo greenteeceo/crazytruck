@@ -109,12 +109,15 @@ const gemsText = () => (save.infinite ? '∞' : String(gemShownNow()));
 const lvlSave = (l) => save.levels[l.id] || null;
 const worldDone = (w) => WORLDS[w].levels.filter((l) => lvlSave(l)?.time != null).length;
 const totalStars = () => Object.values(save.levels).reduce((a, v) => a + (v?.stars || 0), 0);
+// For now only the first 7 worlds (140 levels) are open; the rest stay hidden until they are unlocked in an update
+const OPEN_WORLDS = 7;
+if (save.world >= OPEN_WORLDS) save.world = 0;
 const starsNeeded = (w) => Math.max(0, (WORLDS[w].starsReq || 0) - totalStars());
 let testRun = null;   // active automated test session (see startTest)
-const worldUnlocked = (w) => save.unlockAll || !!testRun || w === 0 || (worldDone(w - 1) >= 5 && starsNeeded(w) === 0);
+const worldUnlocked = (w) => w < OPEN_WORLDS && (save.unlockAll || !!testRun || w === 0 || (worldDone(w - 1) >= 5 && starsNeeded(w) === 0));
 const levelUnlocked = (l) => save.unlockAll || l.index === 0 || lvlSave(WORLDS[l.world].levels[l.index - 1])?.time != null;
 const par = (l) => Math.ceil((PARS[l.id] ?? 10) * 1.25 * 2) / 2;
-const totalDone = () => WORLDS.reduce((a, _, i) => a + worldDone(i), 0);
+const totalDone = () => WORLDS.slice(0, OPEN_WORLDS).reduce((a, _, i) => a + worldDone(i), 0);
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
 const yesterday = () => { const d = new Date(Date.now() - 86400000); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
 
@@ -620,7 +623,7 @@ function showWorlds() {
   ui.show('home', drawHome, { swipe: (d) => changeWorld(d) });
 }
 function changeWorld(d) {
-  const n = Math.max(0, Math.min(WORLDS.length - 1, save.world + d));
+  const n = Math.max(0, Math.min(OPEN_WORLDS - 1, save.world + d));
   if (n !== save.world) { save.world = n; persist(); Audio.click(); showWorlds(); }
 }
 function drawHome(u) {
@@ -657,7 +660,7 @@ function drawHome(u) {
   // arrows
   const ay = u.h * 0.52, asz = 56;
   for (const [d, x, ic] of [[-1, PAD, 'left'], [1, u.w - PAD - asz, 'right']]) {
-    const dis = (d < 0 && wi === 0) || (d > 0 && wi === WORLDS.length - 1);
+    const dis = (d < 0 && wi === 0) || (d > 0 && wi === OPEN_WORLDS - 1);
     c.save(); if (dis) c.globalAlpha = 0.35;
     if (u.isDown('arr' + d)) { c.translate(x + asz / 2, ay + asz / 2); c.scale(0.92, 0.92); c.translate(-(x + asz / 2), -(ay + asz / 2)); }
     c.beginPath(); c.arc(x + asz / 2, ay + asz / 2, asz / 2 + 3, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill();
@@ -675,8 +678,8 @@ function drawHome(u) {
     u.rr(u.w / 2 - sw / 2, sy, sw, sh2, 14); c.fillStyle = 'rgba(10,30,80,0.45)'; c.fill();
     u.text(w.sub, u.w / 2, sy + sh2 / 2 + 1, 17, '#fff', { maxW: sw - 20 });
   }
-  const nLv = WORLDS.reduce((a, x) => a + x.levels.length, 0);
-  const wc = `World ${wi + 1} / ${WORLDS.length} · ${nLv} levels` + (w.starsReq ? `   ★ ${w.starsReq}` : '');
+  const nLv = WORLDS.slice(0, OPEN_WORLDS).reduce((a, x) => a + x.levels.length, 0);
+  const wc = `World ${wi + 1} / ${OPEN_WORLDS} · ${nLv} levels` + (wi === OPEN_WORLDS - 1 ? ' · more soon!' : '') + (w.starsReq ? `   ★ ${w.starsReq}` : '');
   u.text(wc, u.w / 2, countY, 17);
   const bob = Math.sin(u.t * 3.9) * 3;
   if (unlocked) {
@@ -1513,7 +1516,7 @@ function drawSettings(u) {
     y += 64;
     u.text('Controls: ◀ ▶ on screen, or Arrow keys / A D.', u.w / 2, y + 8, 12, '#fff', { maxW: pw - 40 });
     u.text('In the air, ▶ tilts back and ◀ tilts forward.', u.w / 2, y + 26, 12, '#fff', { maxW: pw - 40 });
-    u.text(`Levels cleared: ${totalDone()}/${WORLDS.reduce((a, w) => a + w.levels.length, 0)} · Race tracks: ${RACE_TRACKS.length}`, u.w / 2, y + 44, 12, '#fff', { maxW: pw - 40 });
+    u.text(`Levels cleared: ${totalDone()}/${WORLDS.slice(0, OPEN_WORLDS).reduce((a, w) => a + w.levels.length, 0)} · Race tracks: ${RACE_TRACKS.length}`, u.w / 2, y + 44, 12, '#fff', { maxW: pw - 40 });
     u.text(`Crane Rush v${VERSION} · quality ${R.quality} · ${P.kind}${dev() ? ' · DEV' : ''}`, u.w / 2, y + 62, 11, 'rgba(255,255,255,0.7)', { outline: false });
     u.hit(px + 16, y + 50, pw - 32, 26, { id: 'devtap', onTap: () => {
       devTaps = u.t - devTapT < 1.5 ? devTaps + 1 : 1; devTapT = u.t;
@@ -1561,7 +1564,7 @@ function pauseMenu() {
 function testMenu() {
   const w = WORLDS[save.world];
   ui.overlay((u, age) => {
-    const opts = [['hard', `Hard levels of ${w.name} (4–${w.levels.length})`, 'purple'], ['hardall', 'Hard levels: 20 random (level 4+)', 'purple'], ['tour', `Tour: level 1 of all ${WORLDS.length} worlds`, 'blue'], ['random', '20 random levels (any world)', 'blue'], ['world', `All ${w.levels.length} levels of ${w.name}`, 'blue'], ['races', '10 random races (3–6 lanes)', 'orange'], ['close', 'Close', 'gray']];
+    const opts = [['hard', `Hard levels of ${w.name} (4–${w.levels.length})`, 'purple'], ['hardall', 'Hard levels: 20 random (level 4+)', 'purple'], ['tour', `Tour: level 1 of all ${OPEN_WORLDS} worlds`, 'blue'], ['random', '20 random levels (any world)', 'blue'], ['world', `All ${w.levels.length} levels of ${w.name}`, 'blue'], ['races', '10 random races (3–6 lanes)', 'orange'], ['close', 'Close', 'gray']];
     const rowH = Math.min(62, (u.h - 260) / opts.length), pw = Math.min(u.w * 0.9, 380), ph = 150 + opts.length * rowH, px = u.w / 2 - pw / 2, py = u.h / 2 - ph / 2;
     u.panel(px, py, pw, ph, { ribbon: 'Test mode', ribbonColor: '#46d35c', scale: u.pop(0, 0.3, age) });
     u.text('The bot drives like a… (results are not saved)', u.w / 2, py + 44, 14, '#fff', { maxW: pw - 20 });
@@ -1571,11 +1574,11 @@ function testMenu() {
   });
 }
 function startTest(mode) {
-  const pickLevel = () => { const w = WORLDS[(Math.random() * WORLDS.length) | 0]; return { level: w.levels[(Math.random() * w.levels.length) | 0] }; };
+  const pickLevel = () => { const w = WORLDS[(Math.random() * OPEN_WORLDS) | 0]; return { level: w.levels[(Math.random() * w.levels.length) | 0] }; };
   let queue;
   if (mode === 'hard') queue = WORLDS[save.world].levels.slice(3).map((level) => ({ level }));
-  else if (mode === 'hardall') queue = Array.from({ length: 20 }, () => { const w = WORLDS[(Math.random() * WORLDS.length) | 0]; return { level: w.levels[3 + ((Math.random() * (w.levels.length - 3)) | 0)] }; });
-  else if (mode === 'tour') queue = WORLDS.map((w) => ({ level: w.levels[0] }));
+  else if (mode === 'hardall') queue = Array.from({ length: 20 }, () => { const w = WORLDS[(Math.random() * OPEN_WORLDS) | 0]; return { level: w.levels[3 + ((Math.random() * (w.levels.length - 3)) | 0)] }; });
+  else if (mode === 'tour') queue = WORLDS.slice(0, OPEN_WORLDS).map((w) => ({ level: w.levels[0] }));
   else if (mode === 'random') queue = Array.from({ length: 20 }, pickLevel);
   else if (mode === 'world') queue = WORLDS[save.world].levels.map((level) => ({ level }));
   else queue = Array.from({ length: 10 }, () => ({ level: RACE_TRACKS[(Math.random() * RACE_TRACKS.length) | 0], lanes: 3 + ((Math.random() * 4) | 0) }));

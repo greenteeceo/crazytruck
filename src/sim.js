@@ -410,24 +410,33 @@ export class Sim {
     // (also when it hops a little off the road while up there: still standing on end, not flying)
     const cp = this.chassis.getPosition(), gy = this.groundAt(cp.x), nearGround = gy != null && cp.y - gy < 2.8;
     const upright = Math.abs(ang) > 0.35 && Math.abs(ang) < 2.2 && (air ? nearGround : (ang > 0 ? this.wheelTouch[front] <= 0 : this.wheelTouch[rear] <= 0));
+    // Holding the throttle down through it is punished: if the gas was already held when the nose came up and
+    // the player never lets go, nothing helps - the engine keeps lifting the nose and the truck can go over on its
+    // back. Letting go (even briefly) lets it drop; pressing again then brings it down onto its wheels.
+    if (upright && ang > 0) { if (!this.wasUpright) this.upHeld = t > 0; if (t <= 0) this.upHeld = false; } else this.upHeld = false;
+    this.wasUpright = upright && ang > 0;
+    const heldThrough = upright && ang > 0 && this.upHeld && t > 0;
+    const recover = upright && t !== 0 && !heldThrough;
     // pressing against the way the truck is rolling brakes it first (wheels held, not spun backwards); it only
     // drives the other way once it has nearly stopped. So ◀ while going forward = brake, then reverse.
     const braking = (t < 0 && vx > 1) || (t > 0 && vx < -1);
     for (const j of this.joints) {
       if (!j) continue;
       if (t !== 0 && braking) { j.setMotorSpeed(0); j.setMaxMotorTorque(s.torque * 0.5); }
-      else if (t !== 0) { j.setMotorSpeed(-t * s.speed); j.setMaxMotorTorque(s.torque * (upright ? 0.1 : 1)); }
+      else if (t !== 0) { j.setMotorSpeed(-t * s.speed); j.setMaxMotorTorque(s.torque * (recover ? 0.1 : 1)); }
       else { j.setMotorSpeed(0); j.setMaxMotorTorque(this.state === 'win' ? s.torque * 0.6 : s.torque * 0.06); }
     }
-    if (!air && t !== 0 && running && !braking && !upright) {
+    if (!air && t !== 0 && running && !braking && (!upright || heldThrough)) {
       // engine torque reaction: strongest when the wheels are spinning up from a standstill, fades out at speed.
       // The same both ways (reversing lifts the nose's opposite end just as gently). Hold it and it wheelies.
       const wv = Math.abs(this.wheels[0].getAngularVelocity() + this.wheels[1].getAngularVelocity()) / 2;
       const slip = Math.max(0, 1 - wv / s.speed);
       const kick = (s.wheelie ?? 2.4) * (t > 0 ? 0.25 : 0.12);   // backing up barely lifts the back
-      this.chassis.setAngularVelocity(this.chassis.getAngularVelocity() + t * kick * slip * DT);
+      // stood up with the gas held through it: the back wheel driving hard keeps the nose climbing
+      const held = heldThrough ? 1.6 + 2.2 * Math.min(1, (ang - 0.35) / 0.8) : 0;
+      this.chassis.setAngularVelocity(this.chassis.getAngularVelocity() + t * (kick * slip + held) * DT);
     }
-    if (upright && t !== 0 && running) {
+    if (recover && running) {
       // standing up and the player keeps pressing: the truck comes back down onto its wheels and goes on
       // (it is never driven along standing on end)
       const k = 4 + 6 * Math.min(1, (Math.abs(ang) - 0.35) / 1.0);   // the more upright, the firmer it is brought down
@@ -436,7 +445,7 @@ export class Sim {
     }
     if (air) {
       this.airTime += DT;
-      if (t !== 0 && !upright) {
+      if (t !== 0 && (!upright || heldThrough)) {
         // throttle / brake in the air tip the truck back / forward (spinning the big wheels): enough to line up a landing
         const av = this.chassis.getAngularVelocity() + t * s.air * 1.0 * DT;
         this.chassis.setAngularVelocity(Math.max(-4, Math.min(4, av)));
@@ -591,7 +600,7 @@ export class Sim {
       for (const h of this.hook) h.getFixtureList().setFilterData(HOOK_FILTER);
     }
     this.recoverPose = { x: gx, y: cy };
-    this.headTouch = 0; this.headProp = 0; this.shellTop = 0; this.stuckT = 0; this.stuckAt = null; this.uprightT = 0; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
+    this.headTouch = 0; this.headProp = 0; this.shellTop = 0; this.stuckT = 0; this.stuckAt = null; this.uprightT = 0; this.upHeld = false; this.wasUpright = false; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
     for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
     this.state = 'recover'; this.reason = ''; this.freeze = hold;
     this.maxX = Math.max(this.maxX, gx);
