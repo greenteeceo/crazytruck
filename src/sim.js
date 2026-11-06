@@ -323,7 +323,8 @@ export class Sim {
     this.impacts.length = 0;
     if (this.time - (this.lastImpactT ?? -9) < 0.12) return;
     this.lastImpactT = this.time;
-    if (best.heavy) { this.lastHardV = best.v; this.lastHardT = this.time; }
+    // the hardest hit of the last moment (a crash is judged by how hard the truck actually hit something)
+    if (best.heavy && (best.v > (this.lastHardV ?? 0) || this.time - (this.lastHardT ?? -9) > 0.6)) { this.lastHardV = best.v; this.lastHardT = this.time; }
     this.events.push({ type: 'impact', ...best });
     if (this.state !== 'run') return;
   }
@@ -480,11 +481,11 @@ export class Sim {
     this.state = 'fail'; this.reason = reason;
     this.failPose = this.classifyPose(reason);
     if (reason === 'crash') {
-      // how bad was it? speed going in, the hardest recent hit, how fast it was spinning
-      const v = this.chassis.getLinearVelocity(), hit = this.time - (this.lastHardT ?? -9) < 0.6 ? this.lastHardV : 0;
-      const sev = Math.max(Math.hypot(v.x, v.y), hit) + Math.abs(this.chassis.getAngularVelocity()) * 0.6;
-      this.severity = sev; this.tier = sev < 4.5 ? 1 : sev < 9 ? 2 : 3;
-      // a gentle roll-over keeps everything on; a medium crash loses an axle; a big one sends both flying
+      // how bad was it? Only a real hit counts: how fast the truck slammed into the road / a wall along the contact
+      // normal in the last moment. Tipping over, rolling or sliding onto the roof without a hard hit is a roll-over.
+      const hit = this.time - (this.lastHardT ?? -9) < 0.6 ? this.lastHardV : 0;
+      this.severity = hit; this.tier = hit < 8 ? 1 : hit < 12 ? 2 : 3;
+      // a roll-over keeps everything on; a hard smash loses a wheel and small parts; a violent one sends both wheels and big parts flying
       if (this.tier >= 2) this.loseWheel();
       if (this.tier >= 3) this.loseWheel(this.lostWheel === 0 ? 1 : 0);
       this.breakApart(this.tier);
