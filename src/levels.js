@@ -39,8 +39,8 @@ const classic = [
   }, { ai: { airAngle: -0.1 } }),
   lvl('Log Jam', 'grass', (b) => {
     b.ground(-8, 50, 0).dyn(14, 0.3, 0.6, 0.6, 'log', 0.2).dyn(15, 0.3, 0.6, 0.6, 'log', 0.2).dyn(14.5, 0.9, 0.6, 0.6, 'log', 0.2)
-      .hill(20, 28, 1.2).stack(32, 0, 2, 2, 0.7, 'crate').bridge(50, 0, 62, 0).ground(62, 76, 0)
-      .gem(24, 2.6).gem(40, 1.2).gem(56, 1.0).finish(70);
+      .hill(20, 30, 1.2).stack(36, 0, 2, 2, 0.7, 'crate').bridge(50, 0, 62, 0).ground(62, 76, 0)
+      .gem(25, 2.6).gem(44, 1.2).gem(56, 1.0).finish(70);
   }, { ai: { zones: [[48, 63, 6]] } }),
   lvl('Island Tour', 'grass', (b) => {
     b.ground(-8, 12, 0).bridge(12, 0, 22, 0).ground(22, 34, 0).ramp(28, 0, 34, 1.2, 'grass', -0.5)
@@ -60,7 +60,7 @@ const construction = [
       .ground(40, 58, 0).gem(18, 1.0).gem(37, 2.8).gem(48, 1.2).finish(52);
   }),
   lvl('Crate Stack', 'concrete', (b) => {
-    b.ground(-8, 56, 0).stack(14, 0, 3, 2, 0.85).stack(30, 0, 2, 2, 0.85).crate(42, 0, 1.0).crate(43, 0, 1.0)
+    b.ground(-8, 56, 0).stack(14, 0, 3, 2, 0.75).stack(30, 0, 2, 2, 0.75).crate(42, 0, 1.0).crate(43, 0, 1.0)
       .gem(20, 1.2).gem(36, 1.2).gem(46, 1.2).finish(50);
   }),
   lvl('Scaffold Climb', 'concrete', (b) => {
@@ -92,8 +92,8 @@ const construction = [
       .gem(16.5, 2.6).gem(29.5, 3.4).gem(42.5, 4.2).finish(60, 0.8);
   }),
   lvl('Skyline', 'concrete', (b) => {
-    b.ground(-8, 10, 0).block(16, -0.2, 12, 0.4, 'girder').ground(22, 30, 0).stack(25, 0, 2, 2, 0.65)
-      .mover(34.5, -0.3, 6.5, 0.6, 1.4, 0, 2.4, 'girder').ground(39, 48, 0).ramp(42, 0, 48, 1.3)
+    b.ground(-8, 10, 0).block(16, -0.2, 12, 0.4, 'girder').ground(22, 31, 0).stack(25, 0, 3, 1, 0.65)
+      .mover(34.5, -0.3, 6.5, 0.6, 1.4, 0, 2.4, 'girder').ground(38, 48, 0).ramp(42, 0, 48, 1.3)
       .ground(52, 62, 0).block(66.6, -1.6, 0.8, 3.6, 'girder').seesaw(66.6, 0.3, 9.2, 0.2, 0.2, 'girder')
       .ground(71.2, 88, -0.8).gem(16, 1.0).gem(34.5, 1.0).gem(51, 2.8).gem(76, 0.4).finish(82, -0.8);
   }, { ai: { zones: [[62, 72, 6]] } }),
@@ -164,7 +164,7 @@ const science = [
   lvl('Low Gravity', 'metal', (b) => {
     b.ground(-8, 16, 0).ramp(10, 0, 16, 1.2).ground(23, 34, 0.8).ramp(28, 0.8, 34, 2.0).ground(46, 66, 0)
       .gems(19, 4.0, 3, 2.2).gems(37, 5.0, 3, 2.4).finish(60);
-  }, { gravity: 5, ai: { airAngle: -0.05 } }),
+  }, { ai: { airAngle: -0.05 } }),
   lvl('Moving Lifts', 'metal', (b) => {
     b.ground(-8, 10, 0).mover(14.5, -0.3, 6.5, 0.6, 1.6, 0, 2.4).ground(19, 26, 0).mover(30.5, -0.3, 6.5, 0.6, 1.6, 0, 2.0, 'metal', 2)
       .ground(35, 40, 0).mover(44.5, -0.3, 6.5, 0.6, 1.6, 0, 2.8, 'metal', 1).ground(49, 64, 0)
@@ -175,10 +175,10 @@ const science = [
       .ground(25, 30, 1.0, 'metal', 4).ramp(27, 1.0, 30, 1.6).ground(35, 52, 0.6, 'metal', 3.6)
       .deco('tank', 12.5, -2).deco('tank', 22.5, -2).deco('tank', 32.5, -2).gem(12.5, 2.4).gem(22.5, 3.0).gem(32.5, 3.4).finish(46, 0.6);
   }),
-  lvl('Zero-G Hop', 'metal', (b) => {
-    b.ground(-8, 12, 0).pad(10, 0.02, 2.4, 9, 6).ground(24, 30, 1.0).pad(28, 1.02, 2.4, 9, 6).ground(33, 60, 0.5)
+  lvl('Pad Hop', 'metal', (b) => {
+    b.ground(-8, 12, 0).pad(10, 0.02, 2.4, 11, 8).ground(22, 30, 1.0).pad(28, 1.02, 2.4, 11, 8).ground(42, 60, 0.5)
       .gems(15, 4.4, 3, 2).gems(33, 5.4, 3, 2).finish(54, 0.5);
-  }, { gravity: 3.6, ai: { airAngle: -0.05 } }),
+  }, { ai: { airAngle: -0.05 } }),
   lvl('Lift Off', 'metal', (b) => {
     b.ground(-8, 14, 0).pad(12, 0.02, 2.4, 6, 13).block(17, 0.5, 1.2, 7, 'metal').ground(17.6, 34, 4, 'metal', 7)
       .ramp(34, 4, 42, 0).ground(42, 58, 0).gem(14, 5.0).gem(26, 5.2).gem(46, 1.2).finish(52);
@@ -187,10 +187,10 @@ const science = [
     b.ground(-8, 60, 0).stack(12, 0, 3, 2, 0.85, 'labcrate').pad(22, 0.02, 2.4, 11, 7).stack(30, 0, 4, 2, 0.85, 'labcrate')
       .stack(44, 0, 2, 2, 0.85, 'labcrate').gem(25, 3.4).gem(38, 1.2).gem(50, 1.2).finish(54);
   }),
-  lvl('Gravity Well', 'metal', (b) => {
+  lvl('Seesaw Leap', 'metal', (b) => {
     b.ground(-8, 12.4, 0).block(17, -1.6, 0.8, 3.6).seesaw(17, 0.3, 9.2, 0.2, 0.2, 'metal').ground(21.6, 30, -0.8)
-      .ramp(25, -0.8, 30, 0.4, 'metal', -1.4).ground(40, 58, 0).gems(31, 3.0, 4, 2).finish(52);
-  }, { gravity: 6, ai: { zones: [[8, 24, 6]] } }),
+      .ramp(25, -0.8, 30, 0.4, 'metal', -1.4).ground(36, 58, 0).gems(31, 3.0, 4, 2).finish(52);
+  }, { ai: { zones: [[8, 24, 6]] } }),
   lvl('Reactor Run', 'metal', (b) => {
     b.ground(-8, 12, 0).pad(10, 0.02, 2.4, 11, 8).ground(22, 30, 0).mover(34.5, -0.3, 6.5, 0.6, 1.6, 0, 2.4).ground(39, 46, 0)
       .stack(42, 0, 2, 2, 0.85, 'labcrate').pad(50, 0.02, 2.4, 6, 13).ground(46, 54.4, 0).block(55, 0.5, 1.2, 7)
@@ -253,7 +253,7 @@ export const RACE_TRACKS = [
     b.ground(-8, 14, 0).ramp(8, 0, 14, 1.0).ground(22, 34, 0.8).ball(30, 2.0, 0.9).pad(33, 0.82, 2.4, 9, 6).ground(48, 58, 0.5)
       .wall(52, 2, 3, 0.5, 0.75, 'labcrate').ramp(54, 0.5, 58, 1.4).ground(70, 100, 0).dominoes(76, 5, 1.6).finish(94)
       .gems(17, 4.0, 3, 2.2).gems(38, 5.0, 3, 2.6).gems(61, 4.6, 3, 2.4);
-  }, { gravity: 5, ai: { airAngle: -0.05 } }),
+  }, { ai: { airAngle: -0.05 } }),
   race('Rolling Thunder', 2, 'castle', (b) => {
     b.ground(-8, 10, 0, 'grass').ramp(10, 0, 40, 4.5).ground(40, 52, 4.5, 'castle', 7.5)
       .ball(45, 5.5, 0.9, 0).ball(49, 5.5, 0.8, 0)

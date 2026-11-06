@@ -167,8 +167,7 @@ function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
   // sea jump finale: a long run-up, a kicker and open water the truck clears on its own speed (no items)
   const seaGaps = [];
   if (sea) {
-    const grav = def.gravity ?? (def.lowGravChance && rng(seed + 11)() < def.lowGravChance ? 5.5 : 10);
-    const G = Math.round(sea * Math.sqrt(10 / grav));
+    const G = sea;
     ground(x, x + 24);
     b.ramp(x + 24, top, x + 28, top + 1.6, st.ground, water);
     const lip = x + 28, land = lip + G;
@@ -185,8 +184,6 @@ function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
   const words = race ? RACE_WORDS : def.words;
   const nr = rng(seed * 7 + 3);
   const opts = { water, ai, name: nameFor(words, nr), gen: seed, ...(seaGaps.length ? { seaGaps } : {}) };
-  if (def.lowGravChance && rng(seed + 11)() < def.lowGravChance) { opts.gravity = 5.5; ai.airAngle = -0.05; }
-  if (def.gravity) { opts.gravity = def.gravity; ai.airAngle = -0.05; }
   return { pieces: b.p, start: { x: 0, y: 0 }, ...opts };
 }
 

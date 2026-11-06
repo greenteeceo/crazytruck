@@ -327,11 +327,10 @@ function tick(dt) {
       rs.step(r.bot(rs));
       for (const e of rs.drainEvents()) {
         if (e.type === 'win') r.finish = rs.finishTime;
-        else if (e.type === 'land') r.car.squash = Math.min(1, e.v);
         else if (e.type === 'recover') R.carRecover(r.car, e);
         else if (e.type === 'breakup') R.breakAcc(r.car, e.tier);
         else if (e.type === 'wheelOff') R.splitWheel(r.car, e.idx);
-        else if (e.type === 'impact' && e.v > 4) impactFx(e, rs, r.z, r.spec?.look, true);
+        else if (e.type === 'impact') { R.hitCar(r.car, e); if (e.v > 4 && !impactFx(e, rs, r.z, r.spec?.look, true)) R.hitSurface(e, r.z); }
       }
       racerWatch(r.r);
       if (rs.time > 120 && r.finish == null) r.finish = Infinity;
@@ -391,14 +390,15 @@ function fx(e, sim, z = 0, car = null) {
   const p = sim.chassis.getPosition();
   switch (e.type) {
     case 'impact': {
+      if (car) R.hitCar(car, e);   // dent where it hit + the body rocks on its mounts
       const k = impactFx(e, sim, z, game?.spec?.look);
+      if (!k) R.hitSurface(e, z);   // a wall / the road: dust and sparks, no debris
       if (!k) { if (e.v > 8 && e.heavy) { Audio.land(Math.min(1, e.v / 12)); R.shake = Math.max(R.shake, 0.12); } break; }   // blocker: a thud, no debris
       Audio.land(Math.min(1, e.v / 10));
       if (e.v > 8) { R.shake = Math.max(R.shake, 0.15 + k * 0.35); P.vibrate(); }
       if (e.v > 9 && (game.impT || 0) < ui.t) { game.impT = ui.t + 0.8; R.popText(e.heavy ? 'CRASH!' : 'SMASH!', e.x, e.y + 2.2, z, '#ff6b74'); }
       break;
     }
-    case 'tumble': R.popText('Too fast!', p.x, p.y + 2.8, z, '#ffd21a'); R.shake = 0.5; Audio.crash(); P.vibrate(); break;
     case 'bannerHit': {
       const look = game?.spec?.look;
       R.debris(e.x - 0.3, e.y, z, [0x1d1d22, 0xffffff, 0x8d93a3, look?.body ?? 0xff9a14], 18, 4 + Math.min(5, e.v * 0.5), -1, sim.groundAt(e.x - 1.5) ?? e.y - 3.6);
@@ -411,11 +411,10 @@ function fx(e, sim, z = 0, car = null) {
       // landing on the road: tyre smoke puffs at both wheels, no debris
       for (const w of sim.wheels) { const q = w.getPosition(); for (let i = 0; i < 2 + Math.min(4, e.v * 3); i++) R.smoke(q.x + (Math.random() - 0.5) * 1.2, q.y - sim.spec.wheelR + 0.25, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.35 + Math.min(0.35, e.v * 0.18), (Math.random() - 0.5) * 2.4, 0.2 + Math.random() * 0.5); }
       Audio.land(e.v);
-      if (car) car.squash = Math.min(1, 0.4 + e.v * 0.5);
       if (e.v > 1) R.shake = 0.2;
       if (e.v > 1.3) R.popText(e.v > 2 ? 'HUGE AIR!' : 'Nice air!', p.x, p.y + 2.6, z, '#7df9ff');
       break;
-    case 'pad': case 'boost': R.burst(p.x, p.y - 0.6, 0x5ff0ff, 18, 6, -3, 0.7, z); R.punch = 1; Audio.boost(); break;
+    case 'pad': case 'boost': R.burst(p.x, p.y - 0.6, 0x5ff0ff, 18, 6, -3, 0.7, z); Audio.boost(); break;
     case 'bonk':
       if ((game.bonkT || 0) < ui.t) {
         game.bonkT = ui.t + 0.45;
@@ -431,7 +430,6 @@ function fx(e, sim, z = 0, car = null) {
     case 'recover': if (car) { R.carRecover(car, e); R.popText(e.to.x < e.from.x - 1 ? 'Back you go!' : 'Flip!', e.from.x, e.from.y + 2.6, z, '#ffffff'); } break;
     case 'win':
       for (const c of [0xffffff, 0xff3d6b, 0x2f7cf6, 0xffd21a]) R.burst(p.x + 1, p.y + 2, c, 14, 7, -5, 1.2, z);
-      if (car) car.hop = 1.2;
       Audio.win(); break;
     case 'fail':
       if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }

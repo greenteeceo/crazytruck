@@ -424,7 +424,7 @@ export class Renderer {
     if (ghost) [parts.group, ...wheels, ...hook].forEach((o) => o.traverse((m) => { if (m.isMesh) { m.material = (Array.isArray(m.material) ? m.material[0] : m.material).clone(); m.material.transparent = true; m.material.opacity = 0.55; m.castShadow = false; } }));
     let tag = null;
     if (label) { tag = nameSprite(label, color); if (this.laneCount > 1) tag.scale.set(4.8, 1.2, 1); this.scene.add(tag); }
-    const car = { sim, spec, parts, wheels, hook, tag, dustT: 0, z, squash: 0, hop: 0, lift: 0, hull: this.truckHull(spec, parts) };
+    const car = { sim, spec, parts, wheels, hook, tag, dustT: 0, z, lift: 0, jolt: 0, joltV: 0, hull: this.truckHull(spec, parts) };
     if (!this.groundProf) this.buildGroundProfile(sim);
     this.cars.push(car);
     return car;
@@ -692,10 +692,10 @@ export class Renderer {
       if (car.tyres?.length) this.rollTyres(car, dt);
       const c = sim.chassis, al = this.alpha ?? 1, p = sim.pose(c, al);
       const z = car.z;
-      // squash & stretch on landings, little hop on finish
-      car.squash *= Math.exp(-dt * 7); car.hop = Math.max(0, car.hop - dt);
-      const sq = Math.sin(Math.min(1, car.squash) * Math.PI) * car.squash;
-      const hopY = car.hop > 0 ? Math.abs(Math.sin(car.hop * 9)) * 0.35 * car.hop : 0;
+      // body jolt after a hit: the cab rocks a little on its mounts and settles (damped spring, no cartoon squash)
+      const jdt = Math.min(dt, 1 / 30);
+      car.joltV += (-260 * car.jolt - 15 * car.joltV) * jdt; car.jolt += car.joltV * jdt;
+      if (Math.abs(car.jolt) < 1e-4 && Math.abs(car.joltV) < 1e-3) car.jolt = car.joltV = 0;
       if (car.anim) {
         // flip-back: lift, roll upright and drop a little behind the crash spot
         // phases: lift off the ground at the crash angle, roll upright while moving back, drop onto the wheels
@@ -704,15 +704,15 @@ export class Renderer {
         const k = Math.min(1, an.t / an.dur), ss = (a, b) => { const t = Math.min(1, Math.max(0, (k - a) / (b - a))); return t * t * (3 - 2 * t); };
         const kr = ss(0.12, 0.8), kx = ss(0.08, 0.85);
         const x = an.from.x + (an.to.x - an.from.x) * kx, ang = an.from.a + (an.to.a - an.from.a) * kr;
-        let y = an.from.y + (an.to.y - an.from.y) * kx + Math.sin(Math.min(1, k / 0.85) * Math.PI) * 1.1;
-        if (k > 0.85) y += Math.abs(Math.sin((k - 0.85) / 0.15 * Math.PI)) * 0.22;   // little bounce on landing
+        let y = an.from.y + (an.to.y - an.from.y) * kx + Math.sin(Math.min(1, k / 0.85) * Math.PI) * 0.6;   // just enough to clear the road while it rolls
+        if (k > 0.85) y += Math.abs(Math.sin((k - 0.85) / 0.15 * Math.PI)) * 0.08;   // little bounce on landing
         y += this.hullLift(car, x, y, ang, true);
         car.lift = 0;
         car.parts.group.position.set(x, y, z); car.parts.group.rotation.z = ang; car.parts.group.scale.set(1, 1, 1);
         const ca = Math.cos(ang), sa = Math.sin(ang), sp = car.spec;
         sp.wheelX.forEach((wx, i) => { car.wheels[i].position.set(x + wx * ca - sp.wheelY * sa, y + wx * sa + sp.wheelY * ca, z); car.wheels[i].rotation.z += dt * 12; });
         if (sp.crane) { const cr = sp.crane, tx = cr.pivot[0] + Math.cos(cr.angle) * cr.length, ty = cr.pivot[1] + Math.sin(cr.angle) * cr.length; car.hook.forEach((h, i) => { const ly = ty - cr.linkLen * (i + 0.5); h.position.set(x + tx * ca - ly * sa, y + tx * sa + ly * ca, z); h.rotation.z = ang; }); }
-        if (k >= 1) { car.anim = null; car.squash = 0.9; for (let i = 0; i < 8; i++) this.smoke(x + (Math.random() - 0.5) * 3, y - 0.9, z + (Math.random() - 0.5) * 1.8, 0.35, (Math.random() - 0.5) * 2, 0.3 + Math.random() * 0.4); }
+        if (k >= 1) { car.anim = null; car.jolt = 0; car.joltV = -0.6; for (let i = 0; i < 8; i++) this.smoke(x + (Math.random() - 0.5) * 3, y - 0.9, z + (Math.random() - 0.5) * 1.8, 0.35, (Math.random() - 0.5) * 2, 0.3 + Math.random() * 0.4); }
         if (an.t >= an.dur * 0.5 && (car.flying?.length || car.tyres?.length)) this.fixAcc(car);   // parts snap back on mid-flip
         if (car.tag) car.tag.position.set(x, y + 3.2, z);
         continue;
@@ -722,9 +722,8 @@ export class Renderer {
       const needLift = sim.state === 'fail' || Math.abs(na) > 0.9 || sim.airborne;
       const want = needLift ? this.hullLift(car, p.x, p.y, p.a) : 0;
       car.lift = want > car.lift ? want : car.lift + (want - car.lift) * (1 - Math.exp(-dt * 8));
-      const ly = hopY + car.lift;
-      car.parts.group.position.set(p.x, p.y + ly, z); car.parts.group.rotation.z = p.a;
-      car.parts.group.scale.set(1 + sq * 0.1, 1 - sq * 0.16, 1 + sq * 0.08);
+      const ly = car.lift;
+      car.parts.group.position.set(p.x - Math.sin(p.a) * car.jolt * 0.6, p.y + ly + Math.abs(car.jolt) * 0.25, z); car.parts.group.rotation.z = p.a + car.jolt;
       sim.wheels.forEach((w, i) => {
         const q = sim.pose(w, al), wv = car.wheels[i];
         wv.position.set(q.x, q.y + (sim.joints[i] ? ly : 0), z); wv.rotation.z = q.a;
@@ -735,7 +734,7 @@ export class Renderer {
         wv.userData.sq = (wv.userData.sq || 0) + (comp - (wv.userData.sq || 0)) * k;
         wv.scale.set(1 + wv.userData.sq * 0.08, 1 - wv.userData.sq * 0.12, 1 + wv.userData.sq * 0.05);
       });
-      sim.hook.forEach((b, i) => { const q = sim.pose(b, al); car.hook[i].position.set(q.x, q.y + (sim.hookJoint ? ly : hopY), z); car.hook[i].rotation.z = q.a; });
+      sim.hook.forEach((b, i) => { const q = sim.pose(b, al); car.hook[i].position.set(q.x, q.y + (sim.hookJoint ? ly : 0), z); car.hook[i].rotation.z = q.a; });
       for (const sp of car.parts.spin) sp.obj.rotation[sp.axis] += sp.speed * dt;
       if (car.tag) car.tag.position.set(p.x, p.y + 3.2, z);
       // tyre tracks: drop a mark pair every ~0.45 m a grounded wheel travels
@@ -846,9 +845,7 @@ export class Renderer {
     this.snapCam = false;
     this.camera.position.copy(this.camPos);
     if (this.shake > 0) { this.shake -= dt; const a = this.shake * 0.6; this.camera.position.x += (Math.random() - 0.5) * a; this.camera.position.y += (Math.random() - 0.5) * a; }
-    // FOV punch for boosts
-    this.punch = Math.max(0, (this.punch || 0) - dt * 1.5);
-    const fov = 32 + this.punch * 8;
+    const fov = 32;
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     this.camera.lookAt(this.camLook);
     if (this.sun) { this.sun.position.set(p.x - 8, p.y + 20, 14); this.sun.target.position.set(p.x, p.y, 0); }
@@ -859,6 +856,55 @@ export class Renderer {
   // Start the flip-back animation from a sim 'recover' event. Angle goes the short way round.
   // Crash: accessories up to this severity tier break off the truck and fly / bounce / skid on the ground.
   // At the edge tier only some go (a medium crash does not always lose the bumper).
+  // A hit dents the body where it landed: vertices of the truck's own (per-truck) baked meshes near the
+  // contact point are pushed in along the hit direction, with a little crumple noise. Dents add up but each
+  // vertex can only go in so far, and they stay for the rest of the run - the truck keeps driving.
+  // The body also rocks on its mounts (jolt) in the direction it was hit.
+  hitCar(car, e) {
+    if (!car || car.anim) return;
+    const v = e.v || 0;
+    const g = car.parts.group;
+    // the hit direction in the truck's frame (n points from the truck into what it hit)
+    const a = g.rotation.z, ca = Math.cos(-a), sa = Math.sin(-a);
+    const nx = e.nx * ca - e.ny * sa, ny = e.nx * sa + e.ny * ca;
+    // rock: a hit in front pitches the nose up a touch, a hit on the roof pushes it down, from the back the other way
+    const lp = (this._v1 ||= new THREE.Vector3()).set(e.x, e.y, car.z); g.worldToLocal(lp);
+    const torque = lp.x * ny - lp.y * nx;   // r x n (z component)
+    car.joltV += Math.max(-0.5, Math.min(0.5, -torque * v * 0.012));
+    if (v < 4.5) return;
+    const depth = Math.min(0.16, (v - 4) * 0.022), R0 = 0.45 + Math.min(0.35, v * 0.025);
+    const MAX = 0.22;
+    for (const m of g.children) {
+      if (!(m.userData.baked || m.userData.outline)) continue;
+      const pos = m.geometry.attributes.position;
+      const home = m.userData.home ||= pos.array.slice();
+      const arr = pos.array; let moved = false;
+      for (let i = 0; i < arr.length; i += 3) {
+        const dx = home[i] - lp.x, dy = home[i + 1] - lp.y, d2 = dx * dx + dy * dy;
+        if (d2 > R0 * R0) continue;
+        const f = 1 - Math.sqrt(d2) / R0, f2 = f * f * (3 - 2 * f);
+        // crumple: neighbouring vertices go in by slightly different amounts (hash of the home position)
+        const h = Math.sin(home[i] * 43.1 + home[i + 1] * 71.7 + home[i + 2] * 13.3) * 0.5 + 0.5;
+        const k = depth * f2 * (0.7 + 0.6 * h);
+        let px = arr[i] + nx * k, py = arr[i + 1] + ny * k;
+        const ox = px - home[i], oy = py - home[i + 1], ol = Math.hypot(ox, oy);
+        if (ol > MAX) { px = home[i] + ox / ol * MAX; py = home[i + 1] + oy / ol * MAX; }
+        arr[i] = px; arr[i + 1] = py; moved = true;
+      }
+      if (moved) pos.needsUpdate = true;
+    }
+    car.dents = (car.dents || 0) + 1;
+  }
+
+  // Where something solid was hit: dust kicked off the surface, and sparks off metal or stone.
+  hitSurface(e, z) {
+    const v = e.v || 0; if (v < 3.5) return;
+    const k = Math.min(1, (v - 3) / 9), bx = -e.nx, by = -e.ny;
+    for (let i = 0; i < 2 + Math.round(k * 4); i++) this.smoke(e.x + (Math.random() - 0.5) * 0.5, e.y + (Math.random() - 0.5) * 0.4, z + (Math.random() - 0.5) * 1.6, 0.25 + k * 0.3, bx * 0.6 + (Math.random() - 0.5) * 1.6, 0.3 + Math.random() * 0.6);
+    if ((e.style === 'metal' || e.style === 'girder' || e.style === 'stone' || e.style === 'castle' || e.style === 'concrete' || e.style === 'asphalt') && v > 5)
+      this.burst(e.x, e.y, Math.random() < 0.5 ? 0xffd27a : 0xffa63a, 4 + Math.round(k * 10), 3 + k * 5, -14, 0.28 + k * 0.2, z);
+  }
+
   breakAcc(car, tier = 3) {
     const sim = car.sim, v = sim.chassis.getLinearVelocity();
     car.flying ||= [];
@@ -1106,7 +1152,7 @@ export class Renderer {
     if (this.scene?.background?.isTexture) this.scene.background.dispose();
     // every scene has its own sun: its shadow map is a full render target (up to 2048² depth)
     if (this.sun?.shadow?.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
-    this.cars = []; this._pools = null; this.finish = null; this.finishKick = 0; this.groundProf = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.punch = 0;
+    this.cars = []; this._pools = null; this.finish = null; this.finishKick = 0; this.groundProf = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0;
     this.clouds = []; this.dioramaRoot = null; this.menuSpin = []; this.garage = false;
     this.snapCam = true;
   }

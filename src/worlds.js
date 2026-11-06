@@ -24,7 +24,7 @@ export const WORLD_DEFS = [
     theme: { skyTop: '#2b54d9', skyBottom: '#7aa2ff', mount: [0x284fc9, 0x1d3aa0, 0x3d66e6], water: 0x2aa9ff, waterDeep: 0x1b6fd6, fog: 0x6f8ff0, ui: '#3557e0', deco: ['tree', 'torch', 'rock'], cloud: 0xe9efff },
   },
   {
-    id: 'science', name: 'Science', sub: 'A high-tech lab with energy mechanics.', ...base('science', 'metal', { pillar: 'metal', plank: 'metal', mover: 'metal', crate: 'labcrate', lowGravChance: 0.3 }),
+    id: 'science', name: 'Science', sub: 'A high-tech lab with energy mechanics.', ...base('science', 'metal', { pillar: 'metal', plank: 'metal', mover: 'metal', crate: 'labcrate' }),
     words: [['Quantum', 'Plasma', 'Laser', 'Ion', 'Neutron', 'Photon', 'Fusion', 'Vector', 'Gamma', 'Proton', 'Orbit', 'Turbo'], ['Lab', 'Leap', 'Loop', 'Drift', 'Pulse', 'Jump', 'Test', 'Field', 'Core', 'Boost']],
     theme: { skyTop: '#1d2a5a', skyBottom: '#45d98a', mount: [0x2a3a6e, 0x223060, 0x34508a], water: 0x5cf2a0, waterDeep: 0x24b46a, fog: 0x3f9a8a, ui: '#14a37a', deco: ['tank', 'lamp', 'labcrateDeco'], cloud: 0xcaf7ff },
   },
@@ -73,13 +73,13 @@ export const WORLD_DEFS = [
     starsReq: 90,
   },
   {
-    id: 'moon', name: 'Moon Base', sub: 'Low gravity, big air.', ...base('science', 'moon', { pillar: 'metal', plank: 'metal', mover: 'metal', crate: 'labcrate', gravity: 4 }),
+    id: 'moon', name: 'Moon Base', sub: 'A lunar base among grey craters.', ...base('science', 'moon', { pillar: 'metal', plank: 'metal', mover: 'metal', crate: 'labcrate' }),
     words: [['Lunar', 'Crater', 'Apollo', 'Orbit', 'Rocket', 'Comet', 'Star', 'Galaxy', 'Cosmic', 'Astro', 'Nova', 'Meteor'], ['Base', 'Hop', 'Leap', 'Drift', 'Walk', 'Jump', 'Flight', 'Run', 'Float', 'Bounce']],
     theme: { skyTop: '#02030a', skyBottom: '#1b2142', mount: [0x3a3f56, 0x2c3044, 0x4a5068], water: 0x1a1d30, waterDeep: 0x10121f, fog: 0x1b2142, ui: '#5a6ad0', deco: ['antenna', 'rock', 'tank'], cloud: 0x2a2f48, stars: true },
     starsReq: 120,
   },
   {
-    id: 'mars', name: 'Red Planet', sub: 'Dusty red rocks under a pink sky.', ...base('science', 'mars', { pillar: 'metal', plank: 'metal', mover: 'metal', crate: 'labcrate', gravity: 6.5 }),
+    id: 'mars', name: 'Red Planet', sub: 'Dusty red rocks under a pink sky.', ...base('science', 'mars', { pillar: 'metal', plank: 'metal', mover: 'metal', crate: 'labcrate' }),
     words: [['Martian', 'Rusty', 'Dusty', 'Olympus', 'Rover', 'Red', 'Crimson', 'Phobos', 'Deimos', 'Canyon', 'Solar', 'Ares'], ['Ridge', 'Run', 'Drift', 'Crater', 'Leap', 'Trek', 'Valley', 'Dash', 'Hop', 'Pass']],
     theme: { skyTop: '#c86a5a', skyBottom: '#ffd0b8', mount: [0xb04a30, 0x963a24, 0xc85a3a], water: 0x6a2a1a, waterDeep: 0x4a1a10, fog: 0xe8a088, ui: '#c84a2a', deco: ['rock', 'crystal', 'antenna'], cloud: 0xffe0d0 },
     starsReq: 150,

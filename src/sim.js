@@ -5,7 +5,6 @@ const V = pl.Vec2;
 export const DT = 1 / 60;
 const CAT_TERRAIN = 0x0001, CAT_CAR = 0x0002, CAT_DYN = 0x0004;
 
-const FLIP_V = 12.5;   // m/s into a wall: harder than this and the truck tumbles over it (full speed is ~14-16)
 const FRICTION = { snow: 0.75, icecave: 0.6, asphalt: 0.95, docks: 0.95, toy: 0.9, grass: 0.9, dirt: 0.9, wood: 0.95, stone: 0.85, concrete: 0.85, girder: 0.8, metal: 0.75, castle: 0.85, ice: 0.08, sand: 0.9, pad: 0.8 };
 
 export class Sim {
@@ -191,6 +190,12 @@ export class Sim {
         this.hook.push(b); prev = b;
       }
     }
+    if (s.stab) {
+      // stability upgrade = ballast low in the chassis: the centre of mass moves down, nothing else
+      const md = { mass: 0, center: V(0, 0), I: 0 }; ch.getMassData(md);
+      const c0 = md.center, c1 = V(c0.x, c0.y - 0.22 * s.stab), Ic = md.I - md.mass * (c0.x * c0.x + c0.y * c0.y);
+      ch.setMassData({ mass: md.mass, center: c1, I: Ic + md.mass * (c1.x * c1.x + c1.y * c1.y) });
+    }
     this.mass = ch.getMass() + this.wheels.reduce((a, b) => a + b.getMass(), 0);
     // bodies whose render pose is interpolated between physics steps
     this.tracked = [ch, ...this.wheels, ...this.hook, ...this.dynamics.map((d) => d.body)];
@@ -292,17 +297,10 @@ export class Sim {
     if (best.heavy) { this.lastHardV = best.v; this.lastHardT = this.time; }
     this.events.push({ type: 'impact', ...best });
     if (this.state !== 'run') return;
-    if (best.v > FLIP_V + (this.spec.stab || 0) * 2 && best.heavy && best.wall) {
-      // too hard: the momentum carries the truck over the obstacle (forward tumble), a wheel may come off
-      const over = best.v - FLIP_V - (this.spec.stab || 0) * 2, dir = -Math.sign(best.nx), v = ch.getLinearVelocity();
-      ch.setAngularVelocity(ch.getAngularVelocity() + dir * (3.2 + over * 0.7));
-      ch.setLinearVelocity(V(v.x * 0.55, Math.max(v.y, 0) + 2.5 + over * 0.35));
-      this.events.push({ type: 'tumble', v: best.v });
-    }
   }
 
   // The crane boom is taller than the finish gate: when its tip passes the banner it clangs into it.
-  // Debris + a backwards knock (a fast truck pops a wheelie at the line).
+  // Debris and the hook swinging back (the banner is light: it does not stop the truck).
   checkBanner() {
     const s = this.spec;
     if (!s.crane || this.bannerHit || this.finishX == null || this.debris.some((d) => d.kind === 'boom')) return;
@@ -316,9 +314,7 @@ export class Sim {
         this.bannerHit = true;
         // the boom is over the line: that counts as crossing it (so the knock below can never cost the win)
         if (this.state === 'run') { this.state = 'win'; this.finishTime = this.time; this.events.push({ type: 'win' }); }
-        const v = ch.getLinearVelocity(), sp = Math.abs(v.x);
-        ch.setLinearVelocity(V(v.x * 0.8, v.y));
-        ch.setAngularVelocity(ch.getAngularVelocity() + Math.sign(v.x || 1) * Math.min(3, 0.6 + sp * 0.22));
+        const sp = Math.abs(ch.getLinearVelocity().x);
         for (const h of this.hook) { const hv = h.getLinearVelocity(); h.setLinearVelocity(V(hv.x - sp * 0.8, hv.y + 2)); }
         this.events.push({ type: 'bannerHit', x: this.finishX, y: py, v: sp });
         return;
@@ -382,18 +378,14 @@ export class Sim {
       const vx = this.chassis.getLinearVelocity().x;
       const against = (t > 0 && vx < -1) || (t < 0 && vx > 1) ? 1.3 : 1;   // braking into reverse kicks harder
       const kick = t < 0 ? (s.wheelie ?? 2.4) : (s.wheelie ?? 2.4) * 0.25;   // reverse kicks hardest
-      this.chassis.setAngularVelocity(this.chassis.getAngularVelocity() + t * kick * slip * against * DT / (1 + (s.stab || 0)));
-    }
-    // stability upgrade: a gentle self-righting push while the wheels still touch the ground
-    if (!air && running && s.stab) {
-      let a = this.chassis.getAngle() % (Math.PI * 2); if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
-      if (Math.abs(a) > 0.45 && Math.abs(a) < 1.5) this.chassis.setAngularVelocity(this.chassis.getAngularVelocity() - Math.sign(a) * s.stab * 1.6 * DT);
+      this.chassis.setAngularVelocity(this.chassis.getAngularVelocity() + t * kick * slip * against * DT);
     }
     if (air) {
       this.airTime += DT;
       if (t !== 0) {
-        const av = this.chassis.getAngularVelocity() + t * s.air * DT;
-        this.chassis.setAngularVelocity(Math.max(-4.5, Math.min(4.5, av)));
+        // throttle / brake in the air pitch the truck a little (wheel inertia), not like a jetpack
+        const av = this.chassis.getAngularVelocity() + t * s.air * 0.55 * DT;
+        this.chassis.setAngularVelocity(Math.max(-3.2, Math.min(3.2, av)));
       }
     } else {
       if (this.airTime > 0.45) this.events.push({ type: 'land', v: this.airTime });
@@ -436,7 +428,7 @@ export class Sim {
       if (this.headTouch > 0) {
         this.headTime += DT;
         if (this.headTime > 0.1) this.fail('crash');
-      } else if ((this.headProp || 0) > 0 || (Math.abs(a) > 2.0 && slow)) {
+      } else if (((this.headProp || 0) > 0 && Math.abs(a) > 1.1) || (Math.abs(a) > 2.0 && slow)) {   // a crate on the roof of an upright truck is just a dent
         this.headTime += DT;
         if (this.headTime > 0.6) this.fail('crash');
       } else this.headTime = 0;
