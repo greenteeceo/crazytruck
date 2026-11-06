@@ -420,13 +420,27 @@ export class Sim {
     // pressing against the way the truck is rolling brakes it first (wheels held, not spun backwards); it only
     // drives the other way once it has nearly stopped. So ◀ while going forward = brake, then reverse.
     const braking = (t < 0 && vx > 1) || (t > 0 && vx < -1);
-    for (const j of this.joints) {
-      if (!j) continue;
-      if (t !== 0 && braking) { j.setMotorSpeed(0); j.setMaxMotorTorque(s.torque * 0.5); }
-      else if (t !== 0) { j.setMotorSpeed(-t * s.speed); j.setMaxMotorTorque(s.torque * (recover ? 0.1 : 1)); }
-      else { j.setMotorSpeed(0); j.setMaxMotorTorque(this.state === 'win' ? s.torque * 0.6 : s.torque * 0.06); }
+    // Changing direction: the brakes slow the truck while the wheels keep rolling with the road (they never lock);
+    // once it has stopped the wheels stand still for a beat, then turn the other way.
+    if (braking) this.dirWait = 0.3;
+    const pausing = !braking && t !== 0 && (this.dirWait || 0) > 0 && Math.abs(vx) < 1.2;
+    if (pausing) this.dirWait -= DT; else if (!braking) this.dirWait = 0;
+    if (braking && !air && running) {
+      const bk = this.mass * 6.5 * Math.min(1, Math.abs(vx) / 1.5);
+      this.chassis.applyForceToCenter(V(-Math.sign(vx) * bk * Math.cos(ang), -Math.sign(vx) * bk * Math.sin(ang)), true);
     }
-    if (!air && t !== 0 && running && !braking && (!upright || heldThrough)) {
+    // all-wheel drive with locked axles: a wheel off the ground turns with the one still on it (it does not race
+    // on its own while the other crawls); with both wheels in the air they spin with the engine
+    const down = [0, 1].map((i) => this.wheelTouch[i] > 0 && !this.lostWheels.has(i));
+    this.joints.forEach((j, i) => {
+      if (!j) return;
+      const other = 1 - i, mate = !down[i] && down[other] && this.joints[other] ? this.wheels[other].getAngularVelocity() : null;
+      if (t !== 0 && braking) { j.setMotorSpeed(mate ?? 0); j.setMaxMotorTorque(mate != null ? s.torque * 0.5 : s.torque * 0.03); }
+      else if (pausing) { j.setMotorSpeed(0); j.setMaxMotorTorque(s.torque); }
+      else if (t !== 0) { j.setMotorSpeed(mate ?? -t * s.speed); j.setMaxMotorTorque(s.torque * (recover ? 0.1 : 1)); }
+      else { j.setMotorSpeed(mate ?? 0); j.setMaxMotorTorque(mate != null ? s.torque * 0.3 : this.state === 'win' ? s.torque * 0.6 : s.torque * 0.06); }
+    });
+    if (!air && t !== 0 && running && !braking && !pausing && (!upright || heldThrough)) {
       // engine torque reaction: strongest when the wheels are spinning up from a standstill, fades out at speed.
       // The same both ways (reversing lifts the nose's opposite end just as gently). Hold it and it wheelies.
       const wv = Math.abs(this.wheels[0].getAngularVelocity() + this.wheels[1].getAngularVelocity()) / 2;
