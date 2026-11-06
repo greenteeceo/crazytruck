@@ -1674,7 +1674,7 @@ function drawLoading(u) {
   for (let i = 0; i < (loading.pic ? 0 : 12); i++) { c.rotate(Math.PI / 6); c.beginPath(); c.moveTo(0, 0); c.lineTo(-40, -u.h); c.lineTo(40, -u.h); c.closePath(); c.fillStyle = 'rgba(255,255,255,0.12)'; c.fill(); }
   c.restore();
   const k = u.pop(0, 0.6);
-  c.save(); c.translate(u.w / 2, u.h * 0.2); c.rotate(-0.05); c.scale(k, k); u.text('CRANE', 0, -26, 52); u.text('RUSH', 0, 30, 66, GOLD); c.restore();
+  if (!loading.pic) { c.save(); c.translate(u.w / 2, u.h * 0.2); c.rotate(-0.05); c.scale(k, k); u.text('CRANE', 0, -26, 52); u.text('RUSH', 0, 30, 66, GOLD); c.restore(); }   // the picture has the title in it
   if (loading.art && !loading.pic) {
     const aw = Math.min(u.w * 0.86, 420), ah = aw * loading.art.height / loading.art.width, bob = Math.sin(u.t * 4) * 4;
     c.drawImage(loading.art, u.w / 2 - aw / 2, u.h * 0.44 - ah / 2 + bob, aw, ah);
