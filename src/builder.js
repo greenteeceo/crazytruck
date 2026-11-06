@@ -79,6 +79,9 @@ export function settle(pieces, water = -3) {
       p.pts = p.pts.map(([x, y]) => [x, y <= bot + 1e-6 ? water : y]);
     }
   }
+  // a barrier at the back of the start ground: backing up at the start never drops the truck off the edge
+  { let xs = 0; while (xs > -20 && solid.some((q) => insidePiece(q, xs - 0.05, -0.1))) xs -= 0.1;
+    if (xs > -20 && xs < -2) out.push({ t: 'box', x: xs + 0.5, y: 0.6, w: 1, h: 1.2, s: 'barrel', barrier: true }); }
   const f = pieces.find((p) => p.t === 'finish');
   if (f) {
     const under = solid.find((q) => insidePiece(q, f.x, f.y - 0.1));
