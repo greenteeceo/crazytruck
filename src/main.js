@@ -692,9 +692,7 @@ function drawHome(u) {
     u.rr(u.w / 2 - sw / 2, sy, sw, sh2, 14); c.fillStyle = 'rgba(10,30,80,0.45)'; c.fill();
     u.text(w.sub, u.w / 2, sy + sh2 / 2 + 1, 17, '#fff', { maxW: sw - 20 });
   }
-  const nLv = WORLDS.slice(0, OPEN_WORLDS).reduce((a, x) => a + x.levels.length, 0);
-  const wc = `World ${wi + 1} / ${OPEN_WORLDS} · ${nLv} levels` + (wi === OPEN_WORLDS - 1 ? ' · more soon!' : '') + (w.starsReq ? `   ★ ${w.starsReq}` : '');
-  u.text(wc, u.w / 2, countY, 17);
+  if (w.starsReq) u.text(`★ ${w.starsReq}`, u.w / 2, countY, 17);   // (no world / level count line)
   const bob = Math.sin(u.t * 3.9) * 3;
   if (unlocked) {
     const pw2 = 180;
@@ -961,8 +959,10 @@ function drawFail(u, st) {
 function continueAfterCrash(st) {
   const g = game; if (!g) return;
   st.continued = true; g.continues = (g.continues || 0) + 1;
-  // the clock carries on from where it stopped, with extra time on top: 15 s after running out, 10 s after a crash
-  g.extraT += g.sim.reason === 'time' ? Math.max(15, -timeLeft(g) + 15) : 10; g.tickS = -1;
+  // the clock carries on exactly from where it stopped (36 s left at the crash -> 36, 35, 34 ... after the continue);
+  // only when the time itself ran out does a continue give 15 s to go on with
+  if (g.sim.reason === 'time') g.extraT += Math.max(15, -timeLeft(g) + 15);
+  g.tickS = -1;
   const back = g.sim.reason === 'splash' ? 9 : g.sim.reason === 'time' ? 0 : 5;
   const cp = [...g.me.safe].reverse().find((x) => x <= g.sim.x - back) ?? g.sim.startX;
   respawnAt(g.me, cp);
