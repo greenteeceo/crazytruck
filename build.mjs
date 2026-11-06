@@ -1,7 +1,7 @@
 // Bundles the game into a single self-contained dist/index.html (used by web, artifact and the Android app).
 import { build } from 'esbuild';
 import fs from 'fs';
-const res = await build({ entryPoints: ['src/main.js'], bundle: true, minify: !process.env.NOMIN, format: 'iife', target: ['es2020'], write: false, legalComments: 'none' });
+const res = await build({ entryPoints: ['src/main.js'], bundle: true, minify: !process.env.NOMIN, format: 'iife', target: ['es2020'], write: false, legalComments: 'none', loader: { '.jpg': 'dataurl' } });
 const js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const font = fs.readFileSync('assets/fredoka.woff2').toString('base64');
 const html = fs.readFileSync('src/index.html', 'utf8').replace('__FONT__', () => font).replace('__JS__', () => js);
@@ -19,7 +19,7 @@ fs.writeFileSync('dist/artifact.html', head.trim() + '\n' + body.trim() + '\n');
 // The HS kit (hs-kit/hs-game.js + hs-sdk.min.js) is loaded by game.js itself, next to it; the local stand-in
 // used by the web build is left out.
 const noLocalHS = { name: 'no-local-hs', setup(b) { b.onResolve({ filter: /hs-local\.js$/ }, () => ({ path: 'hs-local', namespace: 'empty' })); b.onLoad({ filter: /.*/, namespace: 'empty' }, () => ({ contents: '' })); } };
-const tt = await build({ entryPoints: ['src/tt-entry.js'], bundle: true, minify: !process.env.NOMIN, format: 'iife', target: ['es2018'], write: false, legalComments: 'none', plugins: [noLocalHS] });
+const tt = await build({ entryPoints: ['src/tt-entry.js'], bundle: true, minify: !process.env.NOMIN, format: 'iife', target: ['es2018'], write: false, legalComments: 'none', plugins: [noLocalHS], loader: { '.jpg': 'dataurl' } });
 const out = 'dist-tiktok';
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
@@ -43,5 +43,6 @@ fs.writeFileSync(`${out}/game.json`, JSON.stringify({ deviceOrientation: 'portra
 const ver = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
 fs.writeFileSync(`${out}/project.config.json`, JSON.stringify({ projectname: 'crane-rush', appid: '', version: ver, description: 'Crane Rush - voxel physics truck game', setting: { es6: true, minified: true }, compileType: 'game' }, null, 2));
 fs.copyFileSync('assets/fredoka.ttf', `${out}/fredoka.ttf`);
+fs.copyFileSync('assets/loading.jpg', `${out}/loading.jpg`);   // the loading screen picture (loaded by path in the TikTok runtime)
 const size = fs.readdirSync(out).reduce((a, f) => a + fs.statSync(`${out}/${f}`).size, 0);
 console.log(`${out}/ (game.js ${(fs.statSync(`${out}/game.js`).size / 1024).toFixed(0)} KB, package ${(size / 1024).toFixed(0)} KB; limit 4096 KB main package)`);

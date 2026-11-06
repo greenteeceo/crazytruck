@@ -276,8 +276,8 @@ export const raceSea = () => 0;   // races stay on the ground: no sea jumps
 (SEEDS.races || []).forEach(({ w, seed }, i) => RACE_TRACKS.push(genRace(w, seed, { sea: raceSea(i) })));
 RACE_TRACKS.forEach((l, i) => { l.world = l.raceWorld; l.index = i; l.id = `race-${i + 1}`; l.race = true; });
 
-// World 1 keeps its three warm-up levels; levels 4-20 are laid out stretch by stretch below (PLANS)
-export const HANDMADE = { classic: classic.slice(0, 3), construction, medieval, science };
+// Worlds 1-4 keep their three hand-made warm-up levels; everything after follows the level script (SCRIPT below)
+export const HANDMADE = { classic: classic.slice(0, 3), construction: construction.slice(0, 3), medieval: medieval.slice(0, 3), science: science.slice(0, 3) };
 export const WORLDS = WORLD_DEFS.map((d) => ({ ...d, levels: [...(HANDMADE[d.id] || [])] }));
 
 // Levels 1-3 are the warm-up. From level 4 the hand-made levels carry on past their old finish with a generated
@@ -297,34 +297,70 @@ export const genDiff = (k, fresh = false) => (fresh ? (k < 3 ? 0.15 + 0.1 * k : 
 // The first 20 levels of the game (world 1), designed in order: each level brings one new thing or a harder
 // mix, and from level 4 on there is always something to fight - soft sand, mud, steep hills, jumps, rocks, logs.
 // The seed only varies sizes and spacing; every level is validated like the rest (tools/gensel.mjs).
-export const PLANS = {
-  classic: [
-    ['hill', 'crates', 'rolling'],                                                      // 4  first obstacles
-    ['gap', 'logs', 'hill', 'sandPit'],                                                 // 5  soft sand
-    ['bridge', 'puddle', 'stepUp', 'crates'],                                           // 6  mud puddle
-    ['rolling', 'valley', 'barrels', 'gap'],                                            // 7
-    ['sandPit', 'steepHill', 'logPile', 'bridge'],                                      // 8  steep hill
-    ['puddle', 'rocky', 'gap', 'seesaw', 'crates'],                                     // 9
-    ['climb', 'rampDown', 'bigJump', 'sandPit'],                                        // 10 big jump
-    ['rocky', 'puddle', 'steepHill', 'barrels', 'gap'],                                 // 11
-    ['bridge', 'toppleWall', 'valley', 'sandPit', 'seesaw'],                            // 12 a wall to push over
-    ['rolling', 'bigJump', 'puddle', 'steepHill', 'crates'],                            // 13
-    ['sandPit', 'rocky', 'climb', 'logPile', 'gap', 'barrels'],                         // 14
-    ['puddle', 'seesaw', 'steepHill', 'valley', 'bridge', 'crates'],                    // 15
-    ['bigJump', 'sandPit', 'rocky', 'puddle', 'logPile', 'steepHill'],                  // 16
-    ['climb', 'gap', 'puddle', 'barrels', 'seesaw', 'rocky', 'valley'],                 // 17
-    ['steepHill', 'sandPit', 'bigJump', 'toppleWall', 'puddle', 'bridge', 'crates'],    // 18
-    ['rocky', 'puddle', 'climb', 'gap', 'sandPit', 'seesaw', 'barrels', 'steepHill'],   // 19
-    ['bigJump', 'steepHill', 'puddle', 'logPile', 'sandPit', 'valley', 'rocky', 'bridge'], // 20 the final exam
-  ],
+// THE LEVEL SCRIPT (worlds 1-7, 20 levels each). Levels 1-3 warm up, then a climb with a hard spike on every
+// level divisible by 5 (5, 10, 15, 20 = the boss) and an easier "breather" right after each spike.
+// Levels are short on purpose - most 15-25 s for a decent player, spikes 30-45 s - so a session runs at about
+// 8 ad impressions per 5 minutes (an interstitial between levels plus the rewarded offers).
+// [stretches, difficulty, hero time limit in s]
+export const SCRIPT = [
+  [3, 0.15, 25], [3, 0.25, 25], [3, 0.35, 25], [4, 0.45, 30], [6, 0.7, 45],      // 1-5
+  [4, 0.5, 30], [4, 0.55, 30], [5, 0.6, 32], [5, 0.65, 32], [7, 0.8, 48],        // 6-10
+  [4, 0.6, 30], [5, 0.65, 32], [5, 0.7, 32], [5, 0.75, 34], [7, 0.9, 50],        // 11-15
+  [5, 0.7, 32], [5, 0.75, 34], [6, 0.8, 38], [6, 0.85, 40], [8, 1.0, 58],        // 16-20
+];
+export const SCRIPTED_WORLDS = 7;
+export const isHard = (li) => (li + 1) % 5 === 0;
+// World 1 is laid out by hand, stretch by stretch: each level brings one new thing or a harder mix
+const CLASSIC_PLANS = [
+  ['hill', 'crates', 'rolling', 'bumps'],                                                  // 4  first obstacles
+  ['sandPit', 'steepHill', 'gap', 'puddle', 'logPile', 'crates'],                          // 5  HARD: sand, mud, a steep hill
+  ['bridge', 'puddle', 'hill', 'barrels'],                                                 // 6  breather
+  ['rolling', 'valley', 'barrels', 'gap'],                                                 // 7
+  ['sandPit', 'stepUp', 'logPile', 'bridge', 'rampDown'],                                  // 8
+  ['puddle', 'rocky', 'gap', 'seesaw', 'crates'],                                          // 9
+  ['climb', 'rampDown', 'bigJump', 'sandPit', 'steepHill', 'puddle', 'toppleWall'],        // 10 HARD: the big jump
+  ['bridge', 'rolling', 'logPile', 'hill'],                                                // 11 breather
+  ['bridge', 'toppleWall', 'valley', 'sandPit', 'seesaw'],                                 // 12 a wall to push over
+  ['rolling', 'gap', 'puddle', 'steepHill', 'crates'],                                     // 13
+  ['sandPit', 'rocky', 'climb', 'logPile', 'barrels'],                                     // 14
+  ['puddle', 'seesaw', 'steepHill', 'valley', 'bigJump', 'toppleWall', 'rocky'],           // 15 HARD
+  ['bigJump', 'sandPit', 'rocky', 'puddle', 'logPile'],                                    // 16 breather
+  ['climb', 'gap', 'puddle', 'barrels', 'seesaw'],                                         // 17
+  ['steepHill', 'sandPit', 'bigJump', 'toppleWall', 'puddle', 'crates'],                   // 18
+  ['rocky', 'puddle', 'climb', 'gap', 'sandPit', 'barrels'],                               // 19
+  ['bigJump', 'steepHill', 'puddle', 'logPile', 'sandPit', 'valley', 'rocky', 'toppleWall'], // 20 BOSS
+];
+// the other worlds: the same script, stretches drawn from what fits the world (warm-up / normal / hard sets)
+const SETS = {
+  classic: { easy: ['hill', 'rolling', 'crates', 'bumps', 'logs', 'bridge'], mid: ['stepUp', 'rampDown', 'gap', 'seesaw', 'valley', 'barrels', 'rocky', 'logPile', 'sandPit', 'puddle', 'toppleWall', 'bridge'] },
+  construction: { easy: ['hill', 'crates', 'bumps', 'containers', 'girderGap', 'rolling'], mid: ['stepUp', 'rampDown', 'gap', 'containers', 'wreck', 'barrels', 'seesaw', 'girderGap', 'toppleWall', 'valley', 'pipes', 'puddle'] },
+  medieval: { easy: ['hill', 'bridge', 'bumps', 'logs', 'drawbridge', 'rolling'], mid: ['stepUp', 'rampDown', 'gap', 'drawbridge', 'seesaw', 'logPile', 'rocky', 'valley', 'toppleWall', 'bridge', 'puddle', 'barrels'] },
+  science: { easy: ['hill', 'crates', 'bumps', 'containers', 'rolling', 'barrels'], mid: ['stepUp', 'rampDown', 'gap', 'containers', 'wreck', 'seesaw', 'barrels', 'pipes', 'valley', 'toppleWall', 'crates', 'rocky'] },
 };
-export const planDiff = (li) => 0.45 + (0.55 * (li - 3)) / 16;
+const HARD_SET = ['steepHill', 'bigJump', 'climb', 'sandPit', 'puddle', 'toppleWall', 'seesaw', 'rocky', 'gap', 'logPile'];
+function autoPlan(wid, li) {
+  const set = SETS[WORLD_DEFS.find((d) => d.id === wid).kind] || SETS.classic;
+  let h = 2166136261 ^ li; for (const ch of wid) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  const rnd = () => { h = Math.imul(h ^ (h >>> 15), 2246822507); h ^= h >>> 13; return ((h >>> 0) % 10000) / 10000; };
+  const pick = (a, last) => { let x = a[(rnd() * a.length) | 0]; if (x === last) x = a[(rnd() * a.length) | 0]; return x; };
+  const [n] = SCRIPT[li], plan = [];
+  const nHard = isHard(li) ? Math.ceil(n * 0.6) : li >= 10 ? 1 : 0, nEasy = li < 3 ? n : isHard(li - 1) ? 2 : li < 8 ? 1 : 0;
+  for (let i = 0; i < n; i++) plan.push(pick(i < nEasy ? set.easy : i < nEasy + nHard ? HARD_SET : set.mid, plan[plan.length - 1]));
+  // the hard stretches are spread through the level, not bunched at the start
+  for (let i = plan.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [plan[i], plan[j]] = [plan[j], plan[i]]; }
+  return plan;
+}
+const WORLD_STEP = 0.025;   // each world is a little harder than the one before
 export const genCount = (wid) => 20 - (HANDMADE[wid]?.length || 0);
 // how the k-th generated level of a world is built: a designed plan (world 1) or the random pool
 export function genSpec(wid, k) {
-  const hand = HANDMADE[wid]?.length || 0, fresh = !HANDMADE[wid], plan = PLANS[wid]?.[k];
-  if (plan) return { diff: planDiff(hand + k), plan, sea: 0 };
-  return { diff: genDiff(k, fresh), sea: levelSea(fresh, k) };
+  const hand = HANDMADE[wid]?.length || 0, fresh = !HANDMADE[wid], li = hand + k, wi = WORLD_DEFS.findIndex((d) => d.id === wid);
+  if (wi < SCRIPTED_WORLDS) {
+    const [, d, maxT] = SCRIPT[li];
+    const plan = wid === 'classic' ? CLASSIC_PLANS[li - 3] : autoPlan(wid, li);
+    return { diff: Math.min(1, d + wi * WORLD_STEP), plan, sea: 0, maxT };
+  }
+  return { diff: genDiff(k, fresh), sea: levelSea(fresh, k), maxT: 45 };
 }
 for (const w of WORLDS) (SEEDS.levels?.[w.id] || []).slice(0, genCount(w.id)).forEach((seed, k) => {
   const sp = genSpec(w.id, k);

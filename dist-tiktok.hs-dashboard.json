@@ -104,7 +104,7 @@
             "id": "<interstitial AD UNIT ID for level_end>",
             "type": "interstitial",
             "config": {
-              "cooldown": 45
+              "cooldown": 30
             }
           }
         ]
@@ -116,7 +116,7 @@
             "id": "<interstitial AD UNIT ID for race_end>",
             "type": "interstitial",
             "config": {
-              "cooldown": 45
+              "cooldown": 30
             }
           }
         ]

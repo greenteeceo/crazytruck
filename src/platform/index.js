@@ -55,6 +55,15 @@ export const P = {
     el.addEventListener('pointerup', map(end));
     el.addEventListener('pointercancel', map(end));
     el.addEventListener('contextmenu', (e) => e.preventDefault());
+    // a finger on the game must never zoom the page: no pinch, no double-tap zoom, no long-press magnifier
+    // (the page may be embedded without our viewport tag, e.g. the web artifact)
+    const stop = (e) => { if (e.cancelable) e.preventDefault(); };
+    for (const ev of ['touchstart', 'touchmove', 'touchend']) el.addEventListener(ev, stop, { passive: false });
+    document.addEventListener('touchmove', (e) => { if (e.touches && e.touches.length > 1) stop(e); }, { passive: false });
+    for (const ev of ['gesturestart', 'gesturechange', 'gestureend', 'dblclick']) document.addEventListener(ev, stop, { passive: false });
+    try {
+      if (!document.querySelector('meta[name=viewport]')) { const m = document.createElement('meta'); m.name = 'viewport'; m.content = 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover'; document.head.appendChild(m); }
+    } catch { /* read-only head */ }
   },
 
   onKey(down, up) {
@@ -85,6 +94,19 @@ export const P = {
   },
 
   // ---------------------------------------------------------------- audio (Web Audio API on both)
+  // A picture for the canvas UI: the TikTok runtime loads it by file name from the package, the web from the
+  // bundled data URL. Resolves to the image, or null when the runtime cannot load images (the game goes on).
+  loadImage(dataUrl, file) {
+    return new Promise((res) => {
+      try {
+        const img = isTT ? T.createImage?.() : new g.Image();
+        if (!img) return res(null);
+        img.onload = () => res(img); img.onerror = () => res(null);
+        img.src = isTT ? file : dataUrl;
+        setTimeout(() => res(img.width ? img : null), 3000);
+      } catch { res(null); }
+    });
+  },
   audioContext() {
     try {
       if (isTT) return T.createWebAudioContext ? T.createWebAudioContext() : null;

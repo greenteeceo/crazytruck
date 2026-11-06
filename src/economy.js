@@ -13,8 +13,8 @@ export const AD_PLACES = [
   { label: 'free_gems', type: 'rewarded', cooldown: 30, where: 'Shop (top-left) and Shop > Gems: "+150 gems" button, 5 a day' },
   { label: 'revive', type: 'rewarded', cooldown: 30, where: 'Fail screen: "Continue" button (back on the wheels at the last checkpoint)' },
   { label: 'try_truck', type: 'rewarded', cooldown: 30, where: 'Shop > Trucks, a truck not owned: "Try" button (free for the next level)' },
-  { label: 'level_end', type: 'interstitial', cooldown: 45, where: 'After a level: tapping Next / Retry / Home / Levels (none in the first 3 level ends)' },
-  { label: 'race_end', type: 'interstitial', cooldown: 45, where: 'After a race: tapping Next race / Another one / Home (none in the first 3 ends)' },
+  { label: 'level_end', type: 'interstitial', cooldown: 30, where: 'After a level: tapping Next / Retry / Home / Levels (none after the very first level)' },
+  { label: 'race_end', type: 'interstitial', cooldown: 30, where: 'After a race: tapping Next race / Another one / Home (none after the very first end)' },
 ];
 
 export const DEFAULTS = {
@@ -56,4 +56,6 @@ export const PRODUCTS = [
 ];
 export const STARTER_ID = 1;
 // ad-free level ends at the start of a session (the gap between interstitials is the dashboard cooldown)
-export const AD_FREE_ENDS = 3;
+// Ad pacing target: about 8 impressions per 5 minutes per player (short levels + an interstitial between them
+// at most every 30 s + the rewarded offers). Only the very first level end is ad-free.
+export const AD_FREE_ENDS = 1;

@@ -15,11 +15,13 @@ const solo = (l, skill) => { const s = new Sim(l, spec), bot = makeBot(skill, 1)
 const raced = (l, skill, sp = spec) => { const r = makeRacer(l, sp, { collectGems: false }), bot = makeBot(skill, 3); let fin = null; for (let i = 0; i < 60 * 60 && fin == null; i++) { r.sim.step(bot(r.sim)); for (const e of r.sim.drainEvents()) if (e.type === 'win') fin = r.sim.finishTime; racerWatch(r); } return fin == null ? null : { t: fin, resp: r.respawns }; };
 const prev = JSON.parse(fs.readFileSync('src/genseeds.json', 'utf8'));
 const out = { levels: {}, tails: {}, races: [] };
+// ONLY=classic,desert,races: re-pick just those (comma list), keep everything else as shipped
+const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
 let tried = 0;
 for (const [wi, d] of WORLD_DEFS.entries()) {
   const handmade = !!HANDMADE[d.id];
   // ONLY=<world id>: re-pick just that world, keep everything else as shipped
-  if (process.env.ONLY && process.env.ONLY !== d.id) { out.levels[d.id] = prev.levels[d.id]; if (prev.tails?.[d.id]) out.tails[d.id] = prev.tails[d.id]; for (const l of WORLDS[wi].levels) names.add(l.name); continue; }
+  if (ONLY && !ONLY.includes(d.id)) { out.levels[d.id] = prev.levels[d.id]; if (prev.tails?.[d.id]) out.tails[d.id] = prev.tails[d.id]; for (const l of WORLDS[wi].levels) names.add(l.name); continue; }
   out.levels[d.id] = [];
   // hand-made levels 4-10: the harder stretch added after them (the hero, a slower driver and all 21 trucks must finish)
   if (handmade && HANDMADE[d.id].length > TAIL_FROM) {
@@ -45,13 +47,13 @@ for (const [wi, d] of WORLD_DEFS.entries()) {
     const sp = genSpec(d.id, k), diff = sp.diff, gopt = { sea: sp.sea, plan: sp.plan };
     // a shipped seed stays if the hero, a starter truck, the fastest and the fully upgraded trucks all finish it
     const old = prev.levels[d.id]?.[k];
-    if (old != null && !(handmade && process.env.ONLY_NEW)) { const l0 = genLevel(d.id, old, diff, gopt); const t0 = solo(l0, 1); if (t0 != null && t0 <= (sp.plan ? 75 : 45) && allPass(l0).ok) { out.levels[d.id].push(old); names.add(l0.name); continue; } console.log('replace', d.id, k + 1, l0.name, allPass(l0).why || 'hero'); }
+    if (old != null && !(handmade && process.env.ONLY_NEW)) { const l0 = genLevel(d.id, old, diff, gopt); const t0 = solo(l0, 1); if (t0 != null && t0 <= sp.maxT && allPass(l0).ok) { out.levels[d.id].push(old); names.add(l0.name); continue; } console.log('replace', d.id, k + 1, l0.name, allPass(l0).why || 'hero'); }
     for (let seed = 1000 * (wi + 1) + k * 101 + (old != null ? 7919 : 0); ; seed++) {
       tried++;
       const l = genLevel(d.id, seed, diff, gopt);
       if (names.has(l.name)) continue;
       const t1 = solo(l, 1);
-      if (t1 == null || t1 > (sp.plan ? 75 : 45)) continue;
+      if (t1 == null || t1 > sp.maxT) continue;
       if (solo(l, 0.85) == null) continue;
       if (!allPass(l).ok) continue;
       names.add(l.name); out.levels[d.id].push(seed);
@@ -62,7 +64,7 @@ for (const [wi, d] of WORLD_DEFS.entries()) {
 }
 const strong = (CHECK_TRUCKS.find(([n]) => n === 'titan+max') || CHECK_TRUCKS[0])[1];
 const raceOk = (l) => { const res = [1, 0.85, 0.7].map((sk) => raced(l, sk)); const st = raced(l, 1, strong); return !res.some((x) => !x || x.t > 50 || x.resp > 3) && st && st.resp <= 3 ? res : null; };
-if (process.env.ONLY && process.env.ONLY !== 'races') out.races = prev.races;
+if (ONLY && !ONLY.includes('races')) out.races = prev.races;
 else for (let i = 0; i < 20; i++) {
   const w = 4 + (i % 16);
   const old = prev.races?.[i];

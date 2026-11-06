@@ -1657,22 +1657,30 @@ HSGame.on('otherDevice', () => {
 });
 
 // ------------------------------------------------------------ loading screen + main loop
-let loading = { p: 0, shown: 0, art: null };
+import LOADING_ART from '../assets/loading.jpg';
+let loading = { p: 0, shown: 0, art: null, pic: null };
+P.loadImage(LOADING_ART, 'loading.jpg').then((img) => { loading.pic = img; ui.request(0.5); });
 function drawLoading(u) {
   const c = u.ctx, g = c.createLinearGradient(0, 0, 0, u.h);
   g.addColorStop(0, '#2fb6ff'); g.addColorStop(1, '#bff0ff'); c.fillStyle = g; c.fillRect(0, 0, u.w, u.h);
-  // sun rays
+  if (loading.pic) {
+    // the loading picture fills the screen (cover), the crane truck flying over the crates
+    const iw = loading.pic.width, ih = loading.pic.height, sc = Math.max(u.w / iw, u.h / ih), dw = iw * sc, dh = ih * sc;
+    c.drawImage(loading.pic, (u.w - dw) / 2, (u.h - dh) / 2 + Math.sin(u.t * 1.5) * 3, dw, dh);
+    const sh = c.createLinearGradient(0, u.h * 0.62, 0, u.h); sh.addColorStop(0, 'rgba(10,40,110,0)'); sh.addColorStop(1, 'rgba(10,40,110,0.65)'); c.fillStyle = sh; c.fillRect(0, u.h * 0.62, u.w, u.h * 0.38);
+  }
+  // sun rays (until the picture is in)
   c.save(); c.translate(u.w / 2, u.h * 0.42); c.rotate(u.t * 0.15);
-  for (let i = 0; i < 12; i++) { c.rotate(Math.PI / 6); c.beginPath(); c.moveTo(0, 0); c.lineTo(-40, -u.h); c.lineTo(40, -u.h); c.closePath(); c.fillStyle = 'rgba(255,255,255,0.12)'; c.fill(); }
+  for (let i = 0; i < (loading.pic ? 0 : 12); i++) { c.rotate(Math.PI / 6); c.beginPath(); c.moveTo(0, 0); c.lineTo(-40, -u.h); c.lineTo(40, -u.h); c.closePath(); c.fillStyle = 'rgba(255,255,255,0.12)'; c.fill(); }
   c.restore();
   const k = u.pop(0, 0.6);
   c.save(); c.translate(u.w / 2, u.h * 0.2); c.rotate(-0.05); c.scale(k, k); u.text('CRANE', 0, -26, 52); u.text('RUSH', 0, 30, 66, GOLD); c.restore();
-  if (loading.art) {
+  if (loading.art && !loading.pic) {
     const aw = Math.min(u.w * 0.86, 420), ah = aw * loading.art.height / loading.art.width, bob = Math.sin(u.t * 4) * 4;
     c.drawImage(loading.art, u.w / 2 - aw / 2, u.h * 0.44 - ah / 2 + bob, aw, ah);
   }
   loading.shown += (loading.p - loading.shown) * 0.2;
-  const bw = Math.min(u.w * 0.7, 320), by = u.h * 0.74;
+  const bw = Math.min(u.w * 0.7, 320), by = u.h * 0.8;
   u.bar(u.w / 2 - bw / 2, by, bw, 26, loading.shown, { fill: GRAD.gold });
   u.text(`${Math.round(loading.shown * 100)}%`, u.w / 2, by + 14, 16);
   const tips = ['Hold in front of the truck to drive, behind it to reverse', 'In the air, ▶ tilts back and ◀ tilts forward', 'Land on your wheels, not your roof!', 'Collect every gem for an extra star'];
