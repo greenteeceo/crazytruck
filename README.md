@@ -17,7 +17,7 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 - **Hint**: after 2 crashes on the same level the fail screen offers a Hint video: the bot drives the level for you and it counts as cleared with 1 star (drive it yourself for 3)
 - **Try a truck**: trucks you do not own have a Try button in the shop (rewarded video) for one free level
 - **Tutorial**: the first level points a hand at ▶ ("Hold to drive!"), then tips for braking and for tilting in the air
-- **Developer tools** (hidden in release): tap the version line at the bottom of Settings 5 times. Shows the AUTO chip (bot drives), TEST button (tour of all 20 worlds, 20 random levels, every level of a world, 10 random races with 3–6 lanes, with a pass/fail report), Unlock all levels and Infinite gems (also infinite lives)
+- **Developer tools**: Settings has a DEV TEST section with **Autoplay (bot drives)** and **All resources (dev)** (infinite gems and lives, every truck owned, every world, level and cup open). The AUTO chip and TEST button (tour of all 20 worlds, 20 random levels, every level of a world, 10 random races with 3–6 lanes, with a pass/fail report) are on the home screen. Shown while `DEV_TOOLS` is `true` in `src/platform/config.js`; set it to `false` for the store build (tapping the version line in Settings 5 times still unlocks them). Any cup already won (or all of them with All resources) can be picked on the Race tab
 
 ## Controls
 

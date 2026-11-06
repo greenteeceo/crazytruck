@@ -7,7 +7,7 @@ import { makeBot } from './bot.js';
 import { Renderer, setLabelFont } from './render.js';
 import { Audio } from './audio.js';
 import { P } from './platform/index.js';
-import { AD_RULES, REWARDS } from './platform/config.js';
+import { AD_RULES, REWARDS, DEV_TOOLS } from './platform/config.js';
 import { UI, INK, GOLD, GRAD } from './ui/kit.js';
 import PARS from './pars.json';
 import { board, rankOf, BOARD_SIZE } from './leaderboard.js';
@@ -19,10 +19,15 @@ let save;
 try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save = { ...defaults }; }
 save.tt ||= {};
 save.tut ||= {};   // tutorial steps already shown
-// dev tools (AUTO, TEST, infinite gems, unlock all) are hidden in release; tap the version line in Settings 5 times
-const VERSION = '3.5';
-if (!save.dev) { save.autoplay = false; save.infinite = false; save.unlockAll = false; }
-const dev = () => !!save.dev;
+// dev tools (Autoplay, All resources, AUTO / TEST chips): on while DEV_TOOLS is true (config.js),
+// otherwise hidden until the version line in Settings is tapped 5 times
+const VERSION = '3.6';
+const dev = () => DEV_TOOLS || !!save.dev;
+if (save.allRes == null) save.allRes = !!(save.infinite && save.unlockAll);
+if (!dev()) save.autoplay = save.allRes = false;
+// "All resources": infinite gems and lives, every truck, every world, level and cup open
+save.infinite = save.unlockAll = !!save.allRes;
+const owns = (id) => save.allRes || save.owned.includes(id);
 // leaderboard: per-device seed for the simulated players, and when this player joined
 if (!save.lb) save.lb = { seed: (Math.random() * 2 ** 31) | 0, start: Date.now() };
 const persist = () => P.save(KEY, JSON.stringify(save));
@@ -1050,13 +1055,15 @@ function drawRace(u) {
   // cups row
   const cw = Math.min(82, (u.w - PAD * 2 - 24) / 4), cx0 = u.w / 2 - (cw * 4 + 24) / 2, cy = topY(u) + pillH() + GAP;
   CUPS.forEach((cp, i) => {
-    const lock = i > cupIdx && !save.cups[i], cur = i === cupIdx, x = cx0 + i * (cw + 8);
+    const lock = i > cupIdx && !save.cups[i] && !save.allRes, cur = i === cupIdx, x = cx0 + i * (cw + 8);
     u.rr(x, cy, cw, 66, 14); c.fillStyle = 'rgba(10,30,80,0.5)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
     if (cur) { u.rr(x - 3, cy - 3, cw + 6, 72, 16); c.lineWidth = 3; c.strokeStyle = cp.color; c.stroke(); }
     c.globalAlpha = lock ? 0.6 : 1;
     u.icon(lock ? 'lock' : 'trophy', x + cw / 2 - 16, cy + 6, 32, save.cups[i] ? GOLD : cur ? cp.color : '#6f7894');
     u.text(cp.name, x + cw / 2, cy + 52, 11, '#fff', { maxW: cw - 6 });
     c.globalAlpha = 1;
+    // any open cup can be picked (won cups to replay; all of them with All resources)
+    if (!lock && !cur) u.hit(x, cy, cw, 66, { id: 'cup' + i, onTap: tap(() => { save.cup = { idx: i, race: 0, pts: null }; persist(); showRace(); }) });
   });
   // panel
   const pw = Math.min(u.w * 0.9, 400), px = u.w / 2 - pw / 2, py = cy + (sh ? 100 : 118);
@@ -1156,7 +1163,7 @@ function showShop(sel) {
 }
 function drawShop(u) {
   const c = u.ctx, T = u.safeTop, B = u.safeBottom, sh = short();
-  const cur = vehicleById(shopSel), own = save.owned.includes(cur.id), ups = save.upgrades?.[cur.id] || {};
+  const cur = vehicleById(shopSel), own = owns(cur.id), ups = save.upgrades?.[cur.id] || {};
   topbar(u);
   // free gems for a video (left, under the safe area)
   u.button('freegems', PAD, topY(u), 132, pillH(), { color: 'green', parts: [{ icon: 'video', size: 22 }, `+${REWARDS.freeGems}`, { gem: true, size: 18 }], size: 17, radius: 12, onTap: tap(() => watchAd(() => { earnGems(REWARDS.freeGems, { x: 70, y: T + 30 }); Audio.win(); })) });
@@ -1195,7 +1202,7 @@ function drawShop(u) {
   let made = false;
   u.scroll('cards', 0, cy - 8, u.w, cardH + 16, list.length * (cardW + GAP) + PAD * 2 - GAP, () => {
     list.forEach((v, i) => {
-      const x = PAD + i * (cardW + GAP), y = cy, o = save.owned.includes(v.id), on = save.car === v.id, sel = v.id === cur.id;
+      const x = PAD + i * (cardW + GAP), y = cy, o = owns(v.id), on = save.car === v.id, sel = v.id === cur.id;
       const dy = sel ? -4 : 0;
       u.rr(x - 3, y - 3 + dy, cardW + 6, cardH + 6, 18); c.fillStyle = sel ? GOLD : 'rgba(255,255,255,0.6)'; c.fill();
       u.rr(x, y + dy, cardW, cardH, 16); c.fillStyle = u.grad(y, y + cardH, GRAD.blue); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
@@ -1239,7 +1246,7 @@ function doUpgrade(id, u) {
 }
 
 // ------------------------------------------------------------ settings (draft: Save applies, Cancel discards)
-const SETTING_KEYS = ['sound', 'shadows', 'autoplay', 'infinite', 'unlockAll'];
+const SETTING_KEYS = ['sound', 'shadows', 'autoplay', 'allRes'];
 let setDraft = null, resetArmed = false;
 function showSettings() {
   game = null; Audio.engineStop();
@@ -1257,15 +1264,15 @@ function drawSettings(u) {
   u.panel(px, py, pw, ph, { ribbon: 'Settings' });
   const footH = sh ? 56 : 64, bodyY = py + 36, bodyH = ph - 36 - footH - 8;
   const rowH = sh ? 44 : 52;
-  const rows = [['sound', 'sound', 'Sound'], ['shadows', 'settings', 'Shadows (quality)'], ...(dev() ? [null, ['autoplay', 'play', 'Autoplay (bot drives)'], ['infinite', 'gem', 'Infinite gems (dev)'], ['unlockAll', 'lock', 'Unlock all levels']] : [])];
+  const rows = [['sound', 'sound', 'Sound'], ['shadows', 'settings', 'Shadows (quality)'], ...(dev() ? [null, ['autoplay', 'play', 'Autoplay (bot drives)'], ['allRes', 'gem', 'All resources (dev)']] : [])];
   const size = rows.length * (rowH + 6) + 160;
   u.scroll('set', px + 10, bodyY, pw - 20, bodyH, size, () => {
     let y = bodyY + 4;
     for (const r of rows) {
-      if (!r) { u.text('TEST TOOLS', px + 22, y + 14, 13, 'rgba(255,255,255,0.8)', { align: 'left', outline: false }); y += 28; continue; }
+      if (!r) { u.text('DEV TEST', px + 22, y + 14, 13, 'rgba(255,255,255,0.8)', { align: 'left', outline: false }); y += 28; continue; }
       const [k, ic, label] = r, on = setDraft[k];
       u.rr(px + 16, y, pw - 32, rowH, 14); c.fillStyle = 'rgba(0,0,0,0.18)'; c.fill();
-      u.icon(ic, px + 28, y + rowH / 2 - 13, 26, k === 'infinite' ? GOLD : '#fff');
+      u.icon(ic, px + 28, y + rowH / 2 - 13, 26, k === 'allRes' ? GOLD : '#fff');
       u.text(label, px + 66, y + rowH / 2 + 1, sh ? 16 : 18, '#fff', { align: 'left', maxW: pw - 170 });
       const tx = px + pw - 32 - 56, ty = y + rowH / 2 - 15;
       u.rr(tx, ty, 54, 30, 15); c.fillStyle = on ? '#46d35c' : '#8e97b0'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
@@ -1286,7 +1293,7 @@ function drawSettings(u) {
       devTaps = u.t - devTapT < 1.5 ? devTaps + 1 : 1; devTapT = u.t;
       if (devTaps < 5) return;
       devTaps = 0; save.dev = !save.dev;
-      if (!save.dev) { save.autoplay = save.infinite = save.unlockAll = false; for (const k of ['autoplay', 'infinite', 'unlockAll']) setDraft[k] = false; }
+      if (!dev()) { save.autoplay = save.allRes = save.infinite = save.unlockAll = false; for (const k of ['autoplay', 'allRes']) setDraft[k] = false; }
       persist(); u.toast(save.dev ? 'Developer tools on' : 'Developer tools off', '#ff8a1f'); u.request();
     } });
   });
@@ -1296,6 +1303,8 @@ function drawSettings(u) {
   const dirty = settingsDirty();
   u.button('save', px + 34 + bw, fy + 6, bw, footH - 20, { color: 'blue', label: 'Save', disabled: !dirty, onTap: tap(() => {
     for (const k of SETTING_KEYS) save[k] = setDraft[k];
+    save.infinite = save.unlockAll = !!save.allRes;
+    if (!save.allRes && !save.owned.includes(save.car)) save.car = 'crane';   // back to trucks you really own
     Audio.setEnabled(save.sound); R.setShadows(save.shadows); persist(); showWorlds(); ui.toast('Settings saved');
   }) });
   navbar(u, 'settings');

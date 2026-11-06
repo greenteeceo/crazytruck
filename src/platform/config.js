@@ -25,3 +25,7 @@ export const REWARDS = {
 };
 
 export const isPlaceholder = (id) => !id || /AD_UNIT_ID$/.test(id);
+
+// Developer test tools in Settings (Autoplay, All resources) and the AUTO / TEST chips.
+// true while testing; set to false for the store build (5 taps on the version line in Settings still unlocks them).
+export const DEV_TOOLS = true;
