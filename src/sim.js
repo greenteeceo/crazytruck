@@ -76,7 +76,7 @@ export class Sim {
         case 'bridge': this.buildBridge(p); break;
         case 'dyn': {
           const b = w.createDynamicBody({ position: V(p.x, p.y), angle: p.a || 0 });
-          b.createFixture(pl.Box(p.w / 2, p.h / 2), this.fixtureOpts(p.s, { density: p.d ?? 0.5, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: p.s, prop: !!this.level.race, smash: true } }));
+          b.createFixture(pl.Box(p.w / 2, p.h / 2), this.fixtureOpts(p.s, { density: p.d ?? 0.5, restitution: p.e ?? 0.02, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: p.s, prop: !!this.level.race, smash: true } }));
           this.dynamics.push({ body: b, piece: p });
           break;
         }
@@ -101,7 +101,7 @@ export class Sim {
         }
         case 'ball': {
           const b = w.createDynamicBody({ position: V(p.x, p.y), angularDamping: 0.05 });
-          b.createFixture(pl.Circle(p.r), this.fixtureOpts(p.s || 'stone', { density: p.d ?? 0.35, friction: 0.6, restitution: 0.25, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: 'stone', prop: true, smash: true } }));
+          b.createFixture(pl.Circle(p.r), this.fixtureOpts(p.s || 'stone', { density: p.d ?? 0.35, friction: 0.6, restitution: p.e ?? 0.25, filterCategoryBits: CAT_DYN, userData: { kind: 'ground', style: 'stone', prop: true, smash: true } }));
           if (p.vx) b.setLinearVelocity(V(p.vx, 0));
           this.dynamics.push({ body: b, piece: p });
           break;

@@ -312,23 +312,23 @@ export const SCRIPTED_WORLDS = 20;   // every world follows the script
 export const isHard = (li) => (li + 1) % 5 === 0;
 // World 1 is laid out by hand, stretch by stretch: each level brings one new thing or a harder mix
 const CLASSIC_PLANS = [
-  ['hill', 'crates', 'rolling', 'bumps'],                                                  // 4  first obstacles
+  ['hill', 'crates', 'rollers:log', 'bumps'],                                              // 4  first obstacles: logs come rolling down
   ['sandPit', 'steepHill', 'gap', 'puddle', 'logPile', 'crates'],                          // 5  HARD: sand, mud, a steep hill
   ['bridge', 'puddle', 'hill', 'barrels'],                                                 // 6  breather
   ['rolling', 'valley', 'barrels', 'gap'],                                                 // 7
   ['sandPit', 'stepUp', 'logPile', 'bridge', 'rampDown'],                                  // 8
-  ['puddle', 'rocky', 'gap', 'seesaw', 'crates'],                                          // 9
+  ['puddle', 'rocky', 'gap', 'catapult', 'crates'],                                        // 9  the catapult seesaw
   ['climb', 'rampDown', 'bigJump', 'sandPit', 'steepHill', 'puddle', 'toppleWall'],        // 10 HARD: the big jump
   ['bridge', 'rolling', 'logPile', 'hill'],                                                // 11 breather
   ['bridge', 'toppleWall', 'valley', 'sandPit', 'seesaw'],                                 // 12 a wall to push over
   ['rolling', 'gap', 'puddle', 'steepHill', 'crates'],                                     // 13
-  ['sandPit', 'rocky', 'climb', 'logPile', 'barrels'],                                     // 14
+  ['sandPit', 'rocky', 'climb', 'rollers:log', 'barrels'],                                 // 14
   ['puddle', 'seesaw', 'steepHill', 'valley', 'bigJump', 'toppleWall', 'rocky'],           // 15 HARD
   ['bigJump', 'sandPit', 'rocky', 'puddle', 'logPile'],                                    // 16 breather
-  ['climb', 'gap', 'puddle', 'barrels', 'seesaw'],                                         // 17
-  ['steepHill', 'sandPit', 'bigJump', 'toppleWall', 'puddle', 'crates'],                   // 18
-  ['rocky', 'puddle', 'climb', 'gap', 'sandPit', 'barrels'],                               // 19
-  ['bigJump', 'steepHill', 'puddle', 'logPile', 'sandPit', 'valley', 'rocky', 'toppleWall'], // 20 BOSS
+  ['climb', 'gap', 'puddle', 'catapult', 'precisionJump'],                                 // 17 skill: land on the ledge
+  ['steepHill', 'sandPit', 'bigJump', 'toppleWall', 'precisionJump', 'crates'],            // 18
+  ['rocky', 'puddle', 'climb', 'precisionJump', 'sandPit', 'iceSlide'],                    // 19 skill: glare ice
+  ['bigJump', 'steepHill', 'puddle', 'rollers:log', 'sandPit', 'catapult', 'precisionJump', 'toppleWall'], // 20 BOSS
 ];
 // the other worlds: the same script, stretches drawn from what fits the world (warm-up / normal / hard sets)
 const SETS = {
@@ -338,16 +338,47 @@ const SETS = {
   science: { easy: ['hill', 'crates', 'bumps', 'containers', 'rolling', 'barrels'], mid: ['stepUp', 'rampDown', 'gap', 'containers', 'wreck', 'seesaw', 'barrels', 'pipes', 'valley', 'toppleWall', 'crates', 'rocky'] },
 };
 const HARD_SET = ['steepHill', 'bigJump', 'climb', 'sandPit', 'puddle', 'toppleWall', 'seesaw', 'rocky', 'gap', 'logPile'];
+// Every world has its own obstacles - its character, and a bit of fun: logs and snowballs rolling down at you,
+// wobbly towers, catapult seesaws, bouncy beach balls, jelly blocks, glare ice...
+export const SIGNATURE = {
+  classic: ['rollers:log', 'catapult'], construction: ['tower:crate', 'toppleWall'], medieval: ['catapult', 'rollers:stone'],
+  science: ['bouncy:barrel', 'tower:labcrate'], desert: ['rollers:stone', 'sandPit'], snow: ['rollers:snow', 'iceSlide'],
+  jungle: ['rollers:log', 'precisionJump'], volcano: ['rollers:basalt', 'toppleWall'], candy: ['jelly', 'bouncy:candy'],
+  beach: ['bouncy:beach', 'sandPit'], city: ['tower:crate', 'dominoRun:metal'], docks: ['tower:barrel', 'barrels'],
+  moon: ['rollers:stone', 'rocky'], mars: ['rollers:basalt', 'climb'], reef: ['bouncy:beach', 'puddle'],
+  autumn: ['rollers:log', 'logPile'], icecave: ['iceSlide', 'rollers:snow'], toy: ['tower:toy', 'jelly'],
+  neon: ['dominoRun:neon', 'tower:toy'], sky: ['precisionJump', 'bridge'],
+};
+// Clearing a world (its level 20) unlocks its nastiest obstacle for good: it turns up in the hard stretches of
+// every world after it. [stretch, name shown when it unlocks]
+export const NASTY = [
+  ['rollers:log', 'Rolling logs'], ['tower:crate', 'Wobbly crate towers'], ['catapult', 'Catapult seesaws'], ['bouncy:barrel', 'Bouncing lab balls'],
+  ['rollers:stone', 'Boulder rush'], ['iceSlide', 'Glare ice'], ['precisionJump', 'Precision jumps'], ['rollers:basalt', 'Lava rocks'],
+  ['jelly', 'Jelly blocks'], ['bouncy:beach', 'Beach balls'], ['dominoRun:metal', 'Domino runs'], ['tower:barrel', 'Barrel towers'],
+  ['rollers:stone', 'Moon rock slides'], ['rollers:basalt', 'Red rock avalanches'], ['bouncy:beach', 'Sea bubbles'], ['rollers:log', 'Log slides'],
+  ['iceSlide', 'Frozen floors'], ['tower:toy', 'Toy block towers'], ['dominoRun:neon', 'Neon dominoes'], ['precisionJump', 'Sky ledges'],
+];
+const SKILL = ['precisionJump', 'iceSlide'];
 function autoPlan(wid, li) {
-  const set = SETS[WORLD_DEFS.find((d) => d.id === wid).kind] || SETS.classic;
+  const wi = WORLD_DEFS.findIndex((d) => d.id === wid), sig = SIGNATURE[wid] || [];
+  const base = SETS[WORLD_DEFS[wi].kind] || SETS.classic;
+  // the world's own obstacles come up often; the hard stretches also draw on what earlier worlds unlocked
+  const set = { easy: base.easy, mid: [...base.mid, ...sig, ...sig] };
+  const hardSet = [...HARD_SET, ...sig, ...NASTY.slice(0, wi).map((n) => n[0])];
+  const plan = [];
   let h = 2166136261 ^ li; for (const ch of wid) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
   const rnd = () => { h = Math.imul(h ^ (h >>> 15), 2246822507); h ^= h >>> 13; return ((h >>> 0) % 10000) / 10000; };
-  const pick = (a, last) => { let x = a[(rnd() * a.length) | 0]; if (x === last) x = a[(rnd() * a.length) | 0]; return x; };
-  const [n] = SCRIPT[li], plan = [];
+  // no stretch more than twice in a level, never twice in a row
+  const pick = (a, last) => { let x; for (let k = 0; k < 12; k++) { x = a[(rnd() * a.length) | 0]; if (x !== last && plan.filter((p) => p === x).length < 2) break; } return x; };
+  const [n] = SCRIPT[li];
   const nHard = isHard(li) ? Math.ceil(n * 0.6) : li >= 10 ? 1 : 0, nEasy = li < 3 ? n : isHard(li - 1) ? 2 : li < 8 ? 1 : 0;
-  for (let i = 0; i < n; i++) plan.push(pick(i < nEasy ? set.easy : i < nEasy + nHard ? HARD_SET : set.mid, plan[plan.length - 1]));
+  for (let i = 0; i < n; i++) plan.push(pick(i < nEasy ? set.easy : i < nEasy + nHard ? hardSet : set.mid, plan[plan.length - 1]));
   // the hard stretches are spread through the level, not bunched at the start
   for (let i = plan.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [plan[i], plan[j]] = [plan[j], plan[i]]; }
+  // from level 4 every level shows off at least one of the world's own obstacles (level 4 introduces the first)
+  if (li >= 3 && sig.length && !plan.some((p) => sig.includes(p))) plan[(rnd() * plan.length) | 0] = li === 3 ? sig[0] : sig[(rnd() * sig.length) | 0];
+  // the last levels (17-20) always have a section that needs a steady hand
+  if (li >= 16 && !plan.some((p) => SKILL.includes(p))) plan[(rnd() * plan.length) | 0] = SKILL[(rnd() * SKILL.length) | 0];
   return plan;
 }
 const WORLD_STEP = 0.02;    // each world is a little harder than the one before (warm-ups only a little)

@@ -484,10 +484,18 @@ export function buildFinish(width = 4.2) {
 // Rolling boulder (race obstacle)
 export function boulder(r, style) {
   const g = new THREE.Group();
-  const geo = new THREE.IcosahedronGeometry(r, 0);
-  const col = style === 'snow' ? 0xe9f1ff : style === 'barrel' ? 0x2f7cf6 : 0x9aa0ae;
+  if (style === 'log') {
+    // a rolling log: a cylinder lying across the road, bark and a pale cut end
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 2.6, 8), mat(0x7a4a24, { flatShading: true })); m.rotation.x = Math.PI / 2; m.castShadow = true; g.add(m);
+    for (const z of [-1.31, 1.31]) { const e = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.82, r * 0.82, 0.02, 8), mat(0xe8c48a, { flatShading: true })); e.rotation.x = Math.PI / 2; e.position.z = z; g.add(e); }
+    return g;
+  }
+  const COL = { snow: 0xf2f7ff, barrel: 0x2f7cf6, beach: 0xff4d4d, candy: 0xff8fc8, basalt: 0x4a4045 };
+  const BAND = { snow: 0xd6e6ff, beach: 0xffffff, candy: 0xffffff, barrel: 0xffd21a, basalt: 0xff6a2a };
+  const geo = new THREE.IcosahedronGeometry(r, style === 'beach' || style === 'barrel' || style === 'candy' ? 1 : 0);
+  const col = COL[style] ?? 0x9aa0ae;
   const m = new THREE.Mesh(geo, mat(col, { flatShading: true })); m.castShadow = true; m.receiveShadow = true; g.add(m);
-  const band = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 1.02, 0), mat(0x7d8292, { flatShading: true, wireframe: false }));
+  const band = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 1.02, style === 'beach' ? 1 : 0), mat(BAND[style] ?? 0x7d8292, { flatShading: true, wireframe: false }));
   band.scale.set(0.35, 1, 1); g.add(band);
   addOutline(g);
   return g;

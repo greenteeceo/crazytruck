@@ -40,6 +40,7 @@ const STYLE = {
   log: { top: 'log', side: 'log' },
   barrel: { top: 'barrel', side: 'barrel' },
   softsand: { top: 'sand', side: 'sand' },
+  ice: { top: 'iceTop', side: 'ice' },
   mud: { top: 'mud', side: 'dirt' },
 };
 const texMats = {};

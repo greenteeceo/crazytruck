@@ -51,6 +51,7 @@ function build(def, seed, diff, { race = false, length, sea = 0, base = null, pl
   for (let i = 0; i < nSeg; i++) {
     let seg = plan ? plan[i] : pick(pool);
     if (!plan && seg === last) seg = pick(pool);
+    let arg = null; if (seg.includes(':')) [seg, arg] = seg.split(':');   // themed variants: 'rollers:snow', 'tower:toy'...
     last = seg;
     // keep the track inside a sensible height band
     if (seg === 'stepUp' && top > 2.2) seg = 'rampDown';
@@ -177,6 +178,63 @@ function build(def, seed, diff, { race = false, length, sea = 0, base = null, pl
         b.ramp(x + L1, top + h, x + L1 + 2, top + h, st.ground, top - 0.5);
         b.ramp(x + L1 + 2, top + h, x + L1 + 2 + L2, top, st.ground, top - 0.5);
         b.gem(x + L1 + 1, top + h + 1.3); x += L1 + L2 + 2; break;
+      }
+      // ---- world signature obstacles (themed by the ':style' part of the name)
+      case 'rollers': {   // climb a slope while logs / boulders / snowballs come rolling down at you
+        const h = rr(1.3, 1.7 + diff * 0.5), L = h * 4.2, sty = arg || 'stone';
+        ground(x, x + 2 * L + 6);
+        b.ramp(x, top, x + L, top + h, st.ground, top - 0.5);
+        b.ramp(x + L, top + h, x + L + 6, top + h, st.ground, top - 0.5);
+        b.ramp(x + L + 6, top + h, x + 2 * L + 6, top, st.ground, top - 0.5);
+        const n = 2 + (diff > 0.75 ? 1 : 0);
+        for (let k = 0; k < n; k++) b.ball(x + L + 1.6 + k * 1.7, top + h + 0.8, sty === 'log' ? 0.5 : 0.62 + 0.12 * r(), -1.5 - r(), sty);
+        b.gem(x + L + 3, top + h + 2.2); x += 2 * L + 6; ground(x, x + 3); x += 3; break;
+      }
+      case 'tower': {   // a tall wobbly tower of boxes: nudge it and it comes down on you
+        ground(x, x + 9);
+        const n = 4 + (diff > 0.75 ? 1 : 0), sz = 0.8, sty = arg || def.crate || 'crate';
+        for (let k = 0; k < n; k++) b.dyn(x + 4 + (k % 2 ? 0.06 : -0.06), top + sz / 2 + k * sz, sz, sz, sty, 0.22);
+        b.block(x + 4 + sz / 2 + 0.1, top + 0.07, 0.16, 0.14, 'wood');   // a sill at its foot: pushed, the tower falls away from you
+        b.gem(x + 7.5, top + 1.3); x += 9; break;
+      }
+      case 'catapult': {   // a seesaw with a crate sitting on the high end: drive over it and the crate goes flying
+        const px = x + 4.6;
+        b.block(px, top - 1.6 - (top - 0) / 2, 0.8, 3.6 + top, def.pillar);
+        b.seesaw(px, top + 0.3, 9.2, 0.2, 0.2, def.plank);
+        b.dyn(px + 3.6, top + 1.75, 0.8, 0.8, def.crate || 'crate', 0.12);
+        b.gem(px, top + 2.4);
+        zones.push([x - 4, px + 5, 6]);
+        x = px + 4.6; top -= 0.8; ground(x, x + 6); x += 6; break;
+      }
+      case 'bouncy': {   // light bouncy balls (beach balls, lab balls...) that fly off when you hit them
+        ground(x, x + 12);
+        for (let k = 0; k < 4; k++) b.add({ t: 'ball', x: x + 3 + k * 1.9, y: top + 0.65 + (k % 2) * 1.3, r: 0.55 + 0.1 * r(), vx: 0, s: arg || 'beach', d: 0.04, e: 0.82 });
+        b.gem(x + 10, top + 1.4); x += 12; break;
+      }
+      case 'jelly': {   // wobbly jelly / candy blocks that bounce you back
+        ground(x, x + 11);
+        for (let k = 0; k < 3; k++) b.add({ t: 'dyn', x: x + 4 + k * 0.95, y: top + 0.45, w: 0.9, h: 0.9, s: 'candy', d: 0.18, e: 0.75 });
+        b.add({ t: 'dyn', x: x + 4.5, y: top + 1.35, w: 0.9, h: 0.9, s: 'candy', d: 0.18, e: 0.75 });
+        b.gem(x + 9, top + 1.3); x += 11; break;
+      }
+      case 'dominoRun': {   // a long run of tall boards: knock them all down
+        const n = 6 + ((r() * 3) | 0);
+        ground(x, x + n * 1.5 + 3); b.dominoes(x + 1.5, n, 1.5, top, 2.2, arg || def.domino || 'wood');
+        x += n * 1.5 + 3; break;
+      }
+      // ---- skill sections (late levels): need a steady hand
+      case 'iceSlide': {   // a stretch of glare ice with frozen bumps: no grip to brake or speed up
+        const L = rr(12, 16);
+        ground(x, x + L, top, 'ice');
+        for (let bx = x + 3; bx < x + L - 2; bx += rr(3, 4.5)) b.block(bx, top + 0.14, 1.2, 0.28, 'ice');
+        b.gem(x + L / 2, top + 1.3); x += L; ground(x, x + 3); x += 3; break;
+      }
+      case 'precisionJump': {   // a kicker, a short platform to land on, then another drop: land it or you are in the water
+        ground(x, x + 6); b.ramp(x + 2, top, x + 6, top + 1.0, st.ground, top - 0.5);
+        const g1 = rr(3.0, 3.4 + diff * 0.6), P = rr(5, 6);
+        ground(x + 6 + g1, x + 6 + g1 + P, top + 0.7);
+        b.gem(x + 6 + g1 / 2, top + 2.6);
+        x += 6 + g1 + P + 2.2; ground(x, x + 6); x += 6; break;
       }
       case 'sandPit': {   // soft sand with dunes: the truck bogs down, keep the speed up
         const L = rr(12, 17), n = 2 + ((r() * 2) | 0), seg = (L - 2) / n;

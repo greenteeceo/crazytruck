@@ -1,6 +1,6 @@
 // Crane Rush: game flow, screens (drawn on a canvas by ui/kit.js), input, ads and main loop.
 import { DT } from './sim.js';
-import { WORLDS, RACE_TRACKS } from './levels.js';
+import { WORLDS, RACE_TRACKS, NASTY } from './levels.js';
 import { makeRacer, racerWatch, respawnAt, trackSafe } from './racer.js';
 import { VEHICLES, vehicleById, UPGRADES, MAX_UPGRADE, upgradeCost, withUpgrades } from './vehicles.js';
 import { makeBot, makePlayer } from './bot.js';
@@ -992,6 +992,22 @@ function onWin() {
   ui.show('win', (u) => drawWin(u, st), { anim: 2.6 });
   setTimeout(() => earnGems(earn, st.earnPos), 1000);
   if (save.autoplay && next) setTimeout(() => { if (ui.screen?.name === 'win' && game?.level === l) startLevel(next); }, 2600);
+  // a world beaten for the first time: its nastiest obstacle is unlocked and joins every world after it
+  if (l.index === 19 && (!prev || prev.time == null) && NASTY[l.world] && !testRun && !save.autoplay) setTimeout(() => { if (ui.screen?.name === 'win') unlockPopup(NASTY[l.world][1], WORLDS[l.world + 1]?.name); }, 2800);
+}
+function unlockPopup(name, nextWorld) {
+  Audio.fanfare(); ui.confetti(80); P.vibrate('medium');
+  ui.overlay((u, age) => {
+    const pw = Math.min(u.w - PAD * 2, 360), ph = 250, px = u.w / 2 - pw / 2, py = u.h / 2 - ph / 2;
+    u.panel(px, py, pw, ph, { ribbon: 'World cleared!', ribbonColor: '#ff8a1f', scale: u.pop(0, 0.35, age) });
+    u.text('New obstacle unlocked:', u.w / 2, py + 52, 17, '#fff', { maxW: pw - 30 });
+    const k = 1 + Math.sin(u.t * 5) * 0.04;
+    u.ctx.save(); u.ctx.translate(u.w / 2, py + 96); u.ctx.scale(k, k); u.text(name, 0, 0, 30, GOLD, { maxW: pw - 30 }); u.ctx.restore();
+    u.text(nextWorld ? `Watch out for it in ${nextWorld} and beyond!` : 'Watch out for it in every world!', u.w / 2, py + 140, 14, '#ffe9a8', { maxW: pw - 30 });
+    u.button('unlockok', px + PAD, py + ph - PAD - 50, pw - PAD * 2, 50, { color: 'green', label: 'Bring it on!', size: 20, onTap: tap(() => u.closeOverlay()) });
+    u.request(0.1);
+    return true;
+  });
 }
 function drawWin(u, st) {
   const c = u.ctx, T = u.safeTop, B = u.safeBottom, barH = short() ? 72 : 82;
