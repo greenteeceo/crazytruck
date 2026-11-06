@@ -576,6 +576,7 @@ export class Sim {
     if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
     const v = this.chassis.getLinearVelocity();
     if (reason === 'lost') return 'lost';
+    if (reason === 'time') return 'time';
     if (reason === 'splash') {
       if (Math.abs(a) > 2.2) return 'splashRoof';
       if (v.x < 1 && this.maxX - this.x > 2.5) return 'splashShort';   // fell off the edge backwards / short jump

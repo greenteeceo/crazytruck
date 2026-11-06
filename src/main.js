@@ -117,6 +117,11 @@ let testRun = null;   // active automated test session (see startTest)
 const worldUnlocked = (w) => w < OPEN_WORLDS && (save.unlockAll || !!testRun || w === 0 || (worldDone(w - 1) >= 5 && starsNeeded(w) === 0));
 const levelUnlocked = (l) => save.unlockAll || l.index === 0 || lvlSave(WORLDS[l.world].levels[l.index - 1])?.time != null;
 const par = (l) => Math.ceil((PARS[l.id] ?? 10) * 1.25 * 2) / 2;
+// Every level has a countdown: reach the finish before it runs out. How much time depends on the level - the
+// crane's own drive time (pars) with room to spare: generous on the warm-ups, tighter on the hard levels (5, 10, 15, 20).
+const timeLimit = (l) => { const li = l.index, k = li < 3 ? 2.6 : (li + 1) % 5 === 0 ? 1.9 : 2.2; return Math.ceil((PARS[l.id] ?? 12) * k + 6); };
+const TIME_GEMS = 2;          // gems per second left on the clock at the finish
+const MAX_CONTINUES = 2;      // video continues per level attempt, then it is game over
 const totalDone = () => WORLDS.slice(0, OPEN_WORLDS).reduce((a, _, i) => a + worldDone(i), 0);
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
 const yesterday = () => { const d = new Date(Date.now() - 86400000); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
@@ -229,6 +234,7 @@ const laneZ = (i) => ((laneCount() - 1) / 2 - i) * LANE_W;
 
 function aiSpec(id) { const base = VEHICLES[0], v = vehicleById(id); return { ...base, look: v.look, crane: null, blade: false }; }
 
+const timeLeft = (g) => g.limit + g.extraT - g.sim.time;
 function startLevel(level, race = null, opts = {}) {
   R.camPush = 0;
   // a truck tried from the shop (rewarded video) drives the next level or race, once
@@ -242,7 +248,7 @@ function startLevel(level, race = null, opts = {}) {
   const lane = R.attachSim(sim, { z: z0 });
   const player = R.addCar(sim, spec, race ? { label: 'You', color: '#ffe14d', z: z0 } : {});
   R.focusZ = z0;
-  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makePlayer(testRun?.kind || save.autoKind || 'pro', 11), t0: ui.t, continued: false };
+  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makePlayer(testRun?.kind || save.autoKind || 'pro', 11), t0: ui.t, continued: false, limit: race ? 0 : timeLimit(level), extraT: 0, continues: 0, tickS: -1 };
   if (race) {
     race.rivals.forEach((rv, i) => {
       const s2 = aiSpec(rv.car);
@@ -303,6 +309,12 @@ function tick(dt) {
       g.stuckS = (g.stuckS || 0) + dt;
       if (g.stuckS > 3 && !g.stuckTip) { g.stuckTip = true; tip(g, 'Stuck? Hold behind the truck to back up, or tap ↻', 4); }
     }
+  }
+  // the countdown: out of time before the finish = lost (a tick each second for the last five)
+  if (!g.race && g.limit && g.sim.state === 'run' && g.countdown <= 0) {
+    const left = timeLeft(g);
+    if (left <= 0) g.sim.fail('time');
+    else if (left <= 5 && Math.ceil(left) !== g.tickS) { g.tickS = Math.ceil(left); Audio.countdown(false); }
   }
   while (g.acc >= DT) {
     g.acc -= DT;
@@ -422,7 +434,7 @@ function fx(e, sim, z = 0, car = null) {
       R.cheer(); Audio.applause();   // the crowd at the line jumps, claps and cheers
       Audio.win(); break;
     case 'fail':
-      if (game && !game.race && e.reason !== 'splash' && !testRun && !save.autoplay) game.slowT = 0.75;   // the crash in slow motion
+      if (game && !game.race && e.reason !== 'splash' && e.reason !== 'time' && !testRun && !save.autoplay) game.slowT = 0.75;   // the crash in slow motion
       if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }
       else if ((sim.tier ?? 3) <= 1) {   // gentle roll-over: a soft puff and a thud, nothing breaks
         for (let i = 0; i < 4; i++) R.smoke(p.x + (Math.random() - 0.5) * 2, p.y - 0.4, z + (Math.random() - 0.5) * 1.4, 0.35, (Math.random() - 0.5) * 1.2, 0.3 + Math.random() * 0.3);
@@ -749,6 +761,21 @@ function drawHud(u) {
   const name = g.race ? (g.race.random ? `Random · ${l.name}` : `${g.race.cup.name} · Race ${g.race.idx + 1}/3`) : `${w.name} ${l.index + 1}. ${l.name}`;
   u.text(name, u.w / 2, topY(u) + 10, 15, '#fff', { maxW: u.w - 180 });
   u.text(fmt(g.sim.state === 'win' ? g.sim.finishTime : g.sim.time), u.w / 2, topY(u) + 38, 30);
+  if (!g.race && g.limit) {
+    // countdown clock on the left: white, yellow under 10 s, red and pulsing under 5 s
+    const left = Math.max(0, g.sim.state === 'win' ? g.limit + g.extraT - g.sim.finishTime : timeLeft(g)), lw = 92, lh = 46, lx = PAD, ly = topY(u) + 108;
+    const hot = left <= 5, warm = left <= 10, pulse = hot && g.sim.state === 'run' ? 1 + Math.abs(Math.sin(u.t * 6)) * 0.08 : 1;
+    c.save(); c.translate(lx + lw / 2, ly + lh / 2); c.scale(pulse, pulse); c.translate(-(lx + lw / 2), -(ly + lh / 2));
+    u.rr(lx, ly, lw, lh, 16); c.fillStyle = hot ? 'rgba(200,20,40,0.85)' : 'rgba(10,30,80,0.7)'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+    // a small stopwatch face with the hand sweeping down the time left
+    const cx = lx + 22, cy = ly + lh / 2 + 1, frac = Math.min(1, left / (g.limit + g.extraT));
+    c.beginPath(); c.arc(cx, cy, 13, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+    c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, 10, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); c.closePath(); c.fillStyle = hot ? '#ff3d57' : warm ? '#ffc61a' : '#46d35c'; c.fill();
+    c.fillStyle = INK; c.fillRect(cx - 3, cy - 19, 6, 5);
+    u.text(`${Math.ceil(left)}s`, lx + 64, ly + lh / 2 + 1, 22, hot ? '#fff' : warm ? '#ffe14d' : '#fff');
+    c.restore();
+    if (g.sim.state === 'run') u.request(0.1);
+  }
   if (!g.race && g.sim.state === 'run' && (g.stuckS || 0) > 3)
     u.button('stuckRetry', u.w / 2 - 34, topY(u) + 60, 68, 44, { color: 'orange', icon: 'retry', size: 18, radius: 14, scale: 0.95 + 0.05 * Math.sin(u.t * 6), onTap: tap(() => startLevel(g.level)) });
   if (g.race) {
@@ -839,6 +866,7 @@ function drawHud(u) {
 
 // ------------------------------------------------------------ fail screen (crash photo)
 const QUIPS = {
+  time: ['Time\'s up!', 'Too slow, too late!', 'The clock won this one.', 'Tick tock... boom.'],
   roof: ['Roof parking is not a thing.', 'Wrong side up!', 'Turtle mode activated.', 'Nice ceiling view!'],
   nose: ['Face plant!', 'Nose first. Classic.', 'The ground said hello.', 'Headbutt of the year.'],
   backflip: ['Too much style!', 'Backflip... almost.', 'Show-off!', 'Rotation: 270°. Needed: 360°.'],
@@ -849,7 +877,7 @@ const QUIPS = {
   splashShort: ['Just... one... more... metre.', 'Short jump. Long swim.', 'Gravity wins again.'],
   lost: ['Wrong way, driver!', 'The finish is the OTHER way.'],
 };
-const STICKERS = { roof: 'stars', nose: 'bang', backflip: 'spin', crash: 'bang', splash: 'bubbles', splashSpin: 'bubbles', splashRoof: 'bubbles', splashShort: 'bubbles', lost: 'bang' };
+const STICKERS = { time: 'stars', roof: 'stars', nose: 'bang', backflip: 'spin', crash: 'bang', splash: 'bubbles', splashSpin: 'bubbles', splashRoof: 'bubbles', splashShort: 'bubbles', lost: 'bang' };
 
 function onFail() {
   const g = game, l = g.level;
@@ -857,7 +885,7 @@ function onFail() {
   const snap = g.snap || R.snapshotCar(g.sim, g.z);
   const pose = g.sim.failPose || g.sim.reason || 'crash';
   const q = QUIPS[pose] || QUIPS.crash;
-  const st = { snap, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l };
+  const st = { snap, pose, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l };
   ui.show('fail', (u) => drawFail(u, st));
 }
 function drawSticker(u, kind, x, y, w, h, t) {
@@ -886,7 +914,7 @@ function drawSticker(u, kind, x, y, w, h, t) {
 function drawFail(u, st) {
   const c = u.ctx, T = u.safeTop, B = u.safeBottom, t = u.st;
   c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
-  const canContinue = !st.continued && game && !game.race;
+  const used = game?.continues || 0, canContinue = !st.continued && game && !game.race && used < MAX_CONTINUES, over = game && !game.race && used >= MAX_CONTINUES;
   const barH = short() ? 72 : 82, contH = canContinue ? 64 : 0, heartsH = 0;
   const avail = u.h - T - B - barH - contH - 90 - heartsH;
   const pw = Math.min(u.w * 0.78, 360, avail / 1.33), ph = pw * 1.05, frameH = ph + 16 + 64;
@@ -904,17 +932,18 @@ function drawFail(u, st) {
   // OOPS stamp
   const sk = t < 0.5 ? 0 : Math.min(1, (t - 0.5) / 0.35), ss = 3 - 2 * sk;
   if (sk > 0) {
-    c.save(); c.translate(pw / 2 - 64, fy + 46); c.rotate(0.24); c.scale(ss, ss); c.globalAlpha = 0.9 * sk;
-    u.rr(-56, -22, 112, 44, 8); c.lineWidth = 4; c.strokeStyle = '#ff3d57'; c.stroke();
-    u.text('OOPS!', 0, 2, 28, '#ff3d57', { outline: false }); c.restore();
+    const stamp = over ? 'GAME OVER' : st.pose === 'time' ? 'TIME UP!' : 'OOPS!', sw = stamp.length > 5 ? 168 : 112;
+    c.save(); c.translate(pw / 2 - sw / 2 - 8, fy + 46); c.rotate(0.24); c.scale(ss, ss); c.globalAlpha = 0.9 * sk;
+    u.rr(-sw / 2, -22, sw, 44, 8); c.lineWidth = 4; c.strokeStyle = '#ff3d57'; c.stroke();
+    u.text(stamp, 0, 2, 28, '#ff3d57', { outline: false }); c.restore();
   }
-  u.text(st.caption, 0, fy + 16 + ph + 34, Math.min(24, pw / 13), '#8a92a6', { outline: false, maxW: pw });
+  u.text(over ? 'GAME OVER - no continues left' : st.caption, 0, fy + 16 + ph + 34, Math.min(24, pw / 13), over ? '#ff3d57' : '#8a92a6', { outline: false, maxW: pw });
   c.restore();
   // buttons
   const by = u.h - B - 24 - barH;
   // rewarded offer: continue from the checkpoint (no hints: every level is driven by the player)
   const offers = [];
-  if (canContinue && HSGame.has('ads') && HSGame.canShowAd('revive')) offers.push({ id: 'continue', color: 'green', parts: [{ icon: 'video', size: 22 }, 'Continue'], go: () => adGo(HSGame.showAd('revive'), () => continueAfterCrash(st)) });
+  if (canContinue && HSGame.has('ads') && HSGame.canShowAd('revive')) offers.push({ id: 'continue', color: 'green', parts: [{ icon: 'video', size: 22 }, `Continue (${MAX_CONTINUES - used} left)`], go: () => adGo(HSGame.showAd('revive'), () => continueAfterCrash(st)) });
   if (offers.length) {
     const ow = Math.min(u.w - PAD * 2, offers.length > 1 ? 360 : 280), bw = (ow - GAP * (offers.length - 1)) / offers.length;
     offers.forEach((o, i) => u.button(o.id, u.w / 2 - ow / 2 + i * (bw + GAP), by - 66, bw, 52, { color: o.color, parts: o.parts, size: 20, scale: u.pop(0.6, 0.4), onTap: tap(() => { if (!adBusy) o.go(); }) }));
@@ -929,8 +958,10 @@ function drawFail(u, st) {
 // Rewarded "continue": flip the truck back on its wheels at the last checkpoint and keep going.
 function continueAfterCrash(st) {
   const g = game; if (!g) return;
-  st.continued = true;
-  const back = g.sim.reason === 'splash' ? 9 : 5;
+  st.continued = true; g.continues = (g.continues || 0) + 1;
+  // out of time: the clock gets 10 more seconds (and a few to spare beyond the time spent so far)
+  if (g.sim.reason === 'time') g.extraT += Math.max(10, g.sim.time - (g.limit + g.extraT) + 10);
+  const back = g.sim.reason === 'splash' ? 9 : g.sim.reason === 'time' ? 0 : 5;
   const cp = [...g.me.safe].reverse().find((x) => x <= g.sim.x - back) ?? g.sim.startX;
   respawnAt(g.me, cp);
   g.over = false; g.failT = 0; g.snap = null; g.paused = false; g.slowT = 0; R.camPush = 0;
@@ -944,6 +975,8 @@ function onWin() {
   const t = sim.finishTime, prev = lvlSave(l), allGems = sim.gemsTaken >= sim.gems.length;
   const stars = 1 + (allGems ? 1 : 0) + (t <= par(l) ? 1 : 0);
   let earn = sim.gemsTaken * 5;
+  const left = Math.max(0, Math.floor(g.limit + g.extraT - t)), timeGems = left * TIME_GEMS;   // finishing early pays
+  earn += timeGems;
   if (!prev || prev.time == null) earn += 20 + l.world * 5;   // first clear: coins to buy trucks
   if (stars === 3 && (!prev || (prev.stars || 0) < 3)) earn += 30;
   const best = prev?.time != null ? Math.min(prev.time, t) : t;
@@ -952,7 +985,7 @@ function onWin() {
   persist();
   const next = WORLDS[l.world].levels[l.index + 1];
   earn *= gemMult();   // 2x Gems booster
-  const st = { l, t, best, newBest, stars, earn, gems: `${sim.gemsTaken}/${sim.gems.length}`, next, mult: 1, boosted: gemMult() > 1 };
+  const st = { l, t, best, newBest, stars, earn, gems: `${sim.gemsTaken}/${sim.gems.length}`, next, mult: 1, boosted: gemMult() > 1, left, timeGems };
   [0, 1, 2].forEach((i) => { if (i < stars) setTimeout(() => Audio.star(i), 300 + i * 250); });
   ui.show('win', (u) => drawWin(u, st), { anim: 2.6 });
   setTimeout(() => earnGems(earn, st.earnPos), 1000);
@@ -961,23 +994,23 @@ function onWin() {
 function drawWin(u, st) {
   const c = u.ctx, T = u.safeTop, B = u.safeBottom, barH = short() ? 72 : 82;
   c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
-  const pw = Math.min(u.w * 0.9, 400), ph = 330, px = u.w / 2 - pw / 2;
+  const pw = Math.min(u.w * 0.9, 400), ph = 368, px = u.w / 2 - pw / 2;
   const by = u.h - B - 24 - barH, py = Math.max(T + 50, (by - 80 - ph) / 2 + 10);
   u.panel(px, py, pw, ph, { ribbon: 'Level Complete!', scale: u.pop(0, 0.4) });
   for (let i = 0; i < 3; i++) {
     const k = i < st.stars ? Math.min(1.3, u.pop(0.25 + i * 0.25, 0.5)) : 1, big = i === 1;
     u.star(u.w / 2 + (i - 1) * 76, py + 70 - (big ? 12 : 0), big ? 78 : 66, i < st.stars && k > 0.3, i < st.stars ? Math.max(0.01, k) : 1);
   }
-  const rows = [['Time', fmt(st.t)], ['Best', fmt(st.best) + (st.newBest ? '  NEW!' : '')], ['Gems', st.gems]];
+  const rows = [['Time', fmt(st.t)], ['Best', fmt(st.best) + (st.newBest ? '  NEW!' : '')], ['Gems', st.gems], ['Time left', `${st.left}s  +${st.timeGems}`]];
   rows.forEach(([a, b], i) => {
     const ry = py + 128 + i * 38;
     u.text(a, px + 24, ry, 20, '#fff', { align: 'left' }); u.text(b, px + pw - 24, ry, 20, b.includes('NEW') ? GOLD : '#fff', { align: 'right' });
     c.fillStyle = 'rgba(255,255,255,0.15)'; c.fillRect(px + 20, ry + 18, pw - 40, 2);
   });
-  u.text(`★ finish · ★ all gems · ★ under ${fmt(par(st.l))}`, u.w / 2, py + 248, 13, '#fff', { maxW: pw - 30 });
+  u.text(`★ finish · ★ all gems · ★ under ${fmt(par(st.l))}`, u.w / 2, py + 286, 13, '#fff', { maxW: pw - 30 });
   const shown = Math.round(st.earn * st.mult * Math.min(1, Math.max(0, (u.st - 1) / 0.9)));
-  u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 30 }, ...(st.boosted ? [{ text: ' 2x', color: '#7aff8a' }] : [])], u.w / 2, py + 290, { size: 30, gap: 10 });
-  st.earnPos = { x: u.w / 2, y: py + 290 };
+  u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 30 }, ...(st.boosted ? [{ text: ' 2x', color: '#7aff8a' }] : [])], u.w / 2, py + 328, { size: 30, gap: 10 });
+  st.earnPos = { x: u.w / 2, y: py + 328 };
   if (st.mult === 1 && st.earn > 0 && !testRun && HSGame.has('ads') && HSGame.canShowAd('level_x3')) {
     const bw = Math.min(u.w - 60, 280);
     const m = HSGame.rewards('level_x3')?.mult || 3;
