@@ -21,6 +21,20 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 - **Tutorial**: the first level points a hand at ▶ ("Hold to drive!"), then tips for braking and for tilting in the air
 - **Developer tools**: Settings has a DEV TEST section with **Autoplay (bot drives)** and **All resources (dev)** (infinite gems and lives, every truck owned, every world, level and cup open). The AUTO chip and TEST button (tour of all 20 worlds, 20 random levels, every level of a world, 10 random races with 3–6 lanes, with a pass/fail report) are on the home screen. Shown while `DEV_TOOLS` is `true` in `src/platform/config.js`; set it to `false` for the store build (tapping the version line in Settings 5 times still unlocks them). Any cup already won (or all of them with All resources) can be picked on the Race tab
 
+## Economy
+
+Gems are the only currency. Measured on the shipped levels: a first clear of all 400 levels with every gem and 3 stars pays ~52,700 gems (realistically ~41,000 in 4–5 hours), i.e. ~100–150 gems a minute on new levels and ~50 a minute replaying; a race win pays 100–300.
+
+| Sink | Gems |
+|---|---|
+| Trucks (16) | 1,500 … 28,000 (150,500 in all) |
+| Upgrades | level 1 = 3% of the truck price (min 150), +75% per level; maxing a truck ≈ 1.9× its price |
+| Items | Magnet 60 · Jump 90 · Glider 100 · Rocket 120 · Shield 150 (x5 for the price of 4) |
+
+Gem packs (`GEM_PACKS`, `STARTER_PACK` in `src/platform/config.js`): 1,200 / $0.99 · 2,600 / $1.99 · 7,000 / $4.99 · 15,000 / $9.99 · 32,000 / $19.99 (each lines up with a truck: Scoop, Rubble, Mixer, Knight, Rocket Racer), plus a one-time starter pack 3,000 gems + 3 Rockets + 2 Shields for $0.99.
+
+Rewarded videos that pay gems: level complete x3 · race result x2 · cup win bonus x2 · daily gift x2 (7-day streak 100 → 600) · **2x Gems** booster (every level and race reward doubled for 10 minutes; button next to Play and in the shop) · free +150 gems (5 a day) · plus continue, hint, free Rocket on a sea crossing, refill lives and try a truck.
+
 ## Controls
 
 - ▶ / Right arrow / D: drive forward. In the air it tilts the truck back.
@@ -62,7 +76,7 @@ Rewards are checked at start-up and every time the game comes back to the foregr
 
 | Type | Where | Rule |
 | --- | --- | --- |
-| Rewarded | Win screen: x3 gems · Fail screen: continue from the last checkpoint, Hint (after 2 crashes) · Out of lives: refill 5 hearts · Race results: x2 gems · Shop: +150 gems, Try a truck | Reward only when the video was watched to the end (`isEnded`) |
+| Rewarded | Win screen: x3 gems · Race results: x2 gems · Cup win: x2 bonus · Daily gift: x2 · Home / shop: 2x Gems for 10 min · Shop: +150 gems (5 a day), Try a truck · Fail screen: continue, Hint (after 2 crashes), free Rocket (sea crossing) · Out of lives: refill 5 hearts | Reward only when the video was watched to the end (`isEnded`) |
 | Interstitial | When leaving a win / fail / race result screen | Not in the first 45 s, at least 45 s apart (levels last 10–15 s, so about one every 3–4 levels), never during play, AUTO or TEST |
 
 Pacing and reward amounts live in `src/platform/config.js` (`AD_RULES`, `REWARDS`).

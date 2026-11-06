@@ -7,7 +7,7 @@ import { makeBot } from './bot.js';
 import { Renderer, setLabelFont } from './render.js';
 import { Audio } from './audio.js';
 import { P } from './platform/index.js';
-import { AD_RULES, REWARDS, DEV_TOOLS, IAP_ENABLED, GEM_PACKS } from './platform/config.js';
+import { AD_RULES, REWARDS, DEV_TOOLS, IAP_ENABLED, GEM_PACKS, STARTER_PACK } from './platform/config.js';
 import { UI, INK, GOLD, GRAD } from './ui/kit.js';
 import PARS from './pars.json';
 import { board, rankOf, BOARD_SIZE } from './leaderboard.js';
@@ -23,7 +23,7 @@ save.tut ||= {};   // tutorial steps already shown
 if (!save.items) save.items = { ...STARTER_ITEMS };   // a starter pack of special items
 // dev tools (Autoplay, All resources, AUTO / TEST chips): on while DEV_TOOLS is true (config.js),
 // otherwise hidden until the version line in Settings is tapped 5 times
-const VERSION = '3.7';
+const VERSION = '3.8';
 const dev = () => DEV_TOOLS || !!save.dev;
 if (save.allRes == null) save.allRes = !!(save.infinite && save.unlockAll);
 if (!dev()) save.autoplay = save.allRes = false;
@@ -85,6 +85,49 @@ const levelUnlocked = (l) => save.unlockAll || l.index === 0 || lvlSave(WORLDS[l
 const par = (l) => Math.ceil((PARS[l.id] ?? 10) * 1.25 * 2) / 2;
 const totalDone = () => WORLDS.reduce((a, _, i) => a + worldDone(i), 0);
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+const yesterday = () => { const d = new Date(Date.now() - 86400000); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+
+// ------------------------------------------------------------ rewarded videos that double gems
+// 2x Gems booster: every level / race gem reward is doubled for a few minutes
+const gemBoostLeft = () => Math.max(0, (save.gemBoost || 0) - Date.now());
+const gemMult = () => (gemBoostLeft() > 0 ? 2 : 1);
+const mmss = (ms) => { const t = Math.ceil(ms / 1000); return `${(t / 60) | 0}:${String(t % 60).padStart(2, '0')}`; };
+function startGemBoost() { watchAd(() => { save.gemBoost = Math.max(Date.now(), save.gemBoost || 0) + REWARDS.gemBoostMinutes * 60000; persist(); Audio.win(); ui.toast(`2x gems for ${REWARDS.gemBoostMinutes} minutes!`, '#46d35c'); }); }
+function boostButton(u, x, y, w, h) {
+  const left = gemBoostLeft();
+  if (left > 0) { u.pill(x, y, h, { gem: true, text: `2x ${mmss(left)}` }, { minW: w, bg: 'rgba(30,140,60,0.8)' }); u.request(1); return; }
+  u.button('gboost', x, y, w, h, { color: 'green', parts: [{ icon: 'video', size: h * 0.45 }, '2x', { gem: true, size: h * 0.4 }], size: h * 0.42, radius: h / 2, ring: false, onTap: tap(startGemBoost) });
+}
+// free gems video: capped per day
+const freeVidsLeft = () => REWARDS.freeGemsPerDay - (save.fv?.day === today() ? save.fv.n : 0);
+function freeGemsVideo(from) {
+  if (freeVidsLeft() <= 0) { ui.toast('Come back tomorrow for more free gems', '#ff8a1f'); return; }
+  watchAd(() => { save.fv = { day: today(), n: (save.fv?.day === today() ? save.fv.n : 0) + 1 }; earnGems(REWARDS.freeGems, from); Audio.win(); });
+}
+// daily gift: grows with the login streak (7-day cycle), x2 with a video
+function dailyGift() {
+  const d = save.daily || {};
+  if (d.day === today() || testRun) return;
+  const streak = d.day === yesterday() ? (d.streak || 0) + 1 : 1, idx = (streak - 1) % REWARDS.dailyGifts.length, amount = REWARDS.dailyGifts[idx];
+  const claim = (k) => { save.daily = { day: today(), streak }; persist(); ui.closeOverlay(); earnGems(amount * k, { x: ui.w / 2, y: ui.h / 2 }); Audio.win(); ui.confetti(24); };
+  ui.overlay((u, age) => {
+    const c = u.ctx, pw = Math.min(u.w - PAD * 2, 380), ph = 300, px = u.w / 2 - pw / 2, py = u.h / 2 - ph / 2;
+    u.panel(px, py, pw, ph, { ribbon: 'Daily Gift', ribbonColor: 'gold', scale: u.pop(0, 0.3, age) });
+    u.text(`Day ${streak} in a row`, u.w / 2, py + 42, 16, '#fff');
+    const n = REWARDS.dailyGifts.length, bw = (pw - 28 - (n - 1) * 5) / n;
+    REWARDS.dailyGifts.forEach((g, i) => {
+      const x = px + 14 + i * (bw + 5), y = py + 66, on = i === idx, done = i < idx;
+      u.rr(x, y, bw, 70, 10); c.fillStyle = on ? u.grad(y, y + 70, GRAD.gold) : done ? 'rgba(70,211,92,0.5)' : 'rgba(10,30,80,0.5)'; c.fill(); c.lineWidth = 2; c.strokeStyle = INK; c.stroke();
+      u.text(`D${i + 1}`, x + bw / 2, y + 12, 11, '#fff');
+      u.gem(x + bw / 2, y + 34, Math.min(20, bw * 0.5));
+      u.text(String(g), x + bw / 2, y + 56, 12, on ? '#5a3000' : '#fff', { outline: !on, maxW: bw - 2 });
+    });
+    u.row([{ text: `+${amount}`, color: GOLD }, { gem: true, size: 26 }], u.w / 2, py + 166, { size: 26 });
+    u.button('dgx2', px + PAD, py + 192, pw - PAD * 2, 50, { color: 'green', parts: [{ icon: 'video', size: 22 }, 'Claim x2', `+${amount * 2}`, { gem: true, size: 18 }], size: 18, onTap: tap(() => watchAd(() => claim(2))) });
+    u.button('dg1', px + PAD + 40, py + 250, pw - PAD * 2 - 80, 38, { color: 'gray', label: 'Claim', size: 16, onTap: tap(() => claim(1)) });
+    return age < 0.4;
+  });
+}
 
 // ------------------------------------------------------------ lives: a crash in a level costs one, they come back over time
 // or all at once for a rewarded video. Races never cost lives (something to do while waiting).
@@ -614,6 +657,7 @@ function drawHome(u) {
     const pw2 = 180;
     u.button('play', u.w / 2 - pw2 / 2, playY - playH + bob, pw2, playH, { label: 'Play', icon: 'play', size: 32, scale: u.pop(0.1, 0.4), onTap: tap(() => showLevels(wi)) });
     livesPill(u, u.w / 2 + pw2 / 2 + 8, playY - playH / 2 - 17 + bob, 34, false, true);
+    boostButton(u, u.w / 2 - pw2 / 2 - 8 - 70, playY - playH / 2 - 17 + bob, 70, 34);   // 2x Gems booster (video)
   } else {
     const msg = worldDone(wi - 1) < 5 ? `Clear 5 in ${WORLDS[wi - 1].name}` : `Need ${starsNeeded(wi)} more stars`;
     const pw2 = Math.min(u.w - 60, u.measure(msg, 17) + 70);
@@ -915,7 +959,8 @@ function onWin() {
   const newBest = !prev || prev.time == null || t < prev.time;
   persist();
   const next = WORLDS[l.world].levels[l.index + 1];
-  const st = { l, t, best, newBest, stars, earn, gems: `${sim.gemsTaken}/${sim.gems.length}`, next, mult: 1, hint: g.hint };
+  earn *= gemMult();   // 2x Gems booster
+  const st = { l, t, best, newBest, stars, earn, gems: `${sim.gemsTaken}/${sim.gems.length}`, next, mult: 1, hint: g.hint, boosted: gemMult() > 1 };
   [0, 1, 2].forEach((i) => { if (i < stars) setTimeout(() => Audio.star(i), 300 + i * 250); });
   ui.show('win', (u) => drawWin(u, st), { anim: 2.6 });
   setTimeout(() => earnGems(earn, st.earnPos), 1000);
@@ -939,7 +984,7 @@ function drawWin(u, st) {
   });
   u.text(st.hint ? 'Hint used: drive it yourself for 3 stars!' : `★ finish · ★ all gems · ★ under ${fmt(par(st.l))}`, u.w / 2, py + 248, st.hint ? 15 : 13, st.hint ? '#ffe9a8' : '#fff', { maxW: pw - 30 });
   const shown = Math.round(st.earn * st.mult * Math.min(1, Math.max(0, (u.st - 1) / 0.9)));
-  u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 30 }], u.w / 2, py + 290, { size: 30, gap: 10 });
+  u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 30 }, ...(st.boosted ? [{ text: ' 2x', color: '#7aff8a' }] : [])], u.w / 2, py + 290, { size: 30, gap: 10 });
   st.earnPos = { x: u.w / 2, y: py + 290 };
   if (st.mult === 1 && st.earn > 0) {
     const bw = Math.min(u.w - 60, 280);
@@ -973,7 +1018,7 @@ function finishRace() {
   rows.forEach((r, i) => { r.pts = rows.length - i; pts[r.name] = (pts[r.name] || 0) + r.pts; });
   if (!race.random) save.cup.pts = pts;
   const myPlace = rows.findIndex((r) => r.me);
-  const earn = Math.round(PLACE_GEMS[myPlace] * race.cup.reward) + g.sim.gemsTaken * 5;
+  const earn = (Math.round(PLACE_GEMS[myPlace] * race.cup.reward) + g.sim.gemsTaken * 5) * gemMult();   // 2x Gems booster
   if (!race.random) save.cup.race = race.idx + 1;
   // every 1st place = +1 trophy on the leaderboard
   let rankMsg = null;
@@ -1049,7 +1094,8 @@ function cupStandings() {
   const pts = save.cup.pts || {};
   const rows = Object.entries(pts).map(([name, p]) => ({ name, p, me: name === 'You' })).sort((a, b) => b.p - a.p);
   const won = rows[0]?.me;
-  if (won && !save.cups[cupIdx]) { save.cups[cupIdx] = true; setTimeout(() => earnGems(250, { x: ui.w / 2, y: ui.h / 2 }), 600); }
+  const bonus = won && !save.cups[cupIdx] ? 250 : 0, cupSt = { doubled: false };
+  if (bonus) { save.cups[cupIdx] = true; setTimeout(() => earnGems(bonus, { x: ui.w / 2, y: ui.h / 2 }), 600); }
   save.cup = { idx: won && cupIdx < CUPS.length - 1 ? cupIdx + 1 : cupIdx, race: 0, pts: null };
   persist();
   if (won) { Audio.win(); ui.confetti(); } else Audio.fail();
@@ -1058,7 +1104,7 @@ function cupStandings() {
     const c = u.ctx, T = u.safeTop, B = u.safeBottom;
     c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
     topbar(u);
-    const by = u.h - B - 24 - (short() ? 72 : 82), n = rows.length, ts = short() ? 64 : 92;
+    const by0 = u.h - B - 24 - (short() ? 72 : 82), showX2 = bonus && !cupSt.doubled && !testRun, by = by0 - (showX2 ? 66 : 0), n = rows.length, ts = short() ? 64 : 92;
     const pw = Math.min(u.w * 0.92, 420), px = u.w / 2 - pw / 2, py = topY(u) + pillH() + GAP + 22, ty = py + 34 + ts;
     const rh = Math.max(34, Math.min(short() ? 44 : 50, Math.floor((by - GAP - ty - 50) / n) - 8)), gap = rh < 44 ? 6 : 8;
     u.panel(px, py, pw, ty - py + n * (rh + gap) + 44, { ribbon: `${cup.name} ${won ? 'Won!' : 'Final'}`, ribbonColor: cup.color });
@@ -1066,7 +1112,8 @@ function cupStandings() {
     c.save(); c.translate(u.w / 2, py + 26 + ts / 2); c.scale(k, k); u.icon('trophy', -ts / 2, -ts / 2, ts, won ? GOLD : '#8e97b0'); c.restore();
     const endY = tableRows(u, rows, px + 14, ty, pw - 28, { time: false, rh });
     u.text(won ? '+250 bonus gems! Next cup unlocked.' : 'Finish 1st overall to win the cup!', u.w / 2, endY + 16, 15, '#fff', { maxW: pw - 20 });
-    barButtons(u, [{ id: 'cont', label: 'Continue', icon: 'trophy', color: 'blue', big: true, onTap: showRace }], by);
+    if (showX2) { const bw = Math.min(u.w - 60, 280); u.button('cupx2', u.w / 2 - bw / 2, by0 - 66, bw, 52, { color: 'green', parts: [{ icon: 'video', size: 22 }, 'x2 bonus', `+${bonus}`, { gem: true, size: 18 }], size: 19, scale: u.pop(1, 0.4), onTap: tap(() => watchAd(() => { cupSt.doubled = true; earnGems(bonus, { x: u.w / 2, y: u.h / 2 }); Audio.win(); })) }); }
+    barButtons(u, [{ id: 'cont', label: 'Continue', icon: 'trophy', color: 'blue', big: true, onTap: showRace }], by0);
     return true;
   });
 }
@@ -1221,7 +1268,7 @@ function drawShop(u) {
   if (shopTab === 'trucks') u.hit(0, 0, u.w, u.h, { id: '__swipe' });   // empty space: swipe to change truck
   topbar(u);
   // free gems for a video (left, under the safe area)
-  u.button('freegems', PAD, topY(u), 132, pillH(), { color: 'green', parts: [{ icon: 'video', size: 22 }, `+${REWARDS.freeGems}`, { gem: true, size: 18 }], size: 17, radius: 12, onTap: tap(() => watchAd(() => { earnGems(REWARDS.freeGems, { x: 70, y: T + 30 }); Audio.win(); })) });
+  u.button('freegems', PAD, topY(u), 132, pillH(), { color: freeVidsLeft() > 0 ? 'green' : 'gray', parts: [{ icon: 'video', size: 22 }, `+${REWARDS.freeGems}`, { gem: true, size: 18 }], size: 17, radius: 12, onTap: tap(() => freeGemsVideo({ x: 70, y: T + 30 })) });
   // tabs: Trucks | Items | Gems
   const tabsY = topY(u) + pillH() + GAP, tabH = sh ? 34 : 38, tw = Math.min(u.w - PAD * 2, 360), tx0 = u.w / 2 - tw / 2;
   const tabs = [['trucks', 'Trucks', 'shop'], ['items', 'Items', 'rocket'], ['gems', 'Gems', null]];
@@ -1345,8 +1392,22 @@ function buyItem(it, n) {
 function drawShopGems(u, top) {
   const c = u.ctx, sh = short(), pw = Math.min(u.w - PAD * 2, 440), px = u.w / 2 - pw / 2;
   c.fillStyle = 'rgba(10,40,120,0.45)'; c.fillRect(0, top - 6, u.w, u.h);
-  u.button('gfree', px, top + 4, pw, sh ? 50 : 56, { color: 'green', parts: [{ icon: 'video', size: 24 }, 'Watch a video', `+${REWARDS.freeGems}`, { gem: true, size: 20 }], size: 18, onTap: tap(() => watchAd(() => { earnGems(REWARDS.freeGems, { x: u.w / 2, y: top + 30 }); Audio.win(); })) });
-  const rh = sh ? 56 : 62, listY = top + (sh ? 66 : 74), listH = navTop(u) - 2 * GAP - listY - 22;
+  // free videos: +150 gems (5 a day) and the 2x Gems booster
+  const fbw = (pw - GAP) / 2, fh = sh ? 50 : 56, fl = freeVidsLeft();
+  u.button('gfree', px, top + 4, fbw, fh, { color: fl > 0 ? 'green' : 'gray', parts: [{ icon: 'video', size: 22 }, `+${REWARDS.freeGems}`, { gem: true, size: 18 }], sub: `${fl}/${REWARDS.freeGemsPerDay} today`, size: 18, onTap: tap(() => freeGemsVideo({ x: u.w / 2, y: top + 30 })) });
+  if (gemBoostLeft() > 0) { u.rr(px + fbw + GAP, top + 4, fbw, fh, 14); u.ctx.fillStyle = 'rgba(30,140,60,0.8)'; u.ctx.fill(); u.row([{ gem: true, size: 18 }, `2x ${mmss(gemBoostLeft())}`], px + fbw + GAP + fbw / 2, top + 4 + fh / 2, { size: 18 }); u.request(1); }
+  else u.button('gboost2', px + fbw + GAP, top + 4, fbw, fh, { color: 'green', parts: [{ icon: 'video', size: 22 }, '2x', { gem: true, size: 18 }], sub: `${REWARDS.gemBoostMinutes} min`, size: 18, onTap: tap(startGemBoost) });
+  // one-time starter pack
+  let listTop = top + fh + 14;
+  if (!save.starterBought) {
+    const sy = listTop, shh = sh ? 64 : 70;
+    u.rr(px, sy, pw, shh, 14); c.fillStyle = u.grad(sy, sy + shh, GRAD.purple); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+    u.text('Starter pack', px + 14, sy + 16, 16, GOLD, { align: 'left' });
+    u.row([{ gem: true, size: 18 }, STARTER_PACK.gems.toLocaleString('en-US'), ' +', { icon: 'rocket', size: 18, color: GOLD }, `x${STARTER_PACK.items.boost}`, { icon: 'shield', size: 18, color: '#c6a8ff' }, `x${STARTER_PACK.items.shield}`], px + 14 + 110, sy + shh * 0.66, { size: 15, maxW: 210 });
+    u.button('starter', px + pw - 10 - 92, sy + (shh - 40) / 2, 92, 40, { color: IAP_ENABLED ? 'orange' : 'gray', label: STARTER_PACK.price, size: 16, radius: 10, ring: false, onTap: tap(() => ui.toast(IAP_ENABLED ? 'Opening the store…' : 'Gem packs are coming soon!', '#ff8a1f')) });
+    listTop += shh + 10;
+  }
+  const rh = sh ? 56 : 62, listY = listTop, listH = navTop(u) - 2 * GAP - listY - 22;
   u.scroll('gemPacks', px - 4, listY, pw + 8, listH, GEM_PACKS.length * (rh + 8) + 8, () => {
     GEM_PACKS.forEach((gp, i) => {
       const y = listY + 4 + i * (rh + 8);
@@ -1601,6 +1662,7 @@ async function boot() {
   loadingDone = true;
   showWorlds();
   checkMissionRewards();
+  setTimeout(dailyGift, 600);   // once a day: streak gift, x2 with a video
 }
 boot();
 
@@ -1608,7 +1670,7 @@ boot();
 globalThis.__crane = {
   get game() { return game; }, get testRun() { return testRun; }, save: () => save, ui, R, P, worlds: WORLDS,
   startLevel: (w, l) => startLevel(WORLDS[w].levels[l]), startTest, keys,
-  actions: { board: () => showBoard(), standings: () => cupStandings(), tab: ({ tab }) => tabs2[tab](), race: startRace, randomRace: startRandomRace, levels: ({ w }) => showLevels(+w), shopSel: ({ id }) => showShop(id), use: ({ id }) => { save.car = id; persist(); } },
+  actions: { daily: () => { save.daily = null; dailyGift(); }, board: () => showBoard(), standings: () => cupStandings(), tab: ({ tab }) => tabs2[tab](), race: startRace, randomRace: startRandomRace, levels: ({ w }) => showLevels(+w), shopSel: ({ id }) => showShop(id), use: ({ id }) => { save.car = id; persist(); } },
   stats: () => ({ calls: R.r.info.render.calls, tris: R.r.info.render.triangles, geos: R.r.info.memory.geometries, tex: R.r.info.memory.textures, pr: R.r.getPixelRatio() }),
   views: (id) => R.views(vehicleById(id || 'crane')), icon: (n) => { const c = R.thumbnail(VEHICLES[0], n, n); return c.toDataURL ? c.toDataURL() : ''; },
   tapAt: (x, y) => { ui.pointerDown({ id: 99, x, y }); ui.pointerUp({ id: 99, x, y }); },

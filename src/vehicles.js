@@ -155,8 +155,9 @@ export const UPGRADES = [
   { id: 'stability', name: 'Stability', key: 'stab', add: 0.25, lo: 0, hi: 1.25 },
 ];
 export const MAX_UPGRADE = 5;
-// level 1 costs ~8% of the truck price (min 150), each further level costs more
-export const upgradeCost = (v, lvl) => Math.round((Math.max(150, v.price * 0.08) * (1 + lvl * 0.75)) / 10) * 10;
+// level 1 costs 3% of the truck price (min 150), each further level costs more: maxing every stat of a truck
+// costs ~1.9x its price (Rocket Racer: ~52k), a long-term sink that stays reachable
+export const upgradeCost = (v, lvl) => Math.round((Math.max(150, v.price * 0.03) * (1 + lvl * 0.75)) / 10) * 10;
 export function withUpgrades(v, ups = {}) {
   const out = { ...v };
   for (const u of UPGRADES) out[u.key] = u.add ? (v[u.key] || 0) + u.add * (ups[u.id] || 0) : v[u.key] * (1 + u.pct * (ups[u.id] || 0));
