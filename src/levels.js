@@ -60,7 +60,7 @@ const construction = [
       .ground(40, 58, 0).gem(18, 1.0).gem(37, 2.8).gem(48, 1.2).finish(52);
   }),
   lvl('Crate Stack', 'concrete', (b) => {
-    b.ground(-8, 56, 0).stack(14, 0, 3, 2, 0.75).stack(30, 0, 2, 2, 0.75).crate(42, 0, 1.0).crate(43, 0, 1.0)
+    b.ground(-8, 56, 0).stack(14, 0, 3, 2, 0.75).stack(30, 0, 2, 1, 0.75).crate(42, 0, 0.8).crate(43, 0, 0.8)
       .gem(20, 1.2).gem(36, 1.2).gem(46, 1.2).finish(50);
   }),
   lvl('Scaffold Climb', 'concrete', (b) => {
