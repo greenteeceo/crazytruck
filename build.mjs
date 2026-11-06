@@ -4,7 +4,9 @@ import fs from 'fs';
 const res = await build({ entryPoints: ['src/main.js'], bundle: true, minify: !process.env.NOMIN, format: 'iife', target: ['es2020'], write: false, legalComments: 'none', loader: { '.jpg': 'dataurl' } });
 const js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const font = fs.readFileSync('assets/fredoka.woff2').toString('base64');
-const html = fs.readFileSync('src/index.html', 'utf8').replace('__FONT__', () => font).replace('__JS__', () => js);
+// the game icon: browser tab (64 px) and home-screen icon (180 px), inlined
+const icons = `<link rel="icon" type="image/png" href="data:image/png;base64,${fs.readFileSync('assets/icon-64.png').toString('base64')}"><link rel="apple-touch-icon" href="data:image/png;base64,${fs.readFileSync('assets/icon-180.png').toString('base64')}">`;
+const html = fs.readFileSync('src/index.html', 'utf8').replace('__FONT__', () => font).replace('__JS__', () => js).replace('</head>', () => icons + '</head>');
 fs.mkdirSync('dist', { recursive: true });
 fs.writeFileSync('dist/index.html', html);
 console.log('dist/index.html', (html.length / 1024).toFixed(0) + ' KB');
