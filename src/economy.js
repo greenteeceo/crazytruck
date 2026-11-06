@@ -13,7 +13,6 @@ export const AD_PLACES = [
   { label: 'free_gems', type: 'rewarded', cooldown: 30, where: 'Shop (top-left) and Shop > Gems: "+150 gems" button, 5 a day' },
   { label: 'refill_lives', type: 'rewarded', cooldown: 30, where: 'Out of lives popup (and tapping the hearts): "Refill 5" button' },
   { label: 'revive', type: 'rewarded', cooldown: 30, where: 'Fail screen: "Continue" button (back on the wheels at the last checkpoint)' },
-  { label: 'hint', type: 'rewarded', cooldown: 30, where: 'Fail screen after 2 crashes on the same level: "Hint" button (the bot shows the way)' },
   { label: 'try_truck', type: 'rewarded', cooldown: 30, where: 'Shop > Trucks, a truck not owned: "Try" button (free for the next level)' },
   { label: 'level_end', type: 'interstitial', cooldown: 45, where: 'After a level: tapping Next / Retry / Home / Levels (none in the first 3 level ends)' },
   { label: 'race_end', type: 'interstitial', cooldown: 45, where: 'After a race: tapping Next race / Another one / Home (none in the first 3 ends)' },

@@ -268,7 +268,7 @@ const laneZ = (i) => ((laneCount() - 1) / 2 - i) * LANE_W;
 function aiSpec(id) { const base = VEHICLES[0], v = vehicleById(id); return { ...base, look: v.look, crane: null, blade: false }; }
 
 function startLevel(level, race = null, opts = {}) {
-  if (!race && !opts.hint && !freeLives() && livesNow() <= 0) { noLivesMenu(() => startLevel(level, race, opts)); return; }
+  if (!race && !freeLives() && livesNow() <= 0) { noLivesMenu(() => startLevel(level, race, opts)); return; }
   // a truck tried from the shop (rewarded video) drives the next level or race, once
   const carId = trialCar || save.car; if (trialCar) trialCar = null;
   const spec = withUpgrades(vehicleById(carId), save.upgrades?.[carId]);
@@ -280,7 +280,7 @@ function startLevel(level, race = null, opts = {}) {
   const lane = R.attachSim(sim, { z: z0 });
   const player = R.addCar(sim, spec, race ? { label: 'You', color: '#ffe14d', z: z0 } : {});
   R.focusZ = z0;
-  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makeBot(1, 11), t0: ui.t, continued: false, hint: !!opts.hint };
+  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makeBot(1, 11), t0: ui.t, continued: false };
   if (race) {
     race.rivals.forEach((rv, i) => {
       const s2 = aiSpec(rv.car);
@@ -291,8 +291,7 @@ function startLevel(level, race = null, opts = {}) {
       game.racers.push({ ...rv, r, lane: ln, car, z, bot: makeBot(rv.skill, i + 3), spec: s2, finish: null });
     });
   }
-  if (!race && !testRun && !save.autoplay && !opts.hint && !save.tut.drive) game.tut = 'drive';
-  if (opts.hint) tip(game, 'Hint: watch how it is done!', 3);
+  if (!race && !testRun && !save.autoplay && !save.tut.drive) game.tut = 'drive';
   else if (level.seaGaps && !race) tip(game, 'Sea jump at the end: full speed off the ramp!', 3.2);
   R.snapCam = true;
   showHud();
@@ -301,7 +300,7 @@ function startLevel(level, race = null, opts = {}) {
 // tutorial: hold ▶ to drive (first level), then a one-off tip for braking and for tilting in the air
 const tip = (g, text, sec = 3) => { g.tip = { text, t0: ui.t, sec }; ui.request(sec + 0.5); };
 function tutorialTick(g, dt, input) {
-  if (save.autoplay || testRun || g.hint || g.race) return;
+  if (save.autoplay || testRun || g.race) return;
   if (g.tut === 'drive') {
     if (input > 0) g.tutT = (g.tutT || 0) + dt;
     if (g.tutT > 0.8) { g.tut = null; save.tut.drive = true; persist(); tip(g, 'Hold behind the truck (or ◀) to brake and reverse', 3.2); }
@@ -327,7 +326,7 @@ function tick(dt) {
   // keep counting below zero so the lights and GO! fade out, then stop
   if (g.countdown > -1) { g.countdown = Math.max(-1, g.countdown - dt); ui.request(0.1); }
   g.acc += Math.min(dt, 0.1);
-  const t = save.autoplay || testRun || g.hint ? g.autoBot(g.sim) : throttleInput();
+  const t = save.autoplay || testRun ? g.autoBot(g.sim) : throttleInput();
   tutorialTick(g, dt, t);
   while (g.acc >= DT) {
     g.acc -= DT;
@@ -477,7 +476,7 @@ function adBreak(next, race = false) {
   ad.then(() => { adBusy = false; next(); }, () => { adBusy = false; next(); });
 }
 // A rewarded video started by a tap: `ad` is the HSGame.showAd('<place>') promise. Its reward (if the place has one)
-// is already paid by HSGame when it resolves; onDone runs the game's side (continue, hint, x3 ...).
+// is already paid by HSGame when it resolves; onDone runs the game's side (continue, x3 ...).
 let adBusy = false;
 function adGo(ad, onDone, onNone) {
   adBusy = true;
@@ -771,7 +770,7 @@ function drawHud(u) {
   const l = g.level, w = WORLDS[l.world], T = u.safeTop, B = u.safeBottom, c = u.ctx;
   // pause + auto
   u.button('pause', PAD, topY(u), 50, 50, { icon: 'pause', iconSize: 28, radius: 14, onTap: tap(pauseMenu) });
-  if (dev() || testRun || g.hint) chip(u, 'auto', PAD + 2, topY(u) + 50 + 10, g.hint ? 'HINT' : 'AUTO', !!(save.autoplay || testRun || g.hint), () => { if (g.hint) return; save.autoplay = !save.autoplay; persist(); u.request(); });
+  if (dev() || testRun) chip(u, 'auto', PAD + 2, topY(u) + 50 + 10, 'AUTO', !!(save.autoplay || testRun), () => { save.autoplay = !save.autoplay; persist(); u.request(); });
   const name = g.race ? (g.race.random ? `Random · ${l.name}` : `${g.race.cup.name} · Race ${g.race.idx + 1}/3`) : `${w.name} ${l.index + 1}. ${l.name}`;
   u.text(name, u.w / 2, topY(u) + 10, 15, '#fff', { maxW: u.w - 180 });
   u.text(fmt(g.sim.state === 'win' ? g.sim.finishTime : g.sim.time), u.w / 2, topY(u) + 38, 30);
@@ -875,16 +874,14 @@ const QUIPS = {
 };
 const STICKERS = { roof: 'stars', nose: 'bang', backflip: 'spin', crash: 'bang', splash: 'bubbles', splashSpin: 'bubbles', splashRoof: 'bubbles', splashShort: 'bubbles', lost: 'bang' };
 
-const failCount = {};   // this session: crashes per level (the Hint offer appears after 2)
 function onFail() {
   const g = game, l = g.level;
-  if (g.hint) { R.popText('Again!', g.sim.x, 3, g.z, '#fff'); setTimeout(() => { if (game === g) startLevel(l, null, { hint: true }); }, 600); return; }
   Audio.engineStop(); Audio.fail();
-  loseLife(); failCount[l.id] = (failCount[l.id] || 0) + 1;
+  loseLife();
   const snap = g.snap || R.snapshotCar(g.sim, g.z);
   const pose = g.sim.failPose || g.sim.reason || 'crash';
   const q = QUIPS[pose] || QUIPS.crash;
-  const st = { snap, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l, lives: livesNow(), hint: failCount[l.id] >= 2 && !save.autoplay };
+  const st = { snap, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l, lives: livesNow() };
   ui.show('fail', (u) => drawFail(u, st));
 }
 function drawSticker(u, kind, x, y, w, h, t) {
@@ -914,7 +911,7 @@ function drawFail(u, st) {
   const c = u.ctx, T = u.safeTop, B = u.safeBottom, t = u.st;
   c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
   const canContinue = !st.continued && game && !game.race;
-  const barH = short() ? 72 : 82, contH = canContinue || st.hint ? 64 : 0, heartsH = 44;
+  const barH = short() ? 72 : 82, contH = canContinue ? 64 : 0, heartsH = 44;
   const avail = u.h - T - B - barH - contH - 90 - heartsH;
   const pw = Math.min(u.w * 0.78, 360, avail / 1.33), ph = pw * 1.05, frameH = ph + 16 + 64;
   const px = u.w / 2 - pw / 2, py = T + 30 + heartsH + (avail - frameH) / 2 + 10;
@@ -948,10 +945,9 @@ function drawFail(u, st) {
   c.restore();
   // buttons
   const by = u.h - B - 24 - barH;
-  // rewarded offers: continue from the checkpoint, and after 2 crashes on this level a hint (the bot shows the way)
+  // rewarded offer: continue from the checkpoint (no hints: every level is driven by the player)
   const offers = [];
   if (canContinue && HSGame.has('ads') && HSGame.canShowAd('revive')) offers.push({ id: 'continue', color: 'green', parts: [{ icon: 'video', size: 22 }, 'Continue'], go: () => adGo(HSGame.showAd('revive'), () => continueAfterCrash(st)) });
-  if (st.hint && HSGame.has('ads') && HSGame.canShowAd('hint')) offers.push({ id: 'hint', color: 'purple', parts: [{ icon: 'video', size: 22 }, 'Hint', { icon: 'bulb', size: 22, color: GOLD }], go: () => adGo(HSGame.showAd('hint'), () => startLevel(st.l, null, { hint: true })) });
   if (offers.length) {
     const ow = Math.min(u.w - PAD * 2, offers.length > 1 ? 360 : 280), bw = (ow - GAP * (offers.length - 1)) / offers.length;
     offers.forEach((o, i) => u.button(o.id, u.w / 2 - ow / 2 + i * (bw + GAP), by - 66, bw, 52, { color: o.color, parts: o.parts, size: 20, scale: u.pop(0.6, 0.4), onTap: tap(() => { if (!adBusy) o.go(); }) }));
@@ -979,8 +975,7 @@ function onWin() {
   Audio.engineStop();
   const g = game, l = g.level, sim = g.sim;
   const t = sim.finishTime, prev = lvlSave(l), allGems = sim.gemsTaken >= sim.gems.length;
-  // a hint run (the bot drove) clears the level with 1 star; drive it yourself for more
-  const stars = g.hint ? 1 : 1 + (allGems ? 1 : 0) + (t <= par(l) ? 1 : 0);
+  const stars = 1 + (allGems ? 1 : 0) + (t <= par(l) ? 1 : 0);
   let earn = sim.gemsTaken * 5;
   if (!prev || prev.time == null) earn += 20 + l.world * 5;   // first clear: coins to buy trucks
   if (stars === 3 && (!prev || (prev.stars || 0) < 3)) earn += 30;
@@ -990,7 +985,7 @@ function onWin() {
   persist();
   const next = WORLDS[l.world].levels[l.index + 1];
   earn *= gemMult();   // 2x Gems booster
-  const st = { l, t, best, newBest, stars, earn, gems: `${sim.gemsTaken}/${sim.gems.length}`, next, mult: 1, hint: g.hint, boosted: gemMult() > 1 };
+  const st = { l, t, best, newBest, stars, earn, gems: `${sim.gemsTaken}/${sim.gems.length}`, next, mult: 1, boosted: gemMult() > 1 };
   [0, 1, 2].forEach((i) => { if (i < stars) setTimeout(() => Audio.star(i), 300 + i * 250); });
   ui.show('win', (u) => drawWin(u, st), { anim: 2.6 });
   setTimeout(() => earnGems(earn, st.earnPos), 1000);
@@ -1012,7 +1007,7 @@ function drawWin(u, st) {
     u.text(a, px + 24, ry, 20, '#fff', { align: 'left' }); u.text(b, px + pw - 24, ry, 20, b.includes('NEW') ? GOLD : '#fff', { align: 'right' });
     c.fillStyle = 'rgba(255,255,255,0.15)'; c.fillRect(px + 20, ry + 18, pw - 40, 2);
   });
-  u.text(st.hint ? 'Hint used: drive it yourself for 3 stars!' : `★ finish · ★ all gems · ★ under ${fmt(par(st.l))}`, u.w / 2, py + 248, st.hint ? 15 : 13, st.hint ? '#ffe9a8' : '#fff', { maxW: pw - 30 });
+  u.text(`★ finish · ★ all gems · ★ under ${fmt(par(st.l))}`, u.w / 2, py + 248, 13, '#fff', { maxW: pw - 30 });
   const shown = Math.round(st.earn * st.mult * Math.min(1, Math.max(0, (u.st - 1) / 0.9)));
   u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 30 }, ...(st.boosted ? [{ text: ' 2x', color: '#7aff8a' }] : [])], u.w / 2, py + 290, { size: 30, gap: 10 });
   st.earnPos = { x: u.w / 2, y: py + 290 };

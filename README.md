@@ -25,7 +25,7 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 - Fail screen with a close-up crash photo (roof / nose-dive / belly flop stickers and captions), level-complete and race-result animations, synthesized sound
 
 - **Lives**: 5 hearts. A crash in a level costs one (given back if you continue from the checkpoint), one comes back every 8 minutes, a rewarded video refills all 5. Races never cost lives, so the out-of-lives panel offers a race meanwhile
-- **Hint**: after 2 crashes on the same level the fail screen offers a Hint video: the bot drives the level for you and it counts as cleared with 1 star (drive it yourself for 3)
+- **No hints**: every level has to be driven by the player (no rewarded "let the bot drive" option)
 - **Try a truck**: trucks you do not own have a Try button in the shop (rewarded video) for one free level
 - **Tutorial**: the first level points a hand at ▶ ("Hold to drive!"), then tips for braking and for tilting in the air
 - **Developer tools**: Settings has a DEV TEST section with **Autoplay (bot drives)** and **All resources (dev)** (infinite gems and lives, every truck owned, every world, level and cup open). The AUTO chip and TEST button (tour of all 20 worlds, 20 random levels, every level of a world, 10 random races with 3–6 lanes, with a pass/fail report) are on the home screen. Shown while `DEV_TOOLS` is `true` in `src/platform/config.js`; set it to `false` for the store build (tapping the version line in Settings 5 times still unlocks them). Any cup already won (or all of them with All resources) can be picked on the Race tab
@@ -41,7 +41,7 @@ Gems are the only currency. Measured on the shipped levels: a first clear of all
 
 Gem packs (`GEM_PACKS`, `STARTER_PACK` in `src/platform/config.js`): 1,200 / $0.99 · 2,600 / $1.99 · 7,000 / $4.99 · 15,000 / $9.99 · 32,000 / $19.99 (each lines up with a truck: Scoop, Rubble, Mixer, Knight, Rocket Racer), plus a one-time starter pack of 3,000 gems for $0.99. They are HS dashboard products (`PRODUCTS` in `src/economy.js`); the game shows the store's own price.
 
-Rewarded videos that pay gems: level complete x3 · race result x2 · cup win bonus x2 · daily gift x2 (7-day streak 100 → 600) · **2x Gems** booster (every level and race reward doubled for 10 minutes; button next to Play and in the shop) · free +150 gems (5 a day) · plus continue, hint, refill lives and try a truck.
+Rewarded videos that pay gems: level complete x3 · race result x2 · cup win bonus x2 · daily gift x2 (7-day streak 100 → 600) · **2x Gems** booster (every level and race reward doubled for 10 minutes; button next to Play and in the shop) · free +150 gems (5 a day) · plus continue, refill lives and try a truck.
 
 ## Controls
 
@@ -81,7 +81,6 @@ TikTok stopped accepting HTML (H5) mini games on 28 Aug 2026, so the game runs o
 | `free_gems` | rewarded | Shop (top-left) and Shop › Gems: "+150 gems", 5 a day |
 | `refill_lives` | rewarded | Out of lives popup (or tapping the hearts): "Refill 5" |
 | `revive` | rewarded | Fail screen: "Continue" (back on the wheels at the last checkpoint) |
-| `hint` | rewarded | Fail screen after 2 crashes on a level: "Hint" (the bot shows the way, the level counts with 1 star) |
 | `try_truck` | rewarded | Shop › Trucks, a truck not owned: "Try" (free for the next level) |
 | `level_end` | interstitial | Tapping Next / Retry / Home / Levels after a level (none in the first 3 level ends of a session) |
 | `race_end` | interstitial | Tapping Next race / Another one / Home after a race (none in the first 3 ends) |
