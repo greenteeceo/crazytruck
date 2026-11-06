@@ -1,0 +1,35 @@
+{
+  "_about": "The ad providers an HS app build can carry and the networks each mediates. Read by web/hs-web.mjs (pack, build), hs-check.mjs (the dashboard JSON) and the Android / iOS build workers (which adapter to add). A new network: an entry here + the worker's pinned version for it (ADS-PROVIDERS.md).",
+  "applovin_max": {
+    "adapter": "max.js",
+    "networks": {
+      "unity": {
+        "label": "Unity Ads",
+        "android": "com.applovin.mediation:unityads-adapter",
+        "ios": "AppLovinMediationUnityAdsAdapter"
+      },
+      "admob": {
+        "label": "Google AdMob",
+        "android": "com.applovin.mediation:google-adapter",
+        "ios": "AppLovinMediationGoogleAdapter",
+        "app_id": {
+          "key": "admob_app_id",
+          "format": "^ca-app-pub-\\d{16}~\\d{10}$",
+          "example": "ca-app-pub-1234567890123456~1234567890",
+          "android_manifest": "com.google.android.gms.ads.APPLICATION_ID",
+          "ios_plist": "GADApplicationIdentifier"
+        }
+      },
+      "meta": {
+        "label": "Meta Audience Network",
+        "android": "com.applovin.mediation:facebook-adapter",
+        "ios": "AppLovinMediationFacebookAdapter"
+      },
+      "liftoff": {
+        "label": "Liftoff Monetize (Vungle)",
+        "android": "com.applovin.mediation:vungle-adapter",
+        "ios": "AppLovinMediationVungleAdapter"
+      }
+    }
+  }
+}

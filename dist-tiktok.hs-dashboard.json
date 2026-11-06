@@ -1,0 +1,293 @@
+{
+  "iaa_config": {
+    "placements": [
+      {
+        "label": "level_x3",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for level_x3>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "race_x2",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for race_x2>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "cup_x2",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for cup_x2>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "daily_x2",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for daily_x2>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "gem_boost",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for gem_boost>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "free_gems",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for free_gems>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "refill_lives",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for refill_lives>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "revive",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for revive>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "hint",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for hint>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "try_truck",
+        "ads": [
+          {
+            "id": "<rewarded AD UNIT ID for try_truck>",
+            "type": "rewarded",
+            "config": {
+              "cooldown": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "level_end",
+        "ads": [
+          {
+            "id": "<interstitial AD UNIT ID for level_end>",
+            "type": "interstitial",
+            "config": {
+              "cooldown": 45
+            }
+          }
+        ]
+      },
+      {
+        "label": "race_end",
+        "ads": [
+          {
+            "id": "<interstitial AD UNIT ID for race_end>",
+            "type": "interstitial",
+            "config": {
+              "cooldown": 45
+            }
+          }
+        ]
+      }
+    ],
+    "rewards": {
+      "cup_win": {
+        "gems": 250
+      },
+      "daily_gift_1": {
+        "gems": 100,
+        "$limit": "daily"
+      },
+      "daily_gift_2": {
+        "gems": 150,
+        "$limit": "daily"
+      },
+      "daily_gift_3": {
+        "gems": 200,
+        "$limit": "daily"
+      },
+      "daily_gift_4": {
+        "gems": 250,
+        "$limit": "daily"
+      },
+      "daily_gift_5": {
+        "gems": 300,
+        "$limit": "daily"
+      },
+      "daily_gift_6": {
+        "gems": 400,
+        "$limit": "daily"
+      },
+      "daily_gift_7": {
+        "gems": 600,
+        "$limit": "daily"
+      },
+      "share": {
+        "gems": 50,
+        "$limit": "daily"
+      },
+      "tiktok_shortcut": {
+        "gems": 300
+      },
+      "tiktok_profile": {
+        "gems": 300
+      },
+      "level_x3": {
+        "mult": 3
+      },
+      "race_x2": {
+        "mult": 2
+      },
+      "cup_x2": {
+        "mult": 2
+      },
+      "daily_x2": {
+        "mult": 2
+      },
+      "gem_boost": {
+        "boost_min": 10
+      },
+      "free_gems": {
+        "gems": 150
+      },
+      "refill_lives": {
+        "lives": 5
+      }
+    },
+    "items": {
+      "gems": {
+        "category": "currency",
+        "name": "Gems"
+      },
+      "lives": {
+        "category": "consumable",
+        "name": "Lives"
+      },
+      "mult": {
+        "category": "boost",
+        "name": "Gem multiplier"
+      },
+      "boost_min": {
+        "category": "boost",
+        "name": "2x Gems (minutes)"
+      }
+    }
+  },
+  "products": [
+    {
+      "id": 1,
+      "name": "Starter pack",
+      "description": "3,000 gems, once",
+      "beans_cost": 70,
+      "rewards": {
+        "gems": 3000
+      },
+      "badge": "Once"
+    },
+    {
+      "id": 2,
+      "name": "1,200 gems",
+      "description": "Gem pack",
+      "beans_cost": 70,
+      "rewards": {
+        "gems": 1200
+      }
+    },
+    {
+      "id": 3,
+      "name": "2,600 gems",
+      "description": "+8%",
+      "beans_cost": 140,
+      "rewards": {
+        "gems": 2600
+      },
+      "badge": "+8%"
+    },
+    {
+      "id": 4,
+      "name": "7,000 gems",
+      "description": "+15%",
+      "beans_cost": 350,
+      "rewards": {
+        "gems": 7000
+      },
+      "badge": "+15%"
+    },
+    {
+      "id": 5,
+      "name": "15,000 gems",
+      "description": "+25% Popular",
+      "beans_cost": 700,
+      "rewards": {
+        "gems": 15000
+      },
+      "badge": "+25% Popular"
+    },
+    {
+      "id": 6,
+      "name": "32,000 gems",
+      "description": "+30% Best value",
+      "beans_cost": 1400,
+      "rewards": {
+        "gems": 32000
+      },
+      "badge": "+30% Best value"
+    }
+  ]
+}

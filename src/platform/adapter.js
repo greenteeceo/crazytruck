@@ -2,12 +2,13 @@
 // texture code only need `document.createElement('canvas')`, `window` and a few no-op hooks.
 // Imported first in the TikTok build; does nothing in a real browser.
 const g = globalThis;
-const T = g.TTMinis?.game || g.tt || g.wx;
+const T = [g.tt, g.TTMinis?.game, g.wx].find((x) => x && typeof x.createCanvas === 'function') || null;   // the runtime's tt
 
+// the first createCanvas() call in the runtime returns the on-screen canvas (also in the HS Android app,
+// which has a document but runs the game the same way)
+if (T) g.__mainCanvas ||= T.createCanvas();
 if (typeof g.document === 'undefined' && T) {
   const noop = () => {};
-  // the first createCanvas() call in the runtime returns the on-screen canvas
-  g.__mainCanvas ||= T.createCanvas();
   g.__mainCanvas.style ||= {};
   g.__mainCanvas.addEventListener ||= noop; g.__mainCanvas.removeEventListener ||= noop;
   const info = T.getSystemInfoSync ? T.getSystemInfoSync() : {};
@@ -28,7 +29,7 @@ if (typeof g.document === 'undefined' && T) {
   };
   g.performance ||= { now: () => Date.now() };
   g.requestAnimationFrame ||= T.requestAnimationFrame || ((f) => setTimeout(() => f(g.performance.now()), 16));
-  g.cancelAnimationFrame ||= T.cancelAnimationFrame || clearTimeout;
+  g.cancelAnimationFrame ||= clearTimeout;
   g.HTMLCanvasElement ||= class {};
   g.HTMLImageElement ||= class {};
 }

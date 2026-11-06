@@ -34,10 +34,6 @@ export class Sim {
     this.events = [];    // queued fx events for renderer/audio
     this.maxX = 0;
     this.collectGems = opts.collectGems !== false;
-    // special items: counts carried into the level (owned) + picked up from item boxes (bonus, used first)
-    this.items = { ...(opts.items || {}) }; this.bonus = {};
-    this.fx = { boost: 0, glide: 0, magnet: 0, shield: false };
-    this.itemBoxes = [];
     this.buildLevel();
     this.buildCar();
     this.contacts();
@@ -131,18 +127,9 @@ export class Sim {
           break;
         }
         case 'finish': {
-          // tall gate sensor: a truck flying high over the line (rocket, super jump) still finishes
-          const b = w.createBody({ position: V(p.x, p.y + 2.5 + (this.level.seaGaps ? 12 : 0)) });
-          b.createFixture(pl.Box(0.4, 2.5 + (this.level.seaGaps ? 12 : 0)), { isSensor: true, userData: { kind: 'finish' } });
+          const b = w.createBody({ position: V(p.x, p.y + 2.5) });
+          b.createFixture(pl.Box(0.4, 2.5), { isSensor: true, userData: { kind: 'finish' } });
           this.finishX = p.x; this.finishY = p.y;
-          break;
-        }
-        case 'itembox': {
-          // floating "?" box: drive through it for a free Rocket (re-arms a few seconds after it is taken)
-          const b = w.createBody({ position: V(p.x, p.y) });
-          const box = { piece: p, body: b, taken: -99 };
-          b.createFixture(pl.Box(0.6, 1.4), { isSensor: true, userData: { kind: 'itembox', box } });
-          this.itemBoxes.push(box);
           break;
         }
         case 'boost': {
@@ -357,10 +344,6 @@ export class Sim {
         } else if (delta > 0 && o.kind === 'finish' && this.state === 'run') {
           this.state = 'win'; this.finishTime = this.time;
           this.events.push({ type: 'win' });
-        } else if (delta > 0 && o.kind === 'itembox' && this.time - o.box.taken > 4) {
-          o.box.taken = this.time; const k = o.box.piece.item || 'boost';
-          this.bonus[k] = (this.bonus[k] || 0) + 1;
-          this.events.push({ type: 'pickup', kind: k, x: o.box.piece.x, y: o.box.piece.y });
         } else if (delta > 0 && o.kind === 'boost') {
           this.events.push({ type: 'boost', p: o.p });
         }
@@ -368,58 +351,6 @@ export class Sim {
     };
     this.world.on('begin-contact', (c) => handle(c, 1));
     this.world.on('end-contact', (c) => handle(c, -1));
-  }
-
-  // ---------------- special items
-  count(k) { return (this.items[k] || 0) + (this.bonus[k] || 0); }
-  useItem(k) {
-    if (this.state !== 'run' || this.count(k) <= 0) return false;
-    const f = this.fx;
-    if ((k === 'boost' && f.boost > 0) || (k === 'glide' && f.glide > 0) || (k === 'shield' && f.shield) || (k === 'magnet' && f.magnet > 0)) return false;
-    const fromBonus = (this.bonus[k] || 0) > 0;
-    if (fromBonus) this.bonus[k]--; else this.items[k]--;
-    const ch = this.chassis, bodies = [ch, ...this.wheels.filter((w, i) => this.joints[i])];
-    if (k === 'boost') f.boost = 1.4;
-    else if (k === 'glide') f.glide = 4.5 * (10 / (this.level.gravity ?? 10));   // low gravity: wider gaps, longer glide
-    else if (k === 'shield') f.shield = true;
-    else if (k === 'magnet') f.magnet = 10;
-    else if (k === 'jump') {
-      // spring under the truck: a big hop (works in the air too: double jump)
-      const v = ch.getLinearVelocity(), nv = V(Math.max(v.x + 3, 15), Math.max(v.y, 0) + 13);
-      for (const b of bodies) b.setLinearVelocity(nv);
-    }
-    this.events.push({ type: 'item', kind: k, owned: !fromBonus });
-    return true;
-  }
-  itemEffects() {
-    const f = this.fx, ch = this.chassis, g = this.level.gravity ?? 10;
-    const bodies = [ch, ...this.wheels.filter((w, i) => this.joints[i])];
-    const shift = (dvx, dvy) => { for (const b of bodies) { const v = b.getLinearVelocity(); b.setLinearVelocity(V(v.x + dvx, v.y + dvy)); } };
-    if (f.boost > 0) {
-      // rocket: thrust along the truck, holds part of its weight so it flies flat and far
-      f.boost -= DT;
-      const a = ch.getAngle(), v = ch.getLinearVelocity(), sp = Math.hypot(v.x, v.y);
-      const thrust = sp < 24 ? 18 * DT : 0;
-      shift(Math.cos(a) * thrust, Math.sin(a) * thrust + g * 0.5 * DT);
-      ch.setAngularVelocity(ch.getAngularVelocity() * 0.92 - a * 2.5 * DT);   // keeps the nose level
-    }
-    if (f.glide > 0) {
-      // glider wings: falls slowly, keeps its speed and stays level
-      f.glide -= DT;
-      const v = ch.getLinearVelocity(), sink = -0.65 * g / 10;
-      if (v.y < sink) shift(0, sink - v.y);   // gravity is cancelled beyond the glide sink rate
-      if (v.x < 13 && v.x > 0) shift(6 * DT, 0);
-      const a = ch.getAngle(); ch.setAngularVelocity(ch.getAngularVelocity() * 0.9 - a * 3 * DT);
-    }
-    if (f.magnet > 0) {
-      f.magnet -= DT;
-      const p = ch.getPosition();
-      for (const gm of this.gems) {
-        if (gm.taken) continue;
-        const gp = gm.body.getPosition();
-        if (Math.hypot(gp.x - p.x, gp.y - p.y) < 5.5) { gm.taken = true; this.gemsTaken++; this.events.push({ type: 'gem', gem: gm, magnet: true }); }
-      }
-    }
   }
 
   get airborne() { return this.wheelTouch[0] <= 0 && this.wheelTouch[1] <= 0; }
@@ -482,7 +413,6 @@ export class Sim {
     this.world.step(DT, 8, 3);
     this.time += DT;
     this.tickDebris();
-    if (running) this.itemEffects();
     this.handleImpacts();
     this.checkBanner();
 
@@ -518,13 +448,6 @@ export class Sim {
 
   fail(reason) {
     if (this.state !== 'run') return;
-    if (this.fx.shield && reason !== 'lost') {
-      // bubble shield: pops instead of crashing; back on the wheels (never past the obstacle)
-      this.fx.shield = false; this.fx.boost = 0; this.fx.glide = 0;
-      this.events.push({ type: 'shieldSave', reason });
-      this.recover(this.x, 0.7);
-      return;
-    }
     this.state = 'fail'; this.reason = reason;
     this.failPose = this.classifyPose(reason);
     if (reason === 'crash') {

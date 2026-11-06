@@ -1,20 +1,16 @@
 // One API for the three places the game runs: browser / artifact, the Android app (WebView),
-// and the TikTok Mini Games native runtime (namespace TTMinis.game, also exposed as tt / wx).
-import { TIKTOK, isPlaceholder } from './config.js';
+// and the TikTok Mini Games native runtime (tt). In the TikTok build only the tt APIs that the HS Android app
+// also has are used (canvas, touch, storage, font, audio, show / hide, vibrate).
 
 const g = globalThis;
-const T = g.TTMinis?.game || g.tt || g.wx || null;
+const T = [g.tt, g.TTMinis?.game, g.wx].find((x) => x && typeof x.createCanvas === 'function') || null;   // the runtime's tt
 const isTT = !!T && typeof g.__mainCanvas !== 'undefined';
-const can = (name) => { try { return !!T && typeof T[name] === 'function' && (!T.canIUse || T.canIUse(name) !== false); } catch { return false; } };
 
 function sysInfo() {
   if (isTT && T.getSystemInfoSync) {
-    // pixelRatio is documented on getWindowInfo; safeArea may be missing on some devices
     const i = T.getSystemInfoSync() || {};
-    let wi = {}; try { wi = T.getWindowInfo ? T.getWindowInfo() || {} : {}; } catch { /* old base library */ }
-    const w = wi.windowWidth || i.windowWidth || 360, h = wi.windowHeight || i.windowHeight || 640;
-    const sa = wi.safeArea || i.safeArea || null;
-    return { w, h, dpr: wi.pixelRatio || i.pixelRatio || 2, top: sa ? sa.top : (wi.statusBarHeight || i.statusBarHeight || 0), bottom: sa && sa.bottom ? Math.max(0, h - sa.bottom) : 0 };
+    const w = i.windowWidth || 360, h = i.windowHeight || 640, sa = i.safeArea || null;
+    return { w, h, dpr: i.pixelRatio || 2, top: sa ? sa.top : (i.statusBarHeight || 0), bottom: sa && sa.bottom ? Math.max(0, h - sa.bottom) : 0 };
   }
   const css = (v) => { try { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0; } catch { return 0; } };
   return { w: g.innerWidth, h: g.innerHeight, dpr: g.devicePixelRatio || 1, top: css('--sat'), bottom: css('--sab') };
@@ -38,7 +34,7 @@ export const P = {
   },
 
   onResize(cb) {
-    if (isTT) { T.onWindowResize?.(() => { P.info = sysInfo(); cb(P.info); }); return; }
+    if (isTT) return;   // a mini game's window does not resize
     g.addEventListener('resize', () => { P.info = sysInfo(); cb(P.info); });
   },
 
@@ -76,14 +72,15 @@ export const P = {
   load(key) {
     try { return isTT ? T.getStorageSync(key) || null : g.localStorage.getItem(key); } catch { return null; }
   },
-  save(key, value) {
-    try { if (isTT) T.setStorageSync(key, value); else g.localStorage.setItem(key, value); } catch { /* storage full or blocked */ }
+  // only used once, to move the old save into the HSGame profile
+  remove(key) {
+    try { if (isTT) T.removeStorageSync(key); else g.localStorage.removeItem(key); } catch { /* blocked */ }
   },
 
   // ---------------------------------------------------------------- font
   // Web: the @font-face in index.html (base64 woff2). TikTok: fredoka.ttf shipped in the package.
   async loadFont() {
-    if (isTT) { try { return T.loadFont?.('fredoka.ttf') || 'sans-serif'; } catch { return 'sans-serif'; } }
+    if (isTT) { try { const f = T.loadFont?.('fredoka.ttf'); return typeof f === 'string' && f ? f : 'sans-serif'; } catch { return 'sans-serif'; } }
     try { await Promise.race([document.fonts.load('700 20px Fredoka'), new Promise((r) => setTimeout(r, 2500))]); return 'Fredoka'; } catch { return 'sans-serif'; }
   },
 
@@ -97,73 +94,5 @@ export const P = {
 
   vibrate() { try { if (isTT) T.vibrateShort?.({ type: 'light' }); else g.navigator?.vibrate?.(15); } catch { /* not supported */ } },
 
-  // ---------------------------------------------------------------- TikTok startup
-  // documented for the legacy HTML SDK; harmless no-op where the native runtime lacks it
-  setLoadingProgress(p) { try { if (isTT && can('setLoadingProgress')) T.setLoadingProgress({ progress: Math.min(1, p) }); } catch { /* not available */ } },
-  silentLogin() {
-    // silent login: returns a code for a game server; kept for when a backend exists
-    return new Promise((res) => { if (!can('login')) return res(null); T.login({ success: (r) => res(r?.code || null), fail: () => res(null) }); });
-  },
-  launchQuery() { try { return (isTT && T.getLaunchOptionsSync?.()) || {}; } catch { return {}; } },
-
-  // ---------------------------------------------------------------- ads
-  // A placeholder ad unit (or the web build) uses `fakeAd`, a local test ad drawn by the UI.
-  fakeAd: null,
-  hasRealAds(kind) { return isTT && !isPlaceholder(kind === 'rewarded' ? TIKTOK.rewardedAdUnitId : TIKTOK.interstitialAdUnitId); },
-
-  showRewarded() {
-    if (!this.hasRealAds('rewarded') || !can('createRewardedVideoAd')) return this.fakeAd ? this.fakeAd('rewarded') : Promise.resolve(false);
-    return new Promise((resolve) => {
-      let ad;
-      try { ad = T.createRewardedVideoAd({ adUnitId: TIKTOK.rewardedAdUnitId }); } catch { return resolve(false); }
-      const done = (ok) => { try { ad.offClose(); ad.offError(); } catch { /* ignore */ } resolve(ok); };
-      ad.onClose((res) => done(!!(res && res.isEnded)));
-      ad.onError(() => done(false));
-      ad.show().catch(() => done(false));
-    });
-  },
-
-  showInterstitial() {
-    if (!this.hasRealAds('interstitial') || !can('createInterstitialAd')) return this.fakeAd ? this.fakeAd('interstitial') : Promise.resolve(false);
-    return new Promise((resolve) => {
-      let ad;
-      try { ad = T.createInterstitialAd({ adUnitId: TIKTOK.interstitialAdUnitId }); } catch { return resolve(false); }
-      const done = (ok) => { try { ad.offClose(); ad.offError(); } catch { /* ignore */ } resolve(ok); };
-      ad.onClose(() => done(true));
-      ad.onError(() => done(false));   // 11004 / 11005: shown too often, just skip
-      ad.show().catch(() => done(false));
-    });
-  },
-
-  // ---------------------------------------------------------------- the 3 TikTok capabilities
-  // 1. Add to Home Screen
-  canShortcut() { return can('addShortcut'); },
-  addShortcut() {
-    return new Promise((res) => { if (!can('addShortcut')) return res(false); T.addShortcut({ success: () => res(true), fail: () => res(false) }); });
-  },
-  shortcutReward() {
-    return new Promise((res) => { if (!can('getShortcutMissionReward')) return res(false); T.getShortcutMissionReward({ success: (r) => res(!!r?.canReceiveReward), fail: () => res(false) }); });
-  },
-  // 2. Revisit from Profile (sidebar)
-  canSidebar() { return can('startEntranceMission'); },
-  startSidebar() {
-    return new Promise((res) => { if (!can('startEntranceMission')) return res(false); T.startEntranceMission({ success: () => res(true), fail: () => res(false) }); });
-  },
-  sidebarReward() {
-    return new Promise((res) => { if (!can('getEntranceMissionReward')) return res(false); T.getEntranceMissionReward({ success: (r) => res(!!r?.canReceiveReward), fail: () => res(false) }); });
-  },
-  // 3. Share
-  canShare() { return can('shareAppMessage') || (!isTT && !!g.navigator?.share); },
-  // TikTok takes title / subTitle / image from the share settings in the Developer Portal;
-  // only `query` (read back via getLaunchOptionsSync / onShow) is set by the game.
-  share({ title, desc, query }) {
-    if (isTT) {
-      return new Promise((res) => {
-        if (!can('shareAppMessage')) return res(false);
-        T.shareAppMessage({ title, subTitle: desc, query, success: () => res(true), fail: () => res(false) });
-      });
-    }
-    if (g.navigator?.share) return g.navigator.share({ title, text: desc }).then(() => true, () => false);
-    return Promise.resolve(false);
-  },
+  // Ads, rewards, TikTok missions, share, login and payments go through HSGame (hs-game.js) — never here.
 };

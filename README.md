@@ -6,9 +6,8 @@ seesaws, drawbridges and energy pads, collect gems, race rival trucks in cups an
 - **20 worlds × 20 levels (400)**: Classic, Construction, Medieval, Science, Desert Dunes, Snow Peaks, Jungle Ruins, Lava Land, Candy Land, Sunny Beach, Night City, Pirate Docks, Moon Base (low gravity), Red Planet, Coral Reef, Autumn Woods, Ice Cave, Toy Box, Neon Grid, Sky Islands. Worlds 1–4 have 10 hand-made levels each; everything else comes from a seeded generator and every shipped seed is verified by the bot. Worlds 11–20 are locked behind a star total (60 → 330).
 - **Race mode**: 3–6 lane races (pick before each cup race) on 32 tracks (12 hand-made + 20 seeded random, themed across the new worlds), plus a Random track quick race (dominoes, swinging hammers, rolling boulders, crate walls, seesaws, bounce pads), 4 cups × 3 races vs 4 AI trucks, crash breakup (boom, hook, wheel and chunks fly off) and respawn at a checkpoint before the obstacle, never past it, points table, trophies
 - **Trophies and leaderboard**: every 1st place in a race (cup or random track) is +1 trophy. The Top 100 board (tap the trophy counter, or Top on the Race tab) ranks you against 99 simulated players (`src/leaderboard.js`) whose totals grow over real time from a per-device seed (some play every day, some rarely), so the board moves while you are away and you climb it by winning. Results show your new rank. Clearing a level for the first time pays 20 + 5 × world gems; gems buy trucks
-- **Shop** (tabs): **Trucks**: swipe left / right anywhere (or the arrows) to browse all 16 trucks with their price; 5 upgradeable stats per owned truck (speed, power, grip, air, **stability**: less wheelie kick, a self-righting push on two wheels, survives harder wall hits), 5 levels each. **Items**: special items for gems, x1 or x5 for the price of 4. **Gems**: a free video, and gem packs for real money (`GEM_PACKS` in `src/platform/config.js`; buttons say coming soon until `IAP_ENABLED`)
-- **Special items** (`src/items.js`, effects in `src/sim.js`): Rocket Boost, Super Jump (works mid-air), Glider Wings, Bubble Shield (a crash or splash pops it instead and the truck is put back on its wheels, never past the obstacle), Gem Magnet. Round buttons above the drive controls (keys 1–5); they glow when a sea crossing is near. New players start with a small pack
-- **Sea crossings**: from world 5 on, levels 10 and 20 end with a 46 m (longer in low gravity) open-water crossing that no truck can jump, even fully upgraded; any one of Rocket, Super Jump or Glider gets across (all 32 checked with each item, and with none). Falling in without one offers a free Rocket for a video. Every 4th seeded race track has one too, with a "?" item box (a Rocket) on the run-up that re-arms after a respawn; rival trucks carry Rockets
+- **Shop** (tabs): **Trucks**: swipe left / right anywhere (or the arrows) to browse all 16 trucks with their price; 5 upgradeable stats per owned truck (speed, power, grip, air, **stability**: less wheelie kick, a self-righting push on two wheels, survives harder wall hits), 5 levels each. **Gems**: free videos (+gems, 2x booster) and the gem packs sold through the HS SDK (products in the HS dashboard)
+- **Every level can be finished by every truck**: all trucks share the hero's physics body (wheels, chassis, cab boxes, weight) and differ only by small stat tiers. `tools/passable.mjs` drives a level with several bot styles that back up and retry like a player; `tools/gensel.mjs` only ships generated levels that all 16 trucks plus 5 fully upgraded ones finish, and the 40 hand-made levels pass the same check (0 impassable for all 21 variants)
 - **Stars**: finish, collect every gem, beat the par time
 - **Crashes**: only obstacles you can knock over (crates, logs, barrels, dominoes, boulders) throw debris in their material, plus paint and frame chips off the truck when the hit is hard. Walls, steps and the road never throw debris: the road only gets tyre smoke (wheel spin, braking, landings). Hitting a wall at more than 12.5 m/s tumbles the truck over it ("Too fast!"). The crane boom is taller than the finish gate: it clangs into the banner (debris, the gate sways, a fast truck pops a wheelie) and the boom over the line counts as the finish
 - **Crash severity**: a gentle roll-over just flips the truck with a soft puff, nothing breaks. A medium crash loses an axle (its two tyres bounce and roll away separately) and some small parts (lights, bumpers, bars, fins, exhausts). A big smash sends both axles' tyres everywhere and throws off the large parts too (crane boom, fire ladder, dozer blade, mixer drum, ice-cream cone, tractor roof...). No abstract debris cubes from the road; everything is bolted back on when the truck flips back. Smoke (exhaust, tyre spin, landings) is round puffs that curl and fade softly
@@ -29,11 +28,10 @@ Gems are the only currency. Measured on the shipped levels: a first clear of all
 |---|---|
 | Trucks (16) | 1,500 … 28,000 (150,500 in all) |
 | Upgrades | level 1 = 3% of the truck price (min 150), +75% per level; maxing a truck ≈ 1.9× its price |
-| Items | Magnet 60 · Jump 90 · Glider 100 · Rocket 120 · Shield 150 (x5 for the price of 4) |
 
-Gem packs (`GEM_PACKS`, `STARTER_PACK` in `src/platform/config.js`): 1,200 / $0.99 · 2,600 / $1.99 · 7,000 / $4.99 · 15,000 / $9.99 · 32,000 / $19.99 (each lines up with a truck: Scoop, Rubble, Mixer, Knight, Rocket Racer), plus a one-time starter pack 3,000 gems + 3 Rockets + 2 Shields for $0.99.
+Gem packs (`GEM_PACKS`, `STARTER_PACK` in `src/platform/config.js`): 1,200 / $0.99 · 2,600 / $1.99 · 7,000 / $4.99 · 15,000 / $9.99 · 32,000 / $19.99 (each lines up with a truck: Scoop, Rubble, Mixer, Knight, Rocket Racer), plus a one-time starter pack of 3,000 gems for $0.99. They are HS dashboard products (`PRODUCTS` in `src/economy.js`); the game shows the store's own price.
 
-Rewarded videos that pay gems: level complete x3 · race result x2 · cup win bonus x2 · daily gift x2 (7-day streak 100 → 600) · **2x Gems** booster (every level and race reward doubled for 10 minutes; button next to Play and in the shop) · free +150 gems (5 a day) · plus continue, hint, free Rocket on a sea crossing, refill lives and try a truck.
+Rewarded videos that pay gems: level complete x3 · race result x2 · cup win bonus x2 · daily gift x2 (7-day streak 100 → 600) · **2x Gems** booster (every level and race reward doubled for 10 minutes; button next to Play and in the shop) · free +150 gems (5 a day) · plus continue, hint, refill lives and try a truck.
 
 ## Controls
 
@@ -50,38 +48,35 @@ TikTok Mini Games package: [`release/CraneRush-tiktok-3.2.zip`](release/CraneRus
 
 ## TikTok Mini Games
 
-TikTok stopped accepting HTML (H5) mini games on 28 Aug 2026, so the game runs on the **native runtime**: one WebGL canvas, no DOM. The whole UI is drawn on a 2D canvas (`src/ui/`) and composited over the 3D scene, and `src/platform/` maps the runtime APIs (namespace `TTMinis.game`, also `tt` / `wx`).
+TikTok stopped accepting HTML (H5) mini games on 28 Aug 2026, so the game runs on the **native runtime**: one WebGL canvas, no DOM. The whole UI is drawn on a 2D canvas (`src/ui/`) and composited over the 3D scene, and `src/platform/` maps the few runtime APIs the game uses itself (canvas, touch, storage, font, audio, show / hide, vibrate: the ones the HS Android app also has).
 
-**Before uploading**, fill in `src/platform/config.js` and rebuild:
+**HS SDK** (the kit in `hs-kit/`, version 3.3.4 / SDK 1.1.3). `dist-tiktok/` holds `game.js` plus the two kit files `hs-game.js` and `hs-sdk.min.js` (copied by `build.mjs`, never edited). All ads, rewards, TikTok missions, share, login, cloud save and purchases go through `HSGame`; the game never calls TikTok's ad / mission / share APIs itself. The web / artifact build uses a small local stand-in with the same API (`src/platform/hs-local.js`: test ads, rewards from the defaults).
 
-| Field | Where to find it |
-| --- | --- |
-| `clientKey` | Developer Portal → your app → Credentials |
-| `rewardedAdUnitId` | Developer Portal → Monetization → Ad units (rewarded video) |
-| `interstitialAdUnitId` | Developer Portal → Monetization → Ad units (interstitial) |
+- **Progress**: one `HSGame.profile` (save: cloud): `gems`, `trophies` (max), `stars` (max, the summary shown if a guest's progress meets an account's), `starter`, and `game` (everything else). The old local save is moved in once.
+- **Rewards**: the game reports moments by key, HSGame pays them. Defaults in `src/economy.js` (`DEFAULTS`), the live values in the HS dashboard. Gem multipliers (x3 / x2), the 2x booster and lives are items the game applies in `onGive`.
+- **Before uploading**: put the HS **Game ID** and **SDK key** in `src/platform/config.js` (`HS_GAME_ID`, `HS_SDK_KEY`; empty = runs offline), the TikTok **App ID** in `dist-tiktok/project.config.json` → `appid`, and the TikTok ad unit ids into `dist-tiktok.hs-dashboard.json` (written next to the game folder by `build.mjs`; ids filled in by hand are kept on rebuild). Then paste it into the HS dashboard (`node hs-kit/web/hs-web.mjs dashboard dist-tiktok`). Never put the TikTok Client Secret anywhere in the game.
+- **Check**: `node hs-kit/hs-check.mjs dist-tiktok` → 0 fail (the 2 warnings are the App ID and the ad unit ids).
 
-While an ad unit ID is a placeholder the game shows a local "TEST AD" panel instead, so every ad flow can be tried before the IDs exist.
+**TikTok review buttons** (home screen, top-left): **Launch** (add to home screen, `HSGame.tiktokMission.start('shortcut')`, 300 gems once) and **Entry** (open from the profile, `start('profile')`, 300 gems once), shown while `HSGame.has('tiktok_missions')` and hidden once done, and **Share** (`HSGame.share`, 50 gems once a day). Each opens a popup with numbered steps and the reward.
 
-**Required capabilities (checked in review)**, all on the first screen (top-left):
+**Ad places** (every `HSGame.showAd('<label>')`; each is a place in the HS dashboard with its own ad unit and cooldown, shown only while `HSGame.canShowAd`):
 
-| Button | API | Reward |
+| Label | Type | Where |
 | --- | --- | --- |
-| Add (to Home Screen) | `addShortcut`, `getShortcutMissionReward` | 300 gems first time, 100 gems per day when launched from the shortcut |
-| Profile (sidebar revisit) | `startEntranceMission`, `getEntranceMissionReward` | 300 gems first time, 100 gems per day when launched from the profile sidebar |
-| Share | `shareAppMessage` | none |
+| `level_x3` | rewarded | Level complete: "x3 gems" (pays 2x the level's gems on top) |
+| `race_x2` | rewarded | Race results: "x2 gems" |
+| `cup_x2` | rewarded | Cup won: "x2 bonus" (the cup bonus again) |
+| `daily_x2` | rewarded | Daily gift popup: "Claim x2" |
+| `gem_boost` | rewarded | Home (next to Play) and Shop › Gems: "2x", doubles level and race gems for 10 minutes |
+| `free_gems` | rewarded | Shop (top-left) and Shop › Gems: "+150 gems", 5 a day |
+| `refill_lives` | rewarded | Out of lives popup (or tapping the hearts): "Refill 5" |
+| `revive` | rewarded | Fail screen: "Continue" (back on the wheels at the last checkpoint) |
+| `hint` | rewarded | Fail screen after 2 crashes on a level: "Hint" (the bot shows the way, the level counts with 1 star) |
+| `try_truck` | rewarded | Shop › Trucks, a truck not owned: "Try" (free for the next level) |
+| `level_end` | interstitial | Tapping Next / Retry / Home / Levels after a level (none in the first 3 level ends of a session) |
+| `race_end` | interstitial | Tapping Next race / Another one / Home after a race (none in the first 3 ends) |
 
-Rewards are checked at start-up and every time the game comes back to the foreground, and are granted at most once per day.
-
-**Ads**
-
-| Type | Where | Rule |
-| --- | --- | --- |
-| Rewarded | Win screen: x3 gems · Race results: x2 gems · Cup win: x2 bonus · Daily gift: x2 · Home / shop: 2x Gems for 10 min · Shop: +150 gems (5 a day), Try a truck · Fail screen: continue, Hint (after 2 crashes), free Rocket (sea crossing) · Out of lives: refill 5 hearts | Reward only when the video was watched to the end (`isEnded`) |
-| Interstitial | When leaving a win / fail / race result screen | Not in the first 45 s, at least 45 s apart (levels last 10–15 s, so about one every 3–4 levels), never during play, AUTO or TEST |
-
-Pacing and reward amounts live in `src/platform/config.js` (`AD_RULES`, `REWARDS`).
-
-**SDK conformance** (checked against the Mini Games SDK reference): `createCanvas` (first call = screen canvas), `onTouchStart/Move/End/Cancel` (`changedTouches`), `onShow` / `onHide`, `getLaunchOptionsSync`, `getSystemInfoSync` + `getWindowInfo` (pixelRatio, optional safeArea), `getStorageSync` / `setStorageSync`, `loadFont(path)` (null on failure), `createWebAudioContext`, `vibrateShort({ type })`, `createRewardedVideoAd` / `createInterstitialAd` (`onClose` → `isEnded`), `addShortcut` / `getShortcutMissionReward`, `startEntranceMission` / `getEntranceMissionReward`, `shareAppMessage` (`query`, `subTitle`; title and image come from the portal's share settings), `canIUse`. Two things the docs leave open are handled defensively: Touch coordinate field names (`clientX`/`pageX`/`x`) and WebAudio `currentTime` (falls back to wall-clock; any audio error is swallowed). `setLoadingProgress` is only documented for the legacy HTML SDK and is called only when `canIUse` reports it.
+Cooldowns: 30 s per rewarded place, 45 s for interstitials (levels last 10–20 s). Ads only start on the player's tap; an ad pauses the game and its sound (`HSGame.on('pause' / 'resume')`).
 
 **Upload**: `npm i -g @ttmg/cli`, `ttmg login`, then `ttmg dev` in `dist-tiktok/` to test on a phone and upload from the DevTool page (or upload the zip under Developer Portal → Code version). Icons for the portal are in `store/icons/` (1024, 512, 144).
 
@@ -106,7 +101,10 @@ Pacing and reward amounts live in `src/platform/config.js` (`AD_RULES`, `REWARDS
 | `src/models.js`, `src/textures.js`, `src/render.js` | Three.js voxel models, pixel textures, scene, camera, particles |
 | `src/main.js` | Game flow, all screens, ads and TikTok capability buttons, input, save data, loading screen |
 | `src/ui/kit.js`, `src/ui/icons.js` | Canvas UI kit (buttons, panels, outlined text, scroll lists, touch / hold / swipe, effects) and SVG-path icons |
-| `src/platform/` | Platform layer (web / Android WebView / TikTok runtime), DOM adapter for the runtime, ad and reward config |
+| `src/platform/` | Platform layer (web / Android WebView / TikTok runtime), DOM adapter for the runtime, config (HS ids, gem packs), local HSGame stand-in for the web build |
+| `src/economy.js` | Ad places, reward defaults, items and products for HSGame and the HS dashboard |
+| `hs-kit/` | The HS SDK kit (hs-game.js, hs-sdk.min.js, hs-check, preview / pack tools, guides) |
+| `tools/passable.mjs` | "Can a player finish this level with this truck": adaptive bot styles, used by gensel and the checks |
 | `src/bake.js` | Merges static meshes to cut draw calls |
 | `src/tt-entry.js` | TikTok package entry (adapter first, then the game) |
 | `src/index.html` | Web / Android page: two canvases and the font |

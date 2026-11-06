@@ -7,23 +7,40 @@ import { makeBot } from './bot.js';
 import { Renderer, setLabelFont } from './render.js';
 import { Audio } from './audio.js';
 import { P } from './platform/index.js';
-import { AD_RULES, REWARDS, DEV_TOOLS, IAP_ENABLED, GEM_PACKS, STARTER_PACK } from './platform/config.js';
+import './platform/hs-local.js';   // web / artifact build: a local stand-in for HSGame (does nothing in the TikTok build)
+import { REWARDS, DEV_TOOLS, HS_GAME_ID, HS_SDK_KEY } from './platform/config.js';
+import { DEFAULTS, STARTER_ID, AD_FREE_ENDS } from './economy.js';
 import { UI, INK, GOLD, GRAD } from './ui/kit.js';
 import PARS from './pars.json';
 import { board, rankOf, BOARD_SIZE } from './leaderboard.js';
-import { ITEMS, CROSSERS, itemById, STARTER_ITEMS } from './items.js';
 
-// ------------------------------------------------------------ save
-const KEY = 'cranerush.save.v2';
-const defaults = { upgrades: {}, diamonds: 0, owned: ['crane'], car: 'crane', levels: {}, world: 0, cups: {}, cup: { idx: 0, race: 0, pts: null }, sound: true, shadows: true, trophies: 0, tt: {} };
-let save;
-try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save = { ...defaults }; }
+// ------------------------------------------------------------ save: all progress in ONE HSGame profile
+// (hs-game.js keeps it on the phone and in the cloud). Gems and trophies are profile fields (rewards are credited
+// to them by HSGame); everything else lives in the profile field `game`. `save` is a view over the profile.
+const defaults = { upgrades: {}, owned: ['crane'], car: 'crane', levels: {}, world: 0, cups: {}, cup: { idx: 0, race: 0, pts: null }, sound: true, shadows: true, tt: {} };
+const profile = HSGame.profile({ gems: 0, trophies: 0, stars: 0, starter: 0, game: null }, {
+  save: 'cloud', merge: { trophies: 'max', stars: 'max', starter: 'max' }, summary: 'stars',
+});
+// one-time move of the old local save into the profile
+(() => {
+  const OLD_KEY = 'cranerush.save.v2', old = P.load(OLD_KEY);
+  if (!old) return;
+  try { if (!profile.get('game')) { const { diamonds = 0, trophies = 0, items, ...rest } = JSON.parse(old); void items; profile.update({ gems: diamonds, trophies, game: rest }); } } catch { /* unreadable: start fresh */ }
+  P.remove(OLD_KEY);
+})();
+function makeSave(data) {
+  const s = { ...defaults, ...(data || {}) };
+  delete s.diamonds; delete s.trophies; delete s.items;
+  Object.defineProperty(s, 'diamonds', { get: () => profile.get('gems') || 0, set: (v) => profile.set('gems', Math.max(0, Math.round(v))), enumerable: false });
+  Object.defineProperty(s, 'trophies', { get: () => profile.get('trophies') || 0, set: (v) => profile.set('trophies', v), enumerable: false });
+  return s;
+}
+let save = makeSave(profile.get('game'));
 save.tt ||= {};
 save.tut ||= {};   // tutorial steps already shown
-if (!save.items) save.items = { ...STARTER_ITEMS };   // a starter pack of special items
 // dev tools (Autoplay, All resources, AUTO / TEST chips): on while DEV_TOOLS is true (config.js),
 // otherwise hidden until the version line in Settings is tapped 5 times
-const VERSION = '3.8';
+const VERSION = '3.9';
 const dev = () => DEV_TOOLS || !!save.dev;
 if (save.allRes == null) save.allRes = !!(save.infinite && save.unlockAll);
 if (!dev()) save.autoplay = save.allRes = false;
@@ -32,12 +49,19 @@ save.infinite = save.unlockAll = !!save.allRes;
 const owns = (id) => save.allRes || save.owned.includes(id);
 // leaderboard: per-device seed for the simulated players, and when this player joined
 if (!save.lb) save.lb = { seed: (Math.random() * 2 ** 31) | 0, start: Date.now() };
-const persist = () => P.save(KEY, JSON.stringify(save));
+const persist = () => {
+  profile.set('game', JSON.parse(JSON.stringify(save)));
+  profile.set('stars', Object.values(save.levels).reduce((a, v) => a + (v?.stars || 0), 0));
+};
 
 // ------------------------------------------------------------ canvases
 const glCanvas = P.mainCanvas();
 const uiCanvas = P.isTT ? P.createCanvas(2, 2) : document.getElementById('ui');
-const R = new Renderer(glCanvas);
+// No usable WebGL (a broken device, or a test runtime like hs-check): the menus, saves, rewards and ads still
+// work; the 3D view becomes a no-op instead of crashing the whole game at load.
+const noRender = () => { const d = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : k === 'then' ? undefined : d), set: () => true, apply: () => d, construct: () => d }); return d; };
+let R;
+try { R = new Renderer(glCanvas); } catch (e) { console.warn('3D view unavailable:', e && e.message); R = noRender(); }
 // a slow moment last session should not make the game blurry forever: retry one tier sharper each launch
 R.setQuality(Math.max(0, (save.quality ?? 0) - 1));
 R.setShadows(save.shadows);
@@ -67,6 +91,13 @@ function earnGems(n, from) {
   if (from && gemPill) ui.flyGems(n, from, gemPill);
   ui.request(2.4);
 }
+// a reward HSGame already put in the profile: just the flying gems and the counter catching up
+function animateGems(n, from) {
+  if (n <= 0) return;
+  gemFrom = save.diamonds - n; gemAnimT = ui.t + 1.05; gemBump = gemAnimT;
+  if (from && gemPill) ui.flyGems(n, from, gemPill);
+  ui.request(2.4);
+}
 function gemShownNow() {
   if (gemAnimT < 0 || ui.t >= gemAnimT + 0.5) return (gemShown = save.diamonds);
   if (ui.t < gemAnimT) return gemFrom;
@@ -92,39 +123,59 @@ const yesterday = () => { const d = new Date(Date.now() - 86400000); return `${d
 const gemBoostLeft = () => Math.max(0, (save.gemBoost || 0) - Date.now());
 const gemMult = () => (gemBoostLeft() > 0 ? 2 : 1);
 const mmss = (ms) => { const t = Math.ceil(ms / 1000); return `${(t / 60) | 0}:${String(t % 60).padStart(2, '0')}`; };
-function startGemBoost() { watchAd(() => { save.gemBoost = Math.max(Date.now(), save.gemBoost || 0) + REWARDS.gemBoostMinutes * 60000; persist(); Audio.win(); ui.toast(`2x gems for ${REWARDS.gemBoostMinutes} minutes!`, '#46d35c'); }); }
+const boostMinutes = () => HSGame.rewards('gem_boost')?.boost_min || 10;
+function startGemBoost() { adGo(HSGame.showAd('gem_boost'), () => { Audio.win(); ui.toast(`2x gems for ${boostMinutes()} minutes!`, '#46d35c'); }); }
 function boostButton(u, x, y, w, h) {
   const left = gemBoostLeft();
   if (left > 0) { u.pill(x, y, h, { gem: true, text: `2x ${mmss(left)}` }, { minW: w, bg: 'rgba(30,140,60,0.8)' }); u.request(1); return; }
+  if (!HSGame.has('ads') || !HSGame.canShowAd('gem_boost')) return;
   u.button('gboost', x, y, w, h, { color: 'green', parts: [{ icon: 'video', size: h * 0.45 }, '2x', { gem: true, size: h * 0.4 }], size: h * 0.42, radius: h / 2, ring: false, onTap: tap(startGemBoost) });
 }
 // free gems video: capped per day
 const freeVidsLeft = () => REWARDS.freeGemsPerDay - (save.fv?.day === today() ? save.fv.n : 0);
-function freeGemsVideo(from) {
+function freeGemsVideo() {
   if (freeVidsLeft() <= 0) { ui.toast('Come back tomorrow for more free gems', '#ff8a1f'); return; }
-  watchAd(() => { save.fv = { day: today(), n: (save.fv?.day === today() ? save.fv.n : 0) + 1 }; earnGems(REWARDS.freeGems, from); Audio.win(); });
+  adGo(HSGame.showAd('free_gems'), () => { save.fv = { day: today(), n: (save.fv?.day === today() ? save.fv.n : 0) + 1 }; persist(); Audio.win(); });
 }
-// daily gift: grows with the login streak (7-day cycle), x2 with a video
+const freeGemsAmount = () => HSGame.rewards('free_gems')?.gems || 150;
+// daily gift: grows with the login streak (7-day cycle), x2 with a video. One reward key per streak day.
+const DAILY_KEYS = 7;
+const dailyRewards = (i) => [HSGame.rewards('daily_gift_1'), HSGame.rewards('daily_gift_2'), HSGame.rewards('daily_gift_3'), HSGame.rewards('daily_gift_4'), HSGame.rewards('daily_gift_5'), HSGame.rewards('daily_gift_6'), HSGame.rewards('daily_gift_7')][i]?.gems || 0;
+function claimDaily(i) {
+  switch (i) {
+    case 0: return HSGame.claim('daily_gift_1');
+    case 1: return HSGame.claim('daily_gift_2');
+    case 2: return HSGame.claim('daily_gift_3');
+    case 3: return HSGame.claim('daily_gift_4');
+    case 4: return HSGame.claim('daily_gift_5');
+    case 5: return HSGame.claim('daily_gift_6');
+    default: return HSGame.claim('daily_gift_7');
+  }
+}
 function dailyGift() {
   const d = save.daily || {};
-  if (d.day === today() || testRun) return;
-  const streak = d.day === yesterday() ? (d.streak || 0) + 1 : 1, idx = (streak - 1) % REWARDS.dailyGifts.length, amount = REWARDS.dailyGifts[idx];
-  const claim = (k) => { save.daily = { day: today(), streak }; persist(); ui.closeOverlay(); earnGems(amount * k, { x: ui.w / 2, y: ui.h / 2 }); Audio.win(); ui.confetti(24); };
+  if (d.day === today() || testRun || !hsStarted) return;
+  const streak = d.day === yesterday() ? (d.streak || 0) + 1 : 1, idx = (streak - 1) % DAILY_KEYS, amount = dailyRewards(idx);
+  if (!amount) return;
+  const claim = () => { save.daily = { day: today(), streak }; persist(); ui.closeOverlay(); claimDaily(idx); Audio.win(); ui.confetti(24); };
   ui.overlay((u, age) => {
     const c = u.ctx, pw = Math.min(u.w - PAD * 2, 380), ph = 300, px = u.w / 2 - pw / 2, py = u.h / 2 - ph / 2;
     u.panel(px, py, pw, ph, { ribbon: 'Daily Gift', ribbonColor: 'gold', scale: u.pop(0, 0.3, age) });
     u.text(`Day ${streak} in a row`, u.w / 2, py + 42, 16, '#fff');
-    const n = REWARDS.dailyGifts.length, bw = (pw - 28 - (n - 1) * 5) / n;
-    REWARDS.dailyGifts.forEach((g, i) => {
+    const bw = (pw - 28 - (DAILY_KEYS - 1) * 5) / DAILY_KEYS;
+    for (let i = 0; i < DAILY_KEYS; i++) {
       const x = px + 14 + i * (bw + 5), y = py + 66, on = i === idx, done = i < idx;
       u.rr(x, y, bw, 70, 10); c.fillStyle = on ? u.grad(y, y + 70, GRAD.gold) : done ? 'rgba(70,211,92,0.5)' : 'rgba(10,30,80,0.5)'; c.fill(); c.lineWidth = 2; c.strokeStyle = INK; c.stroke();
       u.text(`D${i + 1}`, x + bw / 2, y + 12, 11, '#fff');
       u.gem(x + bw / 2, y + 34, Math.min(20, bw * 0.5));
-      u.text(String(g), x + bw / 2, y + 56, 12, on ? '#5a3000' : '#fff', { outline: !on, maxW: bw - 2 });
-    });
+      u.text(String(dailyRewards(i)), x + bw / 2, y + 56, 12, on ? '#5a3000' : '#fff', { outline: !on, maxW: bw - 2 });
+    }
     u.row([{ text: `+${amount}`, color: GOLD }, { gem: true, size: 26 }], u.w / 2, py + 166, { size: 26 });
-    u.button('dgx2', px + PAD, py + 192, pw - PAD * 2, 50, { color: 'green', parts: [{ icon: 'video', size: 22 }, 'Claim x2', `+${amount * 2}`, { gem: true, size: 18 }], size: 18, onTap: tap(() => watchAd(() => claim(2))) });
-    u.button('dg1', px + PAD + 40, py + 250, pw - PAD * 2 - 80, 38, { color: 'gray', label: 'Claim', size: 16, onTap: tap(() => claim(1)) });
+    const mult = HSGame.rewards('daily_x2')?.mult || 2;
+    if (HSGame.has('ads') && HSGame.canShowAd('daily_x2'))
+      u.button('dgx2', px + PAD, py + 192, pw - PAD * 2, 50, { color: 'green', parts: [{ icon: 'video', size: 22 }, `Claim x${mult}`, `+${amount * mult}`, { gem: true, size: 18 }], size: 18,
+        onTap: tap(() => { multBase = { base: amount, pos: { x: u.w / 2, y: u.h / 2 } }; adGo(HSGame.showAd('daily_x2'), claim, () => { multBase = null; }); }) });
+    u.button('dg1', px + PAD + 40, py + 250, pw - PAD * 2 - 80, 38, { color: 'gray', label: 'Claim', size: 16, onTap: tap(claim) });
     return age < 0.4;
   });
 }
@@ -162,7 +213,9 @@ function noLivesMenu(retry) {
     const hk = 1 + Math.sin(u.t * 4) * 0.06;
     for (let i = 0; i < LIVES_MAX; i++) { const hx = u.w / 2 + (i - 2) * 46; u.ctx.save(); u.ctx.translate(hx, py + 76); u.ctx.scale(hk, hk); u.icon('heart', -20, -20, 40, i < n ? '#ff4d6a' : 'rgba(255,255,255,0.25)'); u.ctx.restore(); }
     u.text(`Next life in ${nextLifeIn()}`, u.w / 2, py + 124, 18, '#fff', { maxW: pw - 30 });
-    u.button('refill', px + PAD, py + 150, pw - PAD * 2, 56, { color: 'green', parts: [{ icon: 'video', size: 26 }, 'Refill', { icon: 'heart', size: 24, color: '#ff4d6a' }, `${LIVES_MAX}`], size: 22, onTap: tap(() => watchAd(() => { addLives(LIVES_MAX); u.closeOverlay(); Audio.win(); ui.toast('Lives refilled!'); if (retry) retry(); })) });
+    if (HSGame.has('ads') && HSGame.canShowAd('refill_lives'))
+      u.button('refill', px + PAD, py + 150, pw - PAD * 2, 56, { color: 'green', parts: [{ icon: 'video', size: 26 }, 'Refill', { icon: 'heart', size: 24, color: '#ff4d6a' }, `${HSGame.rewards('refill_lives')?.lives || LIVES_MAX}`], size: 22,
+        onTap: tap(() => adGo(HSGame.showAd('refill_lives'), () => { u.closeOverlay(); Audio.win(); ui.toast('Lives refilled!'); if (retry) retry(); })) });
     u.button('lrace', px + PAD, py + 150 + 56 + GAP, pw - PAD * 2, 48, { color: 'orange', icon: 'flag', label: 'Race meanwhile (free)', size: 17, onTap: tap(() => { u.closeOverlay(); game = null; showRace(); }) });
     u.button('lclose', px + PAD, py + ph - PAD - 44, pw - PAD * 2, 44, { color: 'gray', label: 'Close', size: 18, onTap: tap(() => u.closeOverlay()) });
     u.request(1);
@@ -209,18 +262,16 @@ function startLevel(level, race = null, opts = {}) {
   const theme = WORLDS[level.world].theme;
   R.buildLevel(level, theme, race ? { lanes: laneCount(), laneW: LANE_W } : {});
   const z0 = race ? laneZ(0) : 0;
-  // special items: the player's own stock (free and unlimited for bot runs and All resources)
-  const freeItems = !!(save.allRes || save.autoplay || testRun || opts.hint);
-  const me = makeRacer(level, spec, { stuckLimit: 5, items: freeItems ? Object.fromEntries(ITEMS.map((i) => [i.id, 99])) : { ...save.items } });
+  const me = makeRacer(level, spec, { stuckLimit: 5 });
   const sim = me.sim;
   const lane = R.attachSim(sim, { z: z0 });
   const player = R.addCar(sim, spec, race ? { label: 'You', color: '#ffe14d', z: z0 } : {});
   R.focusZ = z0;
-  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makeBot(1, 11), t0: ui.t, continued: false, hint: !!opts.hint, freeItems };
+  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makeBot(1, 11), t0: ui.t, continued: false, hint: !!opts.hint };
   if (race) {
     race.rivals.forEach((rv, i) => {
       const s2 = aiSpec(rv.car);
-      const r = makeRacer(level, s2, { collectGems: false, items: { boost: 3 } });   // rivals carry Rockets for sea crossings
+      const r = makeRacer(level, s2, { collectGems: false });
       const z = laneZ(i + 1);
       const ln = R.attachSim(r.sim, { z, gems: false });
       const car = R.addCar(r.sim, s2, { label: rv.name, color: rv.color, z });
@@ -229,10 +280,6 @@ function startLevel(level, race = null, opts = {}) {
   }
   if (!race && !testRun && !save.autoplay && !opts.hint && !save.tut.drive) game.tut = 'drive';
   if (opts.hint) tip(game, 'Hint: watch how it is done!', 3);
-  else if (level.seaGaps && !race) {
-    const has = freeItems || CROSSERS.some((k) => (save.items[k] || 0) > 0);
-    tip(game, has ? 'Sea crossing ahead: use a Rocket, Super Jump or Glider!' : 'Sea crossing ahead: you need a Rocket, Jump or Glider (Shop)', 3.8);
-  }
   R.snapCam = true;
   showHud();
   Audio.engineStart();
@@ -350,17 +397,6 @@ function fx(e, sim, z = 0, car = null) {
       if (e.v > 9 && (game.impT || 0) < ui.t) { game.impT = ui.t + 0.8; R.popText(e.heavy ? 'CRASH!' : 'SMASH!', e.x, e.y + 2.2, z, '#ff6b74'); }
       break;
     }
-    case 'item': {
-      if (e.owned && !game.freeItems && game.sim === sim) { save.items[e.kind] = Math.max(0, (save.items[e.kind] || 0) - 1); persist(); }
-      const label = { boost: 'ROCKET!', jump: 'BOING!', glide: 'Glide!', shield: 'Shield up!', magnet: 'Magnet!' }[e.kind];
-      R.popText(label, p.x, p.y + 2.6, z, '#ffd21a');
-      if (e.kind === 'boost') { Audio.boost(); R.punch = 1; R.shake = Math.max(R.shake, 0.15); }
-      else if (e.kind === 'jump') { Audio.boost(); for (const w of sim.wheels) { const q = w.getPosition(); for (let i = 0; i < 4; i++) R.smoke(q.x + (Math.random() - 0.5), q.y - sim.spec.wheelR + 0.2, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.4, (Math.random() - 0.5) * 2, 0.2); } }
-      else Audio.gem();
-      P.vibrate(); break;
-    }
-    case 'pickup': R.popText('+Rocket!', e.x, e.y + 1.2, z, '#ffd21a'); R.burst(e.x, e.y, 0xffd21a, 12, 4, -6, 0.6, z); Audio.gem(); break;
-    case 'shieldSave': R.burst(p.x, p.y + 0.5, 0x7df9ff, 20, 6, -6, 0.8, z); R.popText('Saved by the shield!', p.x, p.y + 2.8, z, '#7df9ff'); Audio.boost(); P.vibrate(); break;
     case 'tumble': R.popText('Too fast!', p.x, p.y + 2.8, z, '#ffd21a'); R.shake = 0.5; Audio.crash(); P.vibrate(); break;
     case 'bannerHit': {
       const look = game?.spec?.look;
@@ -414,35 +450,49 @@ function fx(e, sim, z = 0, car = null) {
 }
 
 // ------------------------------------------------------------ ads
-const clock = () => ui.t;
-let lastInterstitial = -1e9, levelEnds = 0;
-// Interstitials only at natural breaks (leaving a result screen), paced by AD_RULES.
-function adBreak(next) {
+let levelEnds = 0;
+// Interstitial when leaving a result screen (on the player's tap only). The first level ends of a session are
+// ad-free; the gap between two is the place's "cooldown" in the HS dashboard.
+function adBreak(next, race = false) {
   if (testRun || save.autoplay) return next();
+  if (adBusy) return;
   levelEnds++;
-  const t = clock();
-  if (t < AD_RULES.firstInterstitialAfterSec || t - lastInterstitial < AD_RULES.minInterstitialGapSec || levelEnds % AD_RULES.levelsBetweenInterstitials !== 0) return next();
-  lastInterstitial = t;
-  Audio.engineStop(); const snd = save.sound; Audio.setEnabled(false);
-  P.showInterstitial().finally(() => { Audio.setEnabled(snd); next(); });
+  if (levelEnds <= AD_FREE_ENDS || !HSGame.has('ads')) return next();
+  adBusy = true;
+  const ad = race ? HSGame.showAd('race_end') : HSGame.showAd('level_end');
+  ad.then(() => { adBusy = false; next(); }, () => { adBusy = false; next(); });
 }
-// Rewarded video: the reward is only granted when the video was watched to the end.
-function watchAd(onReward) {
-  const snd = save.sound; Audio.setEnabled(false); Audio.engineStop();
-  P.showRewarded().then((ok) => {
-    Audio.setEnabled(snd);
-    if (ok) onReward(); else ui.toast('Watch the whole video to get the reward', '#ff5a6e');
-  });
+// A rewarded video started by a tap: `ad` is the HSGame.showAd('<place>') promise. Its reward (if the place has one)
+// is already paid by HSGame when it resolves; onDone runs the game's side (continue, hint, x3 ...).
+let adBusy = false;
+function adGo(ad, onDone, onNone) {
+  adBusy = true;
+  ad.then((r) => {
+    adBusy = false;
+    if (r) onDone(r);
+    else { onNone?.(); ui.toast(HSGame.lastAdError === 'claimed' ? 'Already collected today' : 'No video right now, try again soon', '#ff8a1f'); }
+  }, () => { adBusy = false; onNone?.(); });
+}
+// the base a gem multiplier (x2 / x3 ad places) applies to: set right before that showAd
+let multBase = null;
+// Rewards that are not profile number fields (gems and trophies are credited by HSGame itself)
+function onGive(items, from) {
+  for (const [k, n] of Object.entries(items)) {
+    if (k === 'mult') { if (multBase) { earnGems(Math.round(multBase.base * (n - 1)), multBase.pos); multBase = null; } }
+    else if (k === 'boost_min') { save.gemBoost = Math.max(Date.now(), save.gemBoost || 0) + n * 60000; persist(); }
+    else if (k === 'lives') addLives(n);
+    else throw new Error('unknown item ' + k + ' from ' + from);
+  }
 }
 // Local stand-in ad for the web build and for placeholder ad unit IDs.
-P.fakeAd = (kind) => new Promise((resolve) => {
+globalThis.__fakeAd = (kind) => new Promise((resolve) => {
   const dur = kind === 'rewarded' ? 3 : 2;
   ui.overlay((u, age) => {
     const w = Math.min(u.w - 40, 340), h = 300, x = (u.w - w) / 2, y = u.h / 2 - h / 2;
     u.panel(x, y, w, h, { ribbon: kind === 'rewarded' ? 'Test video' : 'Test ad', ribbonColor: 'purple', scale: u.pop(0, 0.3, age) });
     u.text('TEST AD', u.w / 2, y + 70, 40, GOLD);
-    u.text(kind === 'rewarded' ? 'Real TikTok video ads show here' : 'Real TikTok interstitials show here', u.w / 2, y + 112, 15, '#fff', { maxW: w - 30 });
-    u.text('once the ad unit IDs are set.', u.w / 2, y + 134, 15, '#fff', { maxW: w - 30 });
+    u.text(kind === 'rewarded' ? 'A video ad plays here' : 'An ad plays here', u.w / 2, y + 112, 15, '#fff', { maxW: w - 30 });
+    u.text('(preview build)', u.w / 2, y + 134, 15, '#fff', { maxW: w - 30 });
     const left = Math.max(0, dur - age);
     u.bar(x + 30, y + 160, w - 60, 18, 1 - left / dur, { fill: GRAD.gold });
     const done = left <= 0;
@@ -452,41 +502,28 @@ P.fakeAd = (kind) => new Promise((resolve) => {
   });
 });
 
-// ------------------------------------------------------------ TikTok capabilities (the 3 buttons)
-function grantMission(kind, first, daily, label) {
-  const st = save.tt[kind] ||= {};
-  if (st.day === today()) return;
-  const amount = st.first ? daily : first;
-  st.first = true; st.day = today(); persist();
-  earnGems(amount, { x: ui.w / 2, y: ui.h / 2 });
-  ui.toast(`${label}: +${amount} gems`, '#46d35c');
+// ------------------------------------------------------------ the 3 buttons TikTok review asks for (via HSGame)
+// Entry Reward (open the game from the profile), Launch Reward (from a home-screen icon), Share. Each opens a
+// popup with the steps and the reward; shown only where HSGame says the feature exists.
+function stepsPopup(title, steps, rewardGems, goLabel, onGo) {
+  ui.overlay((u, age) => {
+    const pw = Math.min(u.w - PAD * 2, 380), ph = 150 + steps.length * 30 + (rewardGems ? 40 : 0), px = u.w / 2 - pw / 2, py = u.h / 2 - ph / 2;
+    u.panel(px, py, pw, ph, { ribbon: title, ribbonColor: 'purple', scale: u.pop(0, 0.3, age) });
+    steps.forEach((t, i) => u.text(`${i + 1}. ${t}`, px + 22, py + 50 + i * 30, 15, '#fff', { align: 'left', maxW: pw - 40 }));
+    let y = py + 50 + steps.length * 30;
+    if (rewardGems) { u.row(['Reward:', { text: `+${rewardGems}`, color: GOLD }, { gem: true, size: 20 }], u.w / 2, y + 12, { size: 18 }); y += 40; }
+    u.button('stepsgo', px + PAD, y + 4, pw - PAD * 2, 48, { color: 'green', label: goLabel, size: 20, onTap: tap(() => { u.closeOverlay(); onGo(); }) });
+    u.button('stepsclose', px + PAD + 50, y + 60, pw - PAD * 2 - 100, 34, { color: 'gray', label: 'Close', size: 15, onTap: tap(() => u.closeOverlay()) });
+    return age < 0.4;
+  });
 }
-async function checkMissionRewards() {
-  if (!P.isTT) return;
-  if (await P.shortcutReward()) grantMission('shortcut', REWARDS.shortcutFirst, REWARDS.shortcutDaily, 'Home screen reward');
-  if (await P.sidebarReward()) grantMission('sidebar', REWARDS.sidebarFirst, REWARDS.sidebarDaily, 'Profile reward');
-}
-const ttButtons = {
-  addhome: async () => {
-    if (!P.isTT) return ui.toast('Available in the TikTok app', '#ff8a1f');
-    const ok = await P.addShortcut();
-    if (ok) {
-      const st = save.tt.shortcut ||= {};
-      if (!st.added) { st.added = true; persist(); grantMission('shortcut', REWARDS.shortcutFirst, REWARDS.shortcutDaily, 'Added to home screen'); }
-      else ui.toast('Open Crane Rush from your home screen daily for gems!');
-    }
-  },
-  sidebar: async () => {
-    if (!P.isTT) return ui.toast('Available in the TikTok app', '#ff8a1f');
-    const ok = await P.startSidebar();
-    if (ok) ui.toast('Open Crane Rush from your TikTok profile for gems!');
-  },
-  share: async () => {
-    const ok = await P.share({ title: 'Crane Rush', desc: `I cleared ${totalDone()} levels in Crane Rush. Can you beat me?`, query: 'from=share' });
-    if (!ok && !P.canShare()) ui.toast('Sharing is available in the TikTok app', '#ff8a1f');
-  },
+const reviewButtons = {
+  launch: () => stepsPopup('Launch Reward', ['Tap "Go"', 'Add the game to your home screen', 'Open the game from the new icon', 'Get the reward'], HSGame.rewards('tiktok_shortcut')?.gems, 'Go', () => HSGame.tiktokMission.start('shortcut')),
+  entry: () => stepsPopup('Entry Reward', ['Go to your TikTok profile', 'Open "TikTok Minis"', 'Open this game from there', 'Come back and get the reward'], HSGame.rewards('tiktok_profile')?.gems, 'Go', () => HSGame.tiktokMission.start('profile')),
+  share: () => stepsPopup('Share', ['Share Crane Rush with your friends'], HSGame.rewards('share')?.gems, 'Share', () => {
+    HSGame.share({ title: 'Crane Rush', subtitle: `I cleared ${totalDone()} levels in Crane Rush. Can you beat me?` }).then((r) => { if (r && r.gems) Audio.win(); });
+  }),
 };
-const missionReady = (kind) => (save.tt[kind]?.day !== today());
 
 // ------------------------------------------------------------ shared widgets
 let gemPill = null;
@@ -609,11 +646,13 @@ function drawHome(u) {
     chip(u, 'test', u.w - PAD - tw0, chipY, 'TEST', true, () => testMenu(), 'orange');
     chip(u, 'auto', u.w - PAD - 8 - tw0 - (u.measure('AUTO', 15) + 22), chipY, 'AUTO', !!save.autoplay, () => { save.autoplay = !save.autoplay; persist(); u.request(); });
   }
-  // TikTok capability buttons (top-left row): Add to Home Screen, Profile sidebar, Share
+  // the review buttons (top-left row): Launch Reward, Entry Reward, Share. A mission button goes once it is done.
   const bs = sh ? 40 : 44; let bx = PAD; const by0 = topY(u) + 3;   // +3: white ring
-  roundBtn(u, 'tt_add', bx, by0, bs, 'addhome', 'Add', 'orange', ttButtons.addhome, missionReady('shortcut')); bx += bs + 16;
-  roundBtn(u, 'tt_side', bx, by0, bs, 'sidebar', 'Profile', 'purple', ttButtons.sidebar, missionReady('sidebar')); bx += bs + 16;
-  roundBtn(u, 'tt_share', bx, by0, bs, 'share', 'Share', 'teal', ttButtons.share);
+  if (HSGame.has('tiktok_missions')) {
+    if (!HSGame.tiktokMission.done('shortcut')) { roundBtn(u, 'tt_add', bx, by0, bs, 'addhome', 'Launch', 'orange', reviewButtons.launch, true); bx += bs + 16; }
+    if (!HSGame.tiktokMission.done('profile')) { roundBtn(u, 'tt_side', bx, by0, bs, 'sidebar', 'Entry', 'purple', reviewButtons.entry, true); bx += bs + 16; }
+  }
+  if (HSGame.has('share')) roundBtn(u, 'tt_share', bx, by0, bs, 'share', 'Share', 'teal', reviewButtons.share, HSGame.available('share'));
   // world title + progress
   // title sits one GAP below the chip row (top rows end at topY + pill + 10 + chip 30)
   const rowsEnd = topY(u) + pillH() + 10 + 30, ty = Math.max(rowsEnd + GAP + 28, sh ? 0 : u.h * 0.2), k = u.pop(0.05, 0.35);
@@ -757,29 +796,6 @@ function drawHud(u) {
     c.restore();
     u.hit(side === 'L' ? 0 : half, u.h * 0.45, half, u.h * 0.55, { id, hold: (v) => { if (side === 'L') touchL = v; else touchR = v; Audio.unlock(); u.request(); } });
   }
-  // special item buttons: a row above the drive controls (only items you have)
-  {
-    const have = ITEMS.filter((it) => g.sim.count(it.id) > 0), bs = short() ? 44 : 50, gp = 10;
-    const nearSea = (g.level.seaGaps || []).some((sg) => g.sim.x > sg.lip - 30 && g.sim.x < sg.lip + 1);
-    const rowW = have.length * bs + (have.length - 1) * gp, iy = cy - bs - 14;
-    have.forEach((it, i) => {
-      const x = u.w / 2 - rowW / 2 + i * (bs + gp), n = g.sim.count(it.id), f = g.sim.fx;
-      const active = (it.id === 'boost' && f.boost > 0) || (it.id === 'glide' && f.glide > 0) || (it.id === 'shield' && f.shield) || (it.id === 'magnet' && f.magnet > 0);
-      const glow = nearSea && CROSSERS.includes(it.id) && !active, k = glow ? 1 + Math.sin(u.t * 9) * 0.08 : 1, down = u.isDown('item_' + it.id);
-      c.save(); c.translate(x + bs / 2, iy + bs / 2); c.scale(k * (down ? 0.9 : 1), k * (down ? 0.9 : 1));
-      if (glow) { c.beginPath(); c.arc(0, 0, bs / 2 + 7, 0, Math.PI * 2); c.fillStyle = 'rgba(255,210,26,0.45)'; c.fill(); }
-      c.beginPath(); c.arc(0, 0, bs / 2 + 3, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill();
-      c.beginPath(); c.arc(0, 0, bs / 2, 0, Math.PI * 2); c.fillStyle = u.grad(-bs / 2, bs / 2, GRAD[it.color]); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
-      u.icon(it.icon, -bs * 0.32, -bs * 0.32, bs * 0.64);
-      if (active) { c.beginPath(); c.arc(0, 0, bs / 2 + 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ((u.t * 2) % 1)); c.lineWidth = 4; c.strokeStyle = '#fff'; c.stroke(); }
-      const txt = n >= 50 ? '∞' : String(n), tw = Math.max(20, u.measure(txt, 13) + 10);
-      u.rr(bs / 2 - tw + 4, -bs / 2 - 4, tw, 20, 10); c.fillStyle = '#ff3d57'; c.fill(); c.lineWidth = 2; c.strokeStyle = '#fff'; c.stroke();
-      u.text(txt, bs / 2 - tw / 2 + 4, -bs / 2 + 6, 13, '#fff', { outline: false });
-      c.restore();
-      u.hit(x - 4, iy - 4, bs + 8, bs + 8, { id: 'item_' + it.id, onTap: () => { if (g.countdown <= 0 && !g.over) g.sim.useItem(it.id); } });
-    });
-    if (have.length) u.request(0.1);
-  }
   // tutorial: hand on the ▶ control, then short tips
   if (g.tut === 'drive') {
     const x = u.w * 0.96 - cs, k = 0.5 + 0.5 * Math.sin(u.t * 5);
@@ -851,8 +867,7 @@ function onFail() {
   const snap = g.snap || R.snapshotCar(g.sim, g.z);
   const pose = g.sim.failPose || g.sim.reason || 'crash';
   const q = QUIPS[pose] || QUIPS.crash;
-  const st = { snap, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l, lives: livesNow(), hint: failCount[l.id] >= 2 && !save.autoplay,
-    needItem: !!l.seaGaps && g.sim.reason === 'splash' && !g.freeItems && !CROSSERS.some((k) => g.sim.count(k) > 0) };
+  const st = { snap, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l, lives: livesNow(), hint: failCount[l.id] >= 2 && !save.autoplay };
   ui.show('fail', (u) => drawFail(u, st));
 }
 function drawSticker(u, kind, x, y, w, h, t) {
@@ -918,13 +933,11 @@ function drawFail(u, st) {
   const by = u.h - B - 24 - barH;
   // rewarded offers: continue from the checkpoint, and after 2 crashes on this level a hint (the bot shows the way)
   const offers = [];
-  // fell into a sea crossing without anything to cross it: one free Rocket for a video
-  if (st.needItem) offers.push({ id: 'freeitem', color: 'orange', parts: [{ icon: 'video', size: 22 }, 'Free', { icon: 'rocket', size: 24, color: GOLD }], fn: () => { save.items.boost = (save.items.boost || 0) + 1; persist(); ui.toast('+1 Rocket Boost!'); startLevel(st.l); } });
-  if (canContinue && offers.length < 2) offers.push({ id: 'continue', color: 'green', parts: [{ icon: 'video', size: 22 }, 'Continue'], fn: () => continueAfterCrash(st) });
-  if (st.hint && offers.length < 2) offers.push({ id: 'hint', color: 'purple', parts: [{ icon: 'video', size: 22 }, 'Hint', { icon: 'bulb', size: 22, color: GOLD }], fn: () => startLevel(st.l, null, { hint: true }) });
+  if (canContinue && HSGame.has('ads') && HSGame.canShowAd('revive')) offers.push({ id: 'continue', color: 'green', parts: [{ icon: 'video', size: 22 }, 'Continue'], go: () => adGo(HSGame.showAd('revive'), () => continueAfterCrash(st)) });
+  if (st.hint && HSGame.has('ads') && HSGame.canShowAd('hint')) offers.push({ id: 'hint', color: 'purple', parts: [{ icon: 'video', size: 22 }, 'Hint', { icon: 'bulb', size: 22, color: GOLD }], go: () => adGo(HSGame.showAd('hint'), () => startLevel(st.l, null, { hint: true })) });
   if (offers.length) {
     const ow = Math.min(u.w - PAD * 2, offers.length > 1 ? 360 : 280), bw = (ow - GAP * (offers.length - 1)) / offers.length;
-    offers.forEach((o, i) => u.button(o.id, u.w / 2 - ow / 2 + i * (bw + GAP), by - 66, bw, 52, { color: o.color, parts: o.parts, size: 20, scale: u.pop(0.6, 0.4), onTap: tap(() => watchAd(o.fn)) }));
+    offers.forEach((o, i) => u.button(o.id, u.w / 2 - ow / 2 + i * (bw + GAP), by - 66, bw, 52, { color: o.color, parts: o.parts, size: 20, scale: u.pop(0.6, 0.4), onTap: tap(() => { if (!adBusy) o.go(); }) }));
   }
   barButtons(u, [
     { id: 'home', label: 'Home', icon: 'home', onTap: () => adBreak(showWorlds) },
@@ -986,9 +999,11 @@ function drawWin(u, st) {
   const shown = Math.round(st.earn * st.mult * Math.min(1, Math.max(0, (u.st - 1) / 0.9)));
   u.row([{ text: `+${shown}`, color: GOLD }, { gem: true, size: 30 }, ...(st.boosted ? [{ text: ' 2x', color: '#7aff8a' }] : [])], u.w / 2, py + 290, { size: 30, gap: 10 });
   st.earnPos = { x: u.w / 2, y: py + 290 };
-  if (st.mult === 1 && st.earn > 0) {
+  if (st.mult === 1 && st.earn > 0 && !testRun && HSGame.has('ads') && HSGame.canShowAd('level_x3')) {
     const bw = Math.min(u.w - 60, 280);
-    u.button('x3', u.w / 2 - bw / 2, by - 66, bw, 52, { color: 'green', icon: 'video', label: `x${REWARDS.winMultiplier} gems`, size: 20, scale: u.pop(1.2, 0.4), onTap: tap(() => watchAd(() => { st.mult = REWARDS.winMultiplier; st.t0x = u.t; earnGems(st.earn * (REWARDS.winMultiplier - 1), st.earnPos); Audio.win(); })) });
+    const m = HSGame.rewards('level_x3')?.mult || 3;
+    u.button('x3', u.w / 2 - bw / 2, by - 66, bw, 52, { color: 'green', icon: 'video', label: `x${m} gems`, size: 20, scale: u.pop(1.2, 0.4),
+      onTap: tap(() => { if (adBusy) return; multBase = { base: st.earn, pos: st.earnPos }; adGo(HSGame.showAd('level_x3'), () => { st.mult = m; st.t0x = u.t; Audio.win(); }, () => { multBase = null; }); }) });
   }
   barButtons(u, [
     { id: 'home', label: 'Home', icon: 'home', onTap: () => adBreak(showWorlds) },
@@ -1064,7 +1079,7 @@ function drawResults(u, st) {
   const c = u.ctx, B = u.safeBottom, barH = short() ? 72 : 82;
   c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
   topbar(u);
-  const by = u.h - B - 24 - barH, showX2 = st.mult === 1 && st.earn > 0 && !testRun;
+  const by = u.h - B - 24 - barH, showX2 = st.mult === 1 && st.earn > 0 && !testRun && HSGame.has('ads') && HSGame.canShowAd('race_x2');
   // fit the table between the top bar and the buttons: rows shrink on short screens with 6 trucks
   const pw = Math.min(u.w * 0.92, 420), px = u.w / 2 - pw / 2, py = topY(u) + pillH() + GAP + 22;
   const bottom = (showX2 ? by - 66 : by) - GAP, n = st.rows.length, extra = 50 + (st.rankMsg ? 26 : 0);
@@ -1078,12 +1093,14 @@ function drawResults(u, st) {
   st.earnPos = { x: u.w / 2, y: endY + 20 };
   if (showX2) {
     const bw = Math.min(u.w - 60, 280);
-    u.button('x2', u.w / 2 - bw / 2, by - 66, bw, 52, { color: 'green', icon: 'video', label: `x${REWARDS.raceMultiplier} gems`, size: 20, scale: u.pop(1, 0.4), onTap: tap(() => watchAd(() => { st.mult = REWARDS.raceMultiplier; earnGems(st.earn * (REWARDS.raceMultiplier - 1), st.earnPos); Audio.win(); })) });
+    const m = HSGame.rewards('race_x2')?.mult || 2;
+    u.button('x2', u.w / 2 - bw / 2, by - 66, bw, 52, { color: 'green', icon: 'video', label: `x${m} gems`, size: 20, scale: u.pop(1, 0.4),
+      onTap: tap(() => { if (adBusy) return; multBase = { base: st.earn, pos: st.earnPos }; adGo(HSGame.showAd('race_x2'), () => { st.mult = m; Audio.win(); }, () => { multBase = null; }); }) });
   }
   const nextLabel = st.race.random ? 'Another one' : st.race.idx < 2 ? 'Next race' : 'Standings';
   barButtons(u, [
-    { id: 'home', label: 'Home', icon: 'home', onTap: () => adBreak(showRace) },
-    { id: 'next', label: nextLabel, icon: 'next', color: 'blue', big: true, onTap: () => adBreak(() => { if (st.race.random) startRandomRace(); else if ((save.cup.race || 0) >= 3) cupStandings(); else showRace(); }) },
+    { id: 'home', label: 'Home', icon: 'home', onTap: () => adBreak(showRace, true) },
+    { id: 'next', label: nextLabel, icon: 'next', color: 'blue', big: true, onTap: () => adBreak(() => { if (st.race.random) startRandomRace(); else if ((save.cup.race || 0) >= 3) cupStandings(); else showRace(); }, true) },
   ], by);
   return u.st < 2.4;
 }
@@ -1094,8 +1111,10 @@ function cupStandings() {
   const pts = save.cup.pts || {};
   const rows = Object.entries(pts).map(([name, p]) => ({ name, p, me: name === 'You' })).sort((a, b) => b.p - a.p);
   const won = rows[0]?.me;
-  const bonus = won && !save.cups[cupIdx] ? 250 : 0, cupSt = { doubled: false };
-  if (bonus) { save.cups[cupIdx] = true; setTimeout(() => earnGems(bonus, { x: ui.w / 2, y: ui.h / 2 }), 600); }
+  // first win of a cup: the 'cup_win' reward (HSGame credits it); x2 with a video
+  const firstWin = won && !save.cups[cupIdx], cupSt = { doubled: false };
+  let bonus = 0;
+  if (firstWin) { save.cups[cupIdx] = true; bonus = HSGame.claim('cup_win')?.gems || 0; }
   save.cup = { idx: won && cupIdx < CUPS.length - 1 ? cupIdx + 1 : cupIdx, race: 0, pts: null };
   persist();
   if (won) { Audio.win(); ui.confetti(); } else Audio.fail();
@@ -1104,15 +1123,15 @@ function cupStandings() {
     const c = u.ctx, T = u.safeTop, B = u.safeBottom;
     c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
     topbar(u);
-    const by0 = u.h - B - 24 - (short() ? 72 : 82), showX2 = bonus && !cupSt.doubled && !testRun, by = by0 - (showX2 ? 66 : 0), n = rows.length, ts = short() ? 64 : 92;
+    const by0 = u.h - B - 24 - (short() ? 72 : 82), showX2 = bonus && !cupSt.doubled && !testRun && HSGame.has('ads') && HSGame.canShowAd('cup_x2'), by = by0 - (showX2 ? 66 : 0), n = rows.length, ts = short() ? 64 : 92;
     const pw = Math.min(u.w * 0.92, 420), px = u.w / 2 - pw / 2, py = topY(u) + pillH() + GAP + 22, ty = py + 34 + ts;
     const rh = Math.max(34, Math.min(short() ? 44 : 50, Math.floor((by - GAP - ty - 50) / n) - 8)), gap = rh < 44 ? 6 : 8;
     u.panel(px, py, pw, ty - py + n * (rh + gap) + 44, { ribbon: `${cup.name} ${won ? 'Won!' : 'Final'}`, ribbonColor: cup.color });
     const k = u.pop(0.1, 0.6) * (won ? 1 + Math.sin(u.t * 4) * 0.05 : 1);
     c.save(); c.translate(u.w / 2, py + 26 + ts / 2); c.scale(k, k); u.icon('trophy', -ts / 2, -ts / 2, ts, won ? GOLD : '#8e97b0'); c.restore();
     const endY = tableRows(u, rows, px + 14, ty, pw - 28, { time: false, rh });
-    u.text(won ? '+250 bonus gems! Next cup unlocked.' : 'Finish 1st overall to win the cup!', u.w / 2, endY + 16, 15, '#fff', { maxW: pw - 20 });
-    if (showX2) { const bw = Math.min(u.w - 60, 280); u.button('cupx2', u.w / 2 - bw / 2, by0 - 66, bw, 52, { color: 'green', parts: [{ icon: 'video', size: 22 }, 'x2 bonus', `+${bonus}`, { gem: true, size: 18 }], size: 19, scale: u.pop(1, 0.4), onTap: tap(() => watchAd(() => { cupSt.doubled = true; earnGems(bonus, { x: u.w / 2, y: u.h / 2 }); Audio.win(); })) }); }
+    u.text(won ? (bonus ? `+${bonus} bonus gems! Next cup unlocked.` : 'Cup won again!') : 'Finish 1st overall to win the cup!', u.w / 2, endY + 16, 15, '#fff', { maxW: pw - 20 });
+    if (showX2) { const bw = Math.min(u.w - 60, 280); u.button('cupx2', u.w / 2 - bw / 2, by0 - 66, bw, 52, { color: 'green', parts: [{ icon: 'video', size: 22 }, 'x2 bonus', `+${bonus}`, { gem: true, size: 18 }], size: 19, scale: u.pop(1, 0.4), onTap: tap(() => { if (adBusy) return; multBase = { base: bonus, pos: { x: u.w / 2, y: u.h / 2 } }; adGo(HSGame.showAd('cup_x2'), () => { cupSt.doubled = true; Audio.win(); }, () => { multBase = null; }); }) }); }
     barButtons(u, [{ id: 'cont', label: 'Continue', icon: 'trophy', color: 'blue', big: true, onTap: showRace }], by0);
     return true;
   });
@@ -1268,18 +1287,18 @@ function drawShop(u) {
   if (shopTab === 'trucks') u.hit(0, 0, u.w, u.h, { id: '__swipe' });   // empty space: swipe to change truck
   topbar(u);
   // free gems for a video (left, under the safe area)
-  u.button('freegems', PAD, topY(u), 132, pillH(), { color: freeVidsLeft() > 0 ? 'green' : 'gray', parts: [{ icon: 'video', size: 22 }, `+${REWARDS.freeGems}`, { gem: true, size: 18 }], size: 17, radius: 12, onTap: tap(() => freeGemsVideo({ x: 70, y: T + 30 })) });
+  if (HSGame.has('ads') && HSGame.canShowAd('free_gems'))
+    u.button('freegems', PAD, topY(u), 132, pillH(), { color: freeVidsLeft() > 0 ? 'green' : 'gray', parts: [{ icon: 'video', size: 22 }, `+${freeGemsAmount()}`, { gem: true, size: 18 }], size: 17, radius: 12, onTap: tap(() => { if (!adBusy) freeGemsVideo(); }) });
   // tabs: Trucks | Items | Gems
   const tabsY = topY(u) + pillH() + GAP, tabH = sh ? 34 : 38, tw = Math.min(u.w - PAD * 2, 360), tx0 = u.w / 2 - tw / 2;
-  const tabs = [['trucks', 'Trucks', 'shop'], ['items', 'Items', 'rocket'], ['gems', 'Gems', null]];
+  const tabs = [['trucks', 'Trucks', 'shop'], ['gems', 'Gems', null]];
   u.rr(tx0 - 3, tabsY - 3, tw + 6, tabH + 6, tabH / 2 + 3); c.fillStyle = 'rgba(255,255,255,0.7)'; c.fill();
   tabs.forEach(([id, label, ic], i) => {
-    const x = tx0 + i * tw / 3, on = shopTab === id;
-    u.rr(x + 2, tabsY + 2, tw / 3 - 4, tabH - 4, (tabH - 4) / 2); c.fillStyle = on ? u.grad(tabsY, tabsY + tabH, GRAD.orange) : 'rgba(10,30,80,0.55)'; c.fill();
-    u.row([ic ? { icon: ic, size: 18 } : { gem: true, size: 16 }, label], x + tw / 6, tabsY + tabH / 2, { size: sh ? 15 : 16, maxW: tw / 3 - 10 });
-    u.hit(x, tabsY, tw / 3, tabH, { id: 'stab' + id, onTap: tap(() => { shopTab = id; u.request(0.5); }) });
+    const x = tx0 + i * tw / tabs.length, on = shopTab === id;
+    u.rr(x + 2, tabsY + 2, tw / tabs.length - 4, tabH - 4, (tabH - 4) / 2); c.fillStyle = on ? u.grad(tabsY, tabsY + tabH, GRAD.orange) : 'rgba(10,30,80,0.55)'; c.fill();
+    u.row([ic ? { icon: ic, size: 18 } : { gem: true, size: 16 }, label], x + tw / tabs.length / 2, tabsY + tabH / 2, { size: sh ? 15 : 16, maxW: tw / tabs.length - 10 });
+    u.hit(x, tabsY, tw / tabs.length, tabH, { id: 'stab' + id, onTap: tap(() => { shopTab = id; u.request(0.5); }) });
   });
-  if (shopTab === 'items') return drawShopItems(u, tabsY + tabH + GAP);
   if (shopTab === 'gems') return drawShopGems(u, tabsY + tabH + GAP);
   const cur = vehicleById(shopSel), own = owns(cur.id), ups = save.upgrades?.[cur.id] || {};
   const ny = tabsY + tabH + (sh ? 22 : 30);
@@ -1349,78 +1368,52 @@ function drawShop(u) {
   else {
     // not owned: try it for one level with a video, or buy it
     const tw = 116, bw2 = Math.min(200, u.w - PAD * 2 - tw - GAP), x0 = u.w / 2 - (tw + GAP + bw2) / 2;
-    u.button('try', x0, btnY, tw, bh, { color: 'purple', parts: [{ icon: 'video', size: 22 }, 'Try'], size: 20, onTap: tap(() => watchAd(() => {
-      trialCar = cur.id; Audio.win(); showLevels(save.world); ui.toast(`${cur.name}: free for your next level!`, '#b47aff');
-    })) });
+    if (HSGame.has('ads') && HSGame.canShowAd('try_truck'))
+      u.button('try', x0, btnY, tw, bh, { color: 'purple', parts: [{ icon: 'video', size: 22 }, 'Try'], size: 20, onTap: tap(() => { if (adBusy) return; adGo(HSGame.showAd('try_truck'), () => {
+        trialCar = cur.id; Audio.win(); showLevels(save.world); ui.toast(`${cur.name}: free for your next level!`, '#b47aff');
+      }); }) });
     u.button('buy', x0 + tw + GAP, btnY, bw2, bh, { color: canAfford(cur.price) ? 'orange' : 'gray', parts: ['Buy', { gem: true, size: 22 }, String(cur.price)], onTap: () => doBuy(cur.id) });
   }
   navbar(u, 'shop');
   return made || u.st < 0.8;
 }
-// Items tab: special items bought with gems (x1 or a pack of 5 for the price of 4)
-function drawShopItems(u, top) {
-  const c = u.ctx, sh = short(), pw = Math.min(u.w - PAD * 2, 440), px = u.w / 2 - pw / 2, ph = navTop(u) - 2 * GAP - top;
-  c.fillStyle = 'rgba(10,40,120,0.45)'; c.fillRect(0, top - 6, u.w, u.h);
-  u.text('Use them in levels and races. Sea crossings need a Rocket, Jump or Glider.', u.w / 2, top + 10, 12, '#fff', { maxW: pw });
-  const rh = sh ? 74 : 82, listY = top + 26, listH = ph - 26;
-  u.scroll('itemsList', px - 4, listY, pw + 8, listH, ITEMS.length * (rh + 8) + 8, () => {
-    ITEMS.forEach((it, i) => {
-      const y = listY + 4 + i * (rh + 8), n = save.allRes ? '∞' : String(save.items[it.id] || 0);
-      u.rr(px, y, pw, rh, 16); c.fillStyle = u.grad(y, y + rh, GRAD.blue); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
-      const r = rh * 0.32, cx = px + 14 + r, cyy = y + rh / 2;
-      c.beginPath(); c.arc(cx, cyy, r + 3, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill();
-      c.beginPath(); c.arc(cx, cyy, r, 0, Math.PI * 2); c.fillStyle = u.grad(cyy - r, cyy + r, GRAD[it.color]); c.fill(); c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
-      u.icon(it.icon, cx - r * 0.66, cyy - r * 0.66, r * 1.32);
-      const tx = cx + r + 12, bw = sh ? 74 : 80, btx = px + pw - 10 - bw;
-      u.text(it.name, tx, y + rh * 0.28, sh ? 16 : 18, '#fff', { align: 'left', maxW: btx - tx - 40 });
-      u.text(`x${n}`, btx - 8, y + rh * 0.28, 16, GOLD, { align: 'right' });
-      u.text(it.desc, tx, y + rh * 0.56, 11, '#dfe9ff', { align: 'left', maxW: btx - tx - 6, outline: false });
-      const bh = (rh - 18) / 2;
-      u.button('ib1' + it.id, btx, y + 6, bw, bh, { color: canAfford(it.price) ? 'green' : 'gray', parts: ['+1', { gem: true, size: 13 }, String(it.price)], size: 13, radius: 9, ring: false, onTap: () => buyItem(it, 1) });
-      u.button('ib5' + it.id, btx, y + 12 + bh, bw, bh, { color: canAfford(it.price * 4) ? 'orange' : 'gray', parts: ['+5', { gem: true, size: 13 }, String(it.price * 4)], size: 13, radius: 9, ring: false, onTap: () => buyItem(it, 5) });
-    });
-  });
-  navbar(u, 'shop');
-  return u.st < 0.6;
-}
-function buyItem(it, n) {
-  const cost = it.price * (n === 5 ? 4 : n);
-  if (!canAfford(cost)) return shakeGems();
-  spend(cost); save.items[it.id] = (save.items[it.id] || 0) + n; persist(); Audio.gem(); ui.toast(`+${n} ${it.name}`); ui.request(1);
-}
-// Gems tab: a free video, and gem packs for real money (in-app purchase hooks come later)
+// Gems tab: free videos (+gems, 2x booster) and the gem packs HSGame sells (products set in the HS dashboard).
+let shopProducts = null, buying = false;
+function loadProducts() { HSGame.shop().then((list) => { shopProducts = list || []; ui.request(0.5); }, () => { shopProducts = []; }); }
 function drawShopGems(u, top) {
   const c = u.ctx, sh = short(), pw = Math.min(u.w - PAD * 2, 440), px = u.w / 2 - pw / 2;
   c.fillStyle = 'rgba(10,40,120,0.45)'; c.fillRect(0, top - 6, u.w, u.h);
-  // free videos: +150 gems (5 a day) and the 2x Gems booster
   const fbw = (pw - GAP) / 2, fh = sh ? 50 : 56, fl = freeVidsLeft();
-  u.button('gfree', px, top + 4, fbw, fh, { color: fl > 0 ? 'green' : 'gray', parts: [{ icon: 'video', size: 22 }, `+${REWARDS.freeGems}`, { gem: true, size: 18 }], sub: `${fl}/${REWARDS.freeGemsPerDay} today`, size: 18, onTap: tap(() => freeGemsVideo({ x: u.w / 2, y: top + 30 })) });
-  if (gemBoostLeft() > 0) { u.rr(px + fbw + GAP, top + 4, fbw, fh, 14); u.ctx.fillStyle = 'rgba(30,140,60,0.8)'; u.ctx.fill(); u.row([{ gem: true, size: 18 }, `2x ${mmss(gemBoostLeft())}`], px + fbw + GAP + fbw / 2, top + 4 + fh / 2, { size: 18 }); u.request(1); }
-  else u.button('gboost2', px + fbw + GAP, top + 4, fbw, fh, { color: 'green', parts: [{ icon: 'video', size: 22 }, '2x', { gem: true, size: 18 }], sub: `${REWARDS.gemBoostMinutes} min`, size: 18, onTap: tap(startGemBoost) });
-  // one-time starter pack
-  let listTop = top + fh + 14;
-  if (!save.starterBought) {
-    const sy = listTop, shh = sh ? 64 : 70;
-    u.rr(px, sy, pw, shh, 14); c.fillStyle = u.grad(sy, sy + shh, GRAD.purple); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
-    u.text('Starter pack', px + 14, sy + 16, 16, GOLD, { align: 'left' });
-    u.row([{ gem: true, size: 18 }, STARTER_PACK.gems.toLocaleString('en-US'), ' +', { icon: 'rocket', size: 18, color: GOLD }, `x${STARTER_PACK.items.boost}`, { icon: 'shield', size: 18, color: '#c6a8ff' }, `x${STARTER_PACK.items.shield}`], px + 14 + 110, sy + shh * 0.66, { size: 15, maxW: 210 });
-    u.button('starter', px + pw - 10 - 92, sy + (shh - 40) / 2, 92, 40, { color: IAP_ENABLED ? 'orange' : 'gray', label: STARTER_PACK.price, size: 16, radius: 10, ring: false, onTap: tap(() => ui.toast(IAP_ENABLED ? 'Opening the store…' : 'Gem packs are coming soon!', '#ff8a1f')) });
-    listTop += shh + 10;
+  let listTop = top + 4;
+  if (HSGame.has('ads')) {
+    if (HSGame.canShowAd('free_gems')) u.button('gfree', px, top + 4, fbw, fh, { color: fl > 0 ? 'green' : 'gray', parts: [{ icon: 'video', size: 22 }, `+${freeGemsAmount()}`, { gem: true, size: 18 }], sub: `${fl}/${REWARDS.freeGemsPerDay} today`, size: 18, onTap: tap(() => { if (!adBusy) freeGemsVideo(); }) });
+    if (gemBoostLeft() > 0) { u.rr(px + fbw + GAP, top + 4, fbw, fh, 14); c.fillStyle = 'rgba(30,140,60,0.8)'; c.fill(); u.row([{ gem: true, size: 18 }, `2x ${mmss(gemBoostLeft())}`], px + fbw + GAP + fbw / 2, top + 4 + fh / 2, { size: 18 }); u.request(1); }
+    else if (HSGame.canShowAd('gem_boost')) u.button('gboost2', px + fbw + GAP, top + 4, fbw, fh, { color: 'green', parts: [{ icon: 'video', size: 22 }, '2x', { gem: true, size: 18 }], sub: `${boostMinutes()} min`, size: 18, onTap: tap(() => { if (!adBusy) startGemBoost(); }) });
+    listTop += fh + 10;
   }
-  const rh = sh ? 56 : 62, listY = listTop, listH = navTop(u) - 2 * GAP - listY - 22;
-  u.scroll('gemPacks', px - 4, listY, pw + 8, listH, GEM_PACKS.length * (rh + 8) + 8, () => {
-    GEM_PACKS.forEach((gp, i) => {
-      const y = listY + 4 + i * (rh + 8);
-      u.rr(px, y, pw, rh, 14); c.fillStyle = u.grad(y, y + rh, GRAD.panel); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
-      for (let k = 0; k < Math.min(4, i + 1); k++) u.gem(px + 28 + k * 9, y + rh / 2 - k * 3 + 4, 26);
-      u.text(gp.gems.toLocaleString('en-US'), px + 82, y + rh / 2, sh ? 20 : 22, '#fff', { align: 'left' });
-      if (gp.tag) { const tw = u.measure(gp.tag, 11) + 14; u.rr(px + 82, y + 4, tw, 16, 8); c.fillStyle = '#ff3d57'; c.fill(); u.text(gp.tag, px + 82 + tw / 2, y + 12, 11, '#fff', { outline: false }); }
-      const bw = 92;
-      u.button('gp' + gp.id, px + pw - 10 - bw, y + (rh - 40) / 2, bw, 40, { color: IAP_ENABLED ? 'orange' : 'gray', label: IAP_ENABLED ? gp.price : `${gp.price}`, size: 16, radius: 10, ring: false,
-        onTap: tap(() => ui.toast(IAP_ENABLED ? 'Opening the store…' : 'Gem packs are coming soon!', '#ff8a1f')) });
+  if (!HSGame.has('shop')) { u.text('Gem packs are coming soon.', u.w / 2, listTop + 30, 15, '#fff', { maxW: pw }); navbar(u, 'shop'); return u.st < 0.6; }
+  if (!shopProducts) { loadProducts(); shopProducts = []; }
+  const list = shopProducts.filter((p) => !(p.product_id === STARTER_ID && profile.get('starter')));
+  const rh = sh ? 56 : 62, listY = listTop, listH = navTop(u) - 2 * GAP - listY;
+  u.scroll('gemPacks', px - 4, listY, pw + 8, listH, list.length * (rh + 8) + 8, () => {
+    list.forEach((p, i) => {
+      const y = listY + 4 + i * (rh + 8), starter = p.product_id === STARTER_ID, gems = p.items?.gems || 0;
+      u.rr(px, y, pw, rh, 14); c.fillStyle = u.grad(y, y + rh, starter ? GRAD.purple : GRAD.panel); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+      for (let k = 0; k < Math.min(4, 1 + Math.floor(Math.log10(Math.max(1, gems / 500)) * 2)); k++) u.gem(px + 28 + k * 9, y + rh / 2 - k * 3 + 4, 26);
+      u.text(starter ? p.name : gems.toLocaleString('en-US'), px + 82, y + rh / 2 + (starter ? -8 : 0), sh ? 18 : 20, starter ? GOLD : '#fff', { align: 'left', maxW: pw - 200 });
+      if (starter) u.row([{ gem: true, size: 14 }, gems.toLocaleString('en-US')], px + 82 + 40, y + rh / 2 + 14, { size: 14 });
+      if (p.badge && !starter) { const tw = u.measure(p.badge, 11) + 14; u.rr(px + 82, y + 4, tw, 16, 8); c.fillStyle = '#ff3d57'; c.fill(); u.text(p.badge, px + 82 + tw / 2, y + 12, 11, '#fff', { outline: false }); }
+      const label = p.price || (p.beans_cost + ' Beans');   // the store's own price text
+      u.button('gp' + p.product_id, px + pw - 10 - 104, y + (rh - 40) / 2, 104, 40, { color: 'orange', label, size: 15, radius: 10, ring: false, onTap: tap(() => {
+        if (buying) return; buying = true;
+        HSGame.buy(p.product_id).then((r) => {
+          buying = false;
+          if (r && r.ok) { Audio.win(); ui.confetti(30); if (!r.delivered) ui.toast('Paid: your gems arrive at the next start', '#46d35c'); }
+          else if (r && r.error) ui.toast(String(r.error), '#ff8a1f');
+        }, () => { buying = false; });
+      }) });
     });
   });
-  u.text(IAP_ENABLED ? 'Prices in your store currency.' : 'Purchases open in a coming update.', u.w / 2, navTop(u) - 2 * GAP - 10, 12, '#fff', { maxW: pw });
   navbar(u, 'shop');
   return u.st < 0.6;
 }
@@ -1476,7 +1469,7 @@ function drawSettings(u) {
     }
     u.button('reset', px + 22, y + 8, pw - 44, 44, { color: resetArmed ? 'red' : 'gray', label: resetArmed ? 'Tap again to erase everything' : 'Reset progress', size: resetArmed ? 15 : 18, onTap: tap(() => {
       if (!resetArmed) { resetArmed = true; u.request(); return; }
-      save = { ...defaults, levels: {}, cups: {}, owned: ['crane'], cup: { idx: 0, race: 0, pts: null }, tt: save.tt }; persist(); gemShown = 0; gemAnimT = -1; showWorlds(); ui.toast('Progress erased', '#ff5a6e');
+      save = makeSave({ tt: save.tt }); profile.update({ gems: 0, trophies: 0 }); persist(); gemShown = 0; gemAnimT = -1; showWorlds(); ui.toast('Progress erased', '#ff5a6e');
     }) });
     y += 64;
     u.text('Controls: ◀ ▶ on screen, or Arrow keys / A D.', u.w / 2, y + 8, 12, '#fff', { maxW: pw - 40 });
@@ -1595,14 +1588,28 @@ P.onKey((code) => {
   if (KR.includes(code)) keys.right = true;
   if (game && !game.paused && !game.over) {
     if (code === 'KeyR') startLevel(game.level, game.race ? { ...game.race } : null);
-    const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(code);
-    if (n >= 0 && game && !game.over && game.countdown <= 0) game.sim.useItem(ITEMS[n].id);
     if (code === 'Escape' || code === 'KeyP') pauseMenu();
   }
 }, (code) => { if (KL.includes(code)) keys.left = false; if (KR.includes(code)) keys.right = false; });
 P.onTouch({ start: (p) => ui.pointerDown(p), move: (p) => ui.pointerMove(p), end: (p) => ui.pointerUp(p) });
 P.onHide(() => { keys.left = keys.right = touchL = touchR = false; ui.releaseAll(); if (game && !game.over && !game.paused && !testRun) pauseMenu(); Audio.engineStop(); });
-P.onShow(() => { checkMissionRewards(); });
+// HSGame: an ad, a purchase or the app going away pauses everything; a reward toast; the account opened elsewhere
+let hsPaused = false, hsStarted = false;
+HSGame.on('pause', () => { Audio.setEnabled(false); Audio.engineStop(); keys.left = keys.right = touchL = touchR = false; ui.releaseAll(); if (game && !game.over && !game.paused) { game.paused = true; hsPaused = true; } });
+HSGame.on('resume', () => { Audio.setEnabled(save.sound); if (hsPaused && game) { game.paused = false; if (!game.over && game.countdown <= 0) Audio.engineStart(); } hsPaused = false; });
+HSGame.on('given', (items, from) => {
+  if (String(from).startsWith('product:') && Number(String(from).slice(8)) === STARTER_ID) profile.set('starter', 1);
+  if (items.gems) { animateGems(items.gems, { x: ui.w / 2, y: ui.h / 2 }); ui.toast(`+${items.gems} gems`, '#46d35c'); }
+});
+HSGame.on('otherDevice', () => {
+  ui.overlay((u, age) => {
+    const pw = Math.min(u.w - PAD * 2, 340), ph = 200, px = u.w / 2 - pw / 2, py = u.h / 2 - ph / 2;
+    u.panel(px, py, pw, ph, { ribbon: 'Another device', ribbonColor: 'purple', scale: u.pop(0, 0.3, age) });
+    u.text('Your account is playing on another device.', u.w / 2, py + 60, 15, '#fff', { maxW: pw - 30 });
+    u.button('playhere', px + PAD, py + ph - PAD - 52, pw - PAD * 2, 52, { color: 'green', label: 'Play here', size: 20, onTap: tap(() => { u.closeOverlay(); HSGame.takeOver(); }) });
+    return age < 0.4;
+  });
+});
 
 // ------------------------------------------------------------ loading screen + main loop
 let loading = { p: 0, shown: 0, art: null };
@@ -1644,7 +1651,7 @@ function loop(now) {
 }
 
 let loadingDone = false;
-const step = (p) => new Promise((res) => { loading.p = p; P.setLoadingProgress(p); setTimeout(res, 30); });
+const step = (p) => new Promise((res) => { loading.p = p; setTimeout(res, 30); });
 async function boot() {
   ui.show('loading', drawLoading);
   requestAnimationFrame(loop);
@@ -1656,13 +1663,13 @@ async function boot() {
   R.showDiorama(WORLDS[save.world], vehicleById(save.car));
   R.r.compile(R.scene, R.camera);
   await step(0.8);
-  P.silentLogin();
+  // HSGame: login (silent), cloud progress, dashboard rewards and ads. The game plays offline if this fails.
+  HSGame.start({ gameId: HS_GAME_ID, sdkKey: HS_SDK_KEY, defaults: DEFAULTS, onGive }).then(() => { hsStarted = true; if (ui.screen?.name === 'home') dailyGift(); });
   await step(1);
   await new Promise((r) => setTimeout(r, 250));
   loadingDone = true;
   showWorlds();
-  checkMissionRewards();
-  setTimeout(dailyGift, 600);   // once a day: streak gift, x2 with a video
+  setTimeout(dailyGift, 600);   // once a day: streak gift, x2 with a video (after HSGame.start)
 }
 boot();
 
