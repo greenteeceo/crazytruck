@@ -308,7 +308,7 @@ export const SCRIPT = [
   [4, 0.6, 30], [5, 0.65, 32], [5, 0.7, 32], [5, 0.75, 34], [7, 0.9, 50],        // 11-15
   [5, 0.7, 32], [5, 0.75, 34], [6, 0.8, 38], [6, 0.85, 40], [8, 1.0, 58],        // 16-20
 ];
-export const SCRIPTED_WORLDS = 7;
+export const SCRIPTED_WORLDS = 20;   // every world follows the script
 export const isHard = (li) => (li + 1) % 5 === 0;
 // World 1 is laid out by hand, stretch by stretch: each level brings one new thing or a harder mix
 const CLASSIC_PLANS = [
@@ -350,7 +350,7 @@ function autoPlan(wid, li) {
   for (let i = plan.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [plan[i], plan[j]] = [plan[j], plan[i]]; }
   return plan;
 }
-const WORLD_STEP = 0.025;   // each world is a little harder than the one before
+const WORLD_STEP = 0.02;    // each world is a little harder than the one before (warm-ups only a little)
 export const genCount = (wid) => 20 - (HANDMADE[wid]?.length || 0);
 // how the k-th generated level of a world is built: a designed plan (world 1) or the random pool
 export function genSpec(wid, k) {
@@ -358,7 +358,7 @@ export function genSpec(wid, k) {
   if (wi < SCRIPTED_WORLDS) {
     const [, d, maxT] = SCRIPT[li];
     const plan = wid === 'classic' ? CLASSIC_PLANS[li - 3] : autoPlan(wid, li);
-    return { diff: Math.min(1, d + wi * WORLD_STEP), plan, sea: 0, maxT };
+    return { diff: Math.min(1, d + wi * WORLD_STEP * (li < 3 ? 0.4 : 1)), plan, sea: 0, maxT };
   }
   return { diff: genDiff(k, fresh), sea: levelSea(fresh, k), maxT: 45 };
 }

@@ -109,8 +109,8 @@ const gemsText = () => (save.infinite ? '∞' : String(gemShownNow()));
 const lvlSave = (l) => save.levels[l.id] || null;
 const worldDone = (w) => WORLDS[w].levels.filter((l) => lvlSave(l)?.time != null).length;
 const totalStars = () => Object.values(save.levels).reduce((a, v) => a + (v?.stars || 0), 0);
-// For now only the first 7 worlds (140 levels) are open; the rest stay hidden until they are unlocked in an update
-const OPEN_WORLDS = 7;
+// All 20 worlds (400 levels) are open (unlocked in turn by clearing levels and collecting stars)
+const OPEN_WORLDS = 20;
 if (save.world >= OPEN_WORLDS) save.world = 0;
 const starsNeeded = (w) => Math.max(0, (WORLDS[w].starsReq || 0) - totalStars());
 let testRun = null;   // active automated test session (see startTest)

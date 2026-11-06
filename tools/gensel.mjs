@@ -66,7 +66,7 @@ const strong = (CHECK_TRUCKS.find(([n]) => n === 'titan+max') || CHECK_TRUCKS[0]
 const raceOk = (l) => { const res = [1, 0.85, 0.7].map((sk) => raced(l, sk)); const st = raced(l, 1, strong); return !res.some((x) => !x || x.t > 50 || x.resp > 3) && st && st.resp <= 3 ? res : null; };
 if (ONLY && !ONLY.includes('races')) out.races = prev.races;
 else for (let i = 0; i < 20; i++) {
-  const w = 4 + (i % 16);
+  const w = i;   // one generated track per world: random races change scene across all 20 worlds
   const old = prev.races?.[i];
   if (old && old.w === w) { const l0 = genRace(w, old.seed, { sea: raceSea(i) }); if (raceOk(l0)) { out.races.push(old); names.add(l0.name); continue; } console.log('replace race', i + 1, l0.name); }
   for (let seed = 50000 + i * 131 + (old ? 7919 : 0); ; seed++) {
