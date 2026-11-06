@@ -161,7 +161,7 @@ const science = [
     b.ground(-8, 14, 0).pad(12, 0.02, 2.4, 11, 8).ground(24, 32, 0).pad(30, 0.02, 2.4, 11, 8).ground(42, 58, 0)
       .gem(18, 3.6).gem(36, 3.6).gem(48, 1.2).finish(52);
   }),
-  lvl('Low Gravity', 'metal', (b) => {
+  lvl('Long Hop', 'metal', (b) => {
     b.ground(-8, 16, 0).ramp(10, 0, 16, 1.2).ground(23, 34, 0.8).ramp(28, 0.8, 34, 2.0).ground(46, 66, 0)
       .gems(19, 4.0, 3, 2.2).gems(37, 5.0, 3, 2.4).finish(60);
   }, { ai: { airAngle: -0.05 } }),
