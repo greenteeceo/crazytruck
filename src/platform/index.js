@@ -49,16 +49,22 @@ export const P = {
       return;
     }
     const el = document.getElementById('ui');
-    const map = (fn) => (e) => { e.preventDefault(); fn({ id: e.pointerId, x: e.clientX, y: e.clientY }); };
-    el.addEventListener('pointerdown', (e) => { el.setPointerCapture?.(e.pointerId); map(start)(e); });
+    // Fingers come in as touch events (a finger held still stays down for as long as it is held - phone browsers
+    // can cancel a still pointer after a moment, which would let go of the throttle); mouse / pen as pointer events.
+    const stop = (e) => { if (e.cancelable) e.preventDefault(); };
+    const touchMap = (fn) => (e) => { stop(e); for (const t of e.changedTouches) fn({ id: 1000 + t.identifier, x: t.clientX, y: t.clientY }); };
+    el.addEventListener('touchstart', touchMap(start), { passive: false });
+    el.addEventListener('touchmove', touchMap(move), { passive: false });
+    el.addEventListener('touchend', touchMap(end), { passive: false });
+    el.addEventListener('touchcancel', touchMap(end), { passive: false });
+    const map = (fn) => (e) => { if (e.pointerType === 'touch') return; e.preventDefault(); fn({ id: e.pointerId, x: e.clientX, y: e.clientY }); };
+    el.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch') el.setPointerCapture?.(e.pointerId); map(start)(e); });
     el.addEventListener('pointermove', map(move));
     el.addEventListener('pointerup', map(end));
     el.addEventListener('pointercancel', map(end));
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     // a finger on the game must never zoom the page: no pinch, no double-tap zoom, no long-press magnifier
     // (the page may be embedded without our viewport tag, e.g. the web artifact)
-    const stop = (e) => { if (e.cancelable) e.preventDefault(); };
-    for (const ev of ['touchstart', 'touchmove', 'touchend']) el.addEventListener(ev, stop, { passive: false });
     document.addEventListener('touchmove', (e) => { if (e.touches && e.touches.length > 1) stop(e); }, { passive: false });
     for (const ev of ['gesturestart', 'gesturechange', 'gestureend', 'dblclick']) document.addEventListener(ev, stop, { passive: false });
     try {

@@ -436,6 +436,13 @@ export class Sim {
       const held = heldThrough ? 1.6 + 2.2 * Math.min(1, (ang - 0.35) / 0.8) : 0;
       this.chassis.setAngularVelocity(this.chassis.getAngularVelocity() + t * (kick * slip + held) * DT);
     }
+    // holding the gas down on the ground pulls hard: the truck gets up to speed quickly (a push on the body,
+    // not more wheel torque, so it does not wheelie any more than before). Fades out near top speed.
+    if (!air && t > 0 && running && !braking && !upright) {
+      const top = s.speed * s.wheelR, k = Math.max(0, 1 - Math.max(0, vx) / (top * 0.95));
+      this.holdT = (this.holdT || 0) + DT;
+      if (k > 0) this.chassis.applyForceToCenter(V(this.mass * 4.5 * k * Math.min(1, this.holdT / 0.25) * Math.cos(ang), this.mass * 4.5 * k * Math.min(1, this.holdT / 0.25) * Math.sin(ang)), true);
+    } else this.holdT = 0;
     if (recover && running) {
       // standing up and the player keeps pressing: the truck comes back down onto its wheels and goes on
       // (it is never driven along standing on end)
