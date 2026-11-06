@@ -26,8 +26,10 @@ export function passable(level, spec) {
 const byId = (id) => VEHICLES.find((v) => v.id === id);
 const MAXUP = { speed: 5, power: 5, grip: 5, air: 5, stability: 5 };
 // every level is checked with every truck at base stats, plus the fully upgraded hero and a few fully upgraded others
-export const CHECK_TRUCKS = [
+const ALL_TRUCKS = [
   ...VEHICLES.map((v) => [v.id, v]),
   ...['crane', 'taxi', 'garbage', 'titan', 'rocket'].map((id) => [id + '+max', withUpgrades(byId(id), MAXUP)]),
 ];
+// TRUCKS=crane,taxi limits the check to those trucks (quick passes while tuning one truck)
+export const CHECK_TRUCKS = process.env.TRUCKS ? ALL_TRUCKS.filter(([n]) => process.env.TRUCKS.split(',').includes(n)) : ALL_TRUCKS;
 export const allPass = (level) => { for (const [name, spec] of CHECK_TRUCKS) { const r = passable(level, spec); if (!r.ok) return { ok: false, why: `${name} ${r.why}` }; } return { ok: true }; };
