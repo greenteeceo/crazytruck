@@ -328,6 +328,16 @@ function tick(dt) {
   g.acc += Math.min(dt, 0.1);
   const t = save.autoplay || testRun ? g.autoBot(g.sim) : throttleInput();
   tutorialTick(g, dt, t);
+  // wedged against something with the wheels spinning (the truck is upright, so the game goes on): after a few
+  // seconds without getting anywhere, offer the way out - back up, or start the level again
+  if (!g.race && g.sim.state === 'run') {
+    const x = g.sim.x;
+    if (g.stuckX == null || Math.abs(x - g.stuckX) > 0.6) { g.stuckX = x; g.stuckS = 0; }
+    else if (t !== 0) {
+      g.stuckS = (g.stuckS || 0) + dt;
+      if (g.stuckS > 3 && !g.stuckTip) { g.stuckTip = true; tip(g, 'Stuck? Hold behind the truck to back up, or tap ↻', 4); }
+    }
+  }
   while (g.acc >= DT) {
     g.acc -= DT;
     g.sim.step(t);
@@ -774,6 +784,8 @@ function drawHud(u) {
   const name = g.race ? (g.race.random ? `Random · ${l.name}` : `${g.race.cup.name} · Race ${g.race.idx + 1}/3`) : `${w.name} ${l.index + 1}. ${l.name}`;
   u.text(name, u.w / 2, topY(u) + 10, 15, '#fff', { maxW: u.w - 180 });
   u.text(fmt(g.sim.state === 'win' ? g.sim.finishTime : g.sim.time), u.w / 2, topY(u) + 38, 30);
+  if (!g.race && g.sim.state === 'run' && (g.stuckS || 0) > 3)
+    u.button('stuckRetry', u.w / 2 - 34, topY(u) + 60, 68, 44, { color: 'orange', icon: 'retry', size: 18, radius: 14, scale: 0.95 + 0.05 * Math.sin(u.t * 6), onTap: tap(() => startLevel(g.level)) });
   if (g.race) {
     const pl = g.place || 1, n = (g.racers.length + 1), k = g.placeT ? 1 + Math.max(0, 0.3 - (u.t - g.placeT)) : 1;
     c.save(); c.translate(u.w - PAD, topY(u) + 28); c.scale(k, k);
@@ -1129,9 +1141,8 @@ function cupStandings() {
   if (firstWin) { save.cups[cupIdx] = true; bonus = HSGame.claim('cup_win')?.gems || 0; }
   save.cup = { idx: won && cupIdx < CUPS.length - 1 ? cupIdx + 1 : cupIdx, race: 0, pts: null };
   persist();
-  if (won) { Audio.win(); ui.confetti(); } else Audio.fail();
   R.showDiorama(WORLDS[cup.world], vehicleById(save.car), 2.6);
-  ui.show('standings', (u) => {
+  const standings = () => ui.show('standings', (u) => {
     const c = u.ctx, T = u.safeTop, B = u.safeBottom;
     c.fillStyle = 'rgba(10,60,170,0.35)'; c.fillRect(0, 0, u.w, u.h);
     topbar(u);
@@ -1147,6 +1158,55 @@ function cupStandings() {
     barButtons(u, [{ id: 'cont', label: 'Continue', icon: 'trophy', color: 'blue', big: true, onTap: showRace }], by0);
     return true;
   });
+  if (won) championParty(cup, standings); else { Audio.fail(); standings(); }
+}
+
+// Winning a cup is a big moment: the trophy drops in on golden rays, fireworks go off all over the sky,
+// confetti rains, a fanfare plays over the crowd's applause. Tap (or wait) to see the standings.
+function championParty(cup, next) {
+  const st = { fw: [], nextFw: 0, t0: null, done: false };
+  Audio.fanfare(); Audio.applause(4.5); ui.confetti(140); P.vibrate('heavy');
+  setTimeout(() => { Audio.applause(3); ui.confetti(90); }, 2200);
+  const go = () => { if (st.done) return; st.done = true; Audio.win(); next(); };
+  setTimeout(() => { if (ui.screen?.name === 'champion') go(); }, 6500);
+  ui.show('champion', (u) => {
+    const c = u.ctx; if (st.t0 == null) st.t0 = u.t; const t = u.t - st.t0;
+    c.fillStyle = `rgba(10,20,60,${Math.min(0.72, t * 1.5)})`; c.fillRect(0, 0, u.w, u.h);
+    const cx = u.w / 2, cy = u.h * 0.4, R0 = Math.max(u.w, u.h);
+    // golden rays turning behind the trophy
+    c.save(); c.translate(cx, cy); c.rotate(t * 0.35); c.globalAlpha = Math.min(0.55, t);
+    for (let i = 0; i < 16; i++) { c.rotate(Math.PI / 8); c.beginPath(); c.moveTo(0, 0); c.lineTo(R0, -R0 * 0.09); c.lineTo(R0, R0 * 0.09); c.closePath(); c.fillStyle = i % 2 ? '#ffd21a' : '#ff9f1a'; c.fill(); }
+    c.restore();
+    // fireworks: shells burst into rings of sparks that fall and fade
+    if (t > 0.6 && t > st.nextFw) {
+      st.nextFw = t + 0.28 + Math.random() * 0.35;
+      const col = ['#ff3d6b', '#ffd21a', '#2fd4ff', '#46d35c', '#c6a8ff', '#ffffff', '#ff8a1f'][(Math.random() * 7) | 0];
+      const fx = u.w * (0.12 + Math.random() * 0.76), fy = u.h * (0.1 + Math.random() * 0.35), n = 26 + ((Math.random() * 14) | 0), sp = 120 + Math.random() * 90;
+      st.fw.push(...Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2; return { x: fx, y: fy, vx: Math.cos(a) * sp * (0.8 + Math.random() * 0.4), vy: Math.sin(a) * sp * (0.8 + Math.random() * 0.4), t0: t, col }; }));
+      if (st.fw.length > 900) st.fw.splice(0, st.fw.length - 900);
+    }
+    st.fw = st.fw.filter((p) => t - p.t0 < 1.6);
+    for (const p of st.fw) {
+      const a = t - p.t0, x = p.x + p.vx * a, y = p.y + p.vy * a + 90 * a * a;
+      c.globalAlpha = Math.max(0, 1 - a / 1.6); c.fillStyle = p.col; c.fillRect(x - 2.5, y - 2.5, 5, 5);
+    }
+    c.globalAlpha = 1;
+    // the trophy drops in, bounces, then breathes; the title pops in under it
+    const drop = Math.min(1, t / 0.7), ease = 1 - Math.pow(1 - drop, 3), bounce = t > 0.7 ? Math.abs(Math.sin((t - 0.7) * 9)) * Math.max(0, 1 - (t - 0.7) * 1.6) * 22 : 0;
+    const ts = Math.min(u.w * 0.5, 230) * (1 + Math.sin(t * 3) * 0.03), ty = -ts + (cy - ts / 2 + ts) * ease - bounce;
+    u.icon('trophy', cx - ts / 2, ty, ts, GOLD);
+    const k = u.pop(0.8, 0.5);
+    if (k > 0) {
+      c.save(); c.translate(cx, cy + ts * 0.62); c.scale(k, k);
+      u.text('CHAMPION!', 0, 0, Math.min(56, u.w * 0.13), GOLD);
+      u.text(cup.name, 0, Math.min(52, u.w * 0.12), 24, '#fff');
+      c.restore();
+    }
+    if (t > 1.6) u.text('Tap to continue', cx, u.h - u.safeBottom - 60, 16, `rgba(255,255,255,${0.5 + 0.5 * Math.sin(t * 4)})`);
+    u.hit(0, 0, u.w, u.h, { id: 'champ', onTap: () => { if (t > 1.2) go(); } });
+    u.request(0.1);
+    return true;
+  }, { anim: 6 });
 }
 
 function startRandomRace() {
@@ -1689,7 +1749,7 @@ boot();
 globalThis.__crane = {
   get game() { return game; }, get testRun() { return testRun; }, save: () => save, ui, R, P, worlds: WORLDS,
   startLevel: (w, l) => startLevel(WORLDS[w].levels[l]), startTest, keys,
-  actions: { daily: () => { save.daily = null; dailyGift(); }, board: () => showBoard(), standings: () => cupStandings(), tab: ({ tab }) => tabs2[tab](), race: startRace, randomRace: startRandomRace, levels: ({ w }) => showLevels(+w), shopSel: ({ id }) => showShop(id), use: ({ id }) => { save.car = id; persist(); } },
+  actions: { champion: () => { R.showDiorama(WORLDS[0], vehicleById(save.car), 2.6); championParty(CUPS[0], showRace); }, daily: () => { save.daily = null; dailyGift(); }, board: () => showBoard(), standings: () => cupStandings(), tab: ({ tab }) => tabs2[tab](), race: startRace, randomRace: startRandomRace, levels: ({ w }) => showLevels(+w), shopSel: ({ id }) => showShop(id), use: ({ id }) => { save.car = id; persist(); } },
   stats: () => ({ calls: R.r.info.render.calls, tris: R.r.info.render.triangles, geos: R.r.info.memory.geometries, tex: R.r.info.memory.textures, pr: R.r.getPixelRatio() }),
   views: (id) => R.views(vehicleById(id || 'crane')), icon: (n) => { const c = R.thumbnail(VEHICLES[0], n, n); return c.toDataURL ? c.toDataURL() : ''; },
   tapAt: (x, y) => { ui.pointerDown({ id: 99, x, y }); ui.pointerUp({ id: 99, x, y }); },

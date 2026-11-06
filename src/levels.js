@@ -1,7 +1,7 @@
 // Level definitions. Units are metres; the track runs left -> right, ground top ~ y=0.
 
 import { B, lvl } from './builder.js';
-import { genLevel, genRace } from './gen.js';
+import { genLevel, genRace, extendLevel } from './gen.js';
 import SEEDS from './genseeds.json';
 import { WORLD_DEFS } from './worlds.js';
 
@@ -275,12 +275,23 @@ export const raceSea = (i) => (i % 4 === 1 ? SEA_GAP : 0);
 (SEEDS.races || []).forEach(({ w, seed }, i) => RACE_TRACKS.push(genRace(w, seed, { sea: raceSea(i) })));
 RACE_TRACKS.forEach((l, i) => { l.world = l.raceWorld; l.index = i; l.id = `race-${i + 1}`; l.race = true; });
 
-const HANDMADE = { classic, construction, medieval, science };
+export const HANDMADE = { classic, construction, medieval, science };
 export const WORLDS = WORLD_DEFS.map((d) => ({ ...d, levels: [...(HANDMADE[d.id] || [])] }));
+
+// Levels 1-3 are the warm-up. From level 4 the hand-made levels carry on past their old finish with a generated
+// harder stretch (soft sand, mud puddles, steep hills, rocks, barrels, logs...), longer the further you get.
+export const TAIL_FROM = 3;
+export const tailLen = (li) => 2 + Math.floor((li - TAIL_FROM) / 2);          // levels 4-10: 2, 2, 3, 3, 4, 4, 5
+export const tailDiff = (li) => 0.55 + (0.45 * (li - TAIL_FROM)) / 6;
+for (const w of WORLDS) if (HANDMADE[w.id]) (SEEDS.tails?.[w.id] || []).forEach((seed, j) => {
+  const li = TAIL_FROM + j;
+  if (seed != null && w.levels[li]) w.levels[li] = extendLevel(w.levels[li], w.id, seed, tailDiff(li), tailLen(li));
+});
 
 // levels 11-20 of each world: seeded generator, difficulty ramps up (validated by tools/gensel.mjs)
 // worlds 1-4: levels 11-20; worlds 5-20: all 20 levels, starting easier
-export const genDiff = (k, fresh = false) => (fresh ? 0.15 + (0.85 * k) / 19 : 0.4 + (0.6 * k) / 9);
+// levels 1-3 of a fresh world are easy, from level 4 it is hard (0.6 and up, the hard stretches join the pool)
+export const genDiff = (k, fresh = false) => (fresh ? (k < 3 ? 0.15 + 0.1 * k : 0.6 + (0.4 * (k - 3)) / 16) : 0.6 + (0.4 * k) / 9);
 for (const w of WORLDS) {
   const fresh = !HANDMADE[w.id];
   (SEEDS.levels?.[w.id] || []).forEach((seed, k) => w.levels.push(genLevel(w.id, seed, genDiff(k, fresh), { sea: levelSea(fresh, k) })));

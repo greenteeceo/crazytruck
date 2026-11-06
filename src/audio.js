@@ -62,6 +62,13 @@ const AudioImpl = {
     const rg = c.createGain(); rg.gain.value = 0.32;
     rs.connect(rf); rf.connect(rg); rg.connect(master); rs.start(t);
   },
+  // cup champion: a brass-like fanfare over a chord, then fireworks pops
+  fanfare() {
+    const N = [[523, 0.16, 0], [523, 0.16, 0.18], [523, 0.16, 0.36], [659, 0.5, 0.54], [523, 0.16, 1.08], [659, 0.16, 1.26], [784, 0.9, 1.44]];
+    for (const [f, d, t] of N) { this.tone(f, d, 'sawtooth', 0.09, 0, t); this.tone(f * 2, d, 'square', 0.035, 0, t); }
+    for (const f of [262, 330, 392]) this.tone(f, 1.2, 'triangle', 0.06, 0, 1.44);
+    for (let i = 0; i < 7; i++) { const t = 2.2 + i * 0.42 + Math.random() * 0.2; this.tone(900 + Math.random() * 400, 0.25, 'sine', 0.03, -700, t); this.noise(0.35, 0.28, 1800, t + 0.25); }
+  },
   click() { this.tone(660, 0.06, 'square', 0.08); this.tone(990, 0.05, 'square', 0.06, 0, 0.03); },
   gem() { this.tone(1046, 0.09, 'square', 0.1); this.tone(1568, 0.14, 'square', 0.1, 0, 0.06); },
   land(v = 1) { this.noise(0.18, Math.min(0.5, 0.15 + v * 0.2), 300); },

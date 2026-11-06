@@ -39,6 +39,8 @@ const STYLE = {
   labcrate: { top: 'labcrate', side: 'labcrate' },
   log: { top: 'log', side: 'log' },
   barrel: { top: 'barrel', side: 'barrel' },
+  softsand: { top: 'sand', side: 'sand' },
+  mud: { top: 'mud', side: 'dirt' },
 };
 const texMats = {};
 function tmat(name, emissive) {
@@ -293,10 +295,14 @@ export class Renderer {
     rseed = 17 + level.index * 13 + level.world * 101;
     const foam = mat(0xffffff);
     const waterY = level.water ?? -3;
+    let tk = 0;
     for (const p of pieces) {
       if (p.t === 'box' || p.t === 'poly') {
         const pts = piecePoly(p);
-        const m = new THREE.Mesh(prismGeo(pts, Dd), styleMats(p.s)); m.receiveShadow = true; m.castShadow = true; s.add(m);
+        // pieces that overlap (a slab filled down to the water over the ground, a hill on a slab) must never share a
+        // face plane, or the faces flicker: each piece is a hair deeper and a hair lower than the one before
+        const eps = (tk++ % 5) * 0.006;
+        const m = new THREE.Mesh(prismGeo(pts, Dd + eps * 2), styleMats(p.s)); m.position.y = -eps; m.receiveShadow = true; m.castShadow = true; s.add(m);
         if (lanes > 1 && p.t === 'box' && !p.a && p.w > 2 && p.s !== 'pad') {
           // lane divider stripes
           const lm = mat(0xffffff, { transparent: true, opacity: 0.55 });
@@ -329,11 +335,17 @@ export class Renderer {
             const cx = xs.reduce((u, v) => u + v) / xs.length, cy = ys.reduce((u, v) => u + v) / ys.length;
             const cross = (b[0] - a[0]) * (cy - a[1]) - (b[1] - a[1]) * (cx - a[0]);
             if (cross > 0) continue;
-            s.add(capMesh(a[0], a[1], b[0], b[1], Dd + 0.08, STYLE[p.s].cap));
+            { const cm = capMesh(a[0], a[1], b[0], b[1], Dd + 0.08 + eps * 2, STYLE[p.s].cap); cm.position.y -= eps; s.add(cm); }
           }
           // auto decoration on wide flat grass
           if (p.t === 'box' && p.w > 5) this.autoDeco(s, theme, bx0 + 1, bx1 - 1, by1);
         } else if (p.t === 'box' && p.w > 6 && !['girder', 'pad', 'wood'].includes(p.s)) this.autoDeco(s, theme, bx0 + 1, bx1 - 1, by1);
+      } else if (p.t === 'puddle') {
+        // muddy water filling the dip: a see-through surface the wheels go into, a darker body under it
+        const wm = new THREE.Mesh(new THREE.BoxGeometry(p.x1 - p.x0, 0.9, Dd - 0.1), new THREE.MeshLambertMaterial({ color: 0x6f6448, transparent: true, opacity: 0.72 }));
+        wm.position.set((p.x0 + p.x1) / 2, p.y - 0.45, 0); wm.userData.noBake = true; wm.receiveShadow = true; s.add(wm);
+        const sh = new THREE.Mesh(new THREE.PlaneGeometry(p.x1 - p.x0, Dd - 0.1), new THREE.MeshLambertMaterial({ color: 0x9fb8c8, transparent: true, opacity: 0.35 }));
+        sh.rotation.x = -Math.PI / 2; sh.position.set((p.x0 + p.x1) / 2, p.y + 0.005, 0); sh.userData.noBake = true; s.add(sh);
       } else if (p.t === 'deco') {
         const d = buildDeco(p.kind, srand); d.position.set(p.x, p.y, -Dd / 2 + 0.8); s.add(d);
       } else if (p.t === 'bridge') {
@@ -815,6 +827,18 @@ export class Renderer {
             for (const dz of [-0.86, 0.86]) this.track(gx, gy, z + dz, ang);
           }
         });
+      }
+      // driving through mud or soft sand: the wheels throw it up behind them
+      if (sim.softKind && sim.state !== 'fail') {
+        const vx = sim.chassis.getLinearVelocity().x;
+        car.softT = (car.softT ?? 0) - dt;
+        if (Math.abs(vx) > 1.5 && car.softT <= 0) {
+          car.softT = 0.07;
+          const mud = sim.softKind === 'mud', col = mud ? 0x5a4630 : 0xf2d2a8;
+          sim.wheels.forEach((w, i) => { if (sim.lostWheels.has(i) || sim.wheelTouch[i] <= 0) return; const q = w.getPosition();
+            for (const dz of [-0.86, 0.86]) this.burst(q.x - Math.sign(vx) * 0.5, q.y - sim.spec.wheelR + 0.2, col, mud ? 3 : 2, 2.5 + Math.abs(vx) * 0.15, -12, mud ? 0.5 : 0.35, z + dz); });
+          if (!mud) this.smoke(sim.chassis.getPosition().x - Math.sign(vx) * 1.6, sim.chassis.getPosition().y - 0.9, z, 0.35, -Math.sign(vx) * 0.6, 0.3);
+        }
       }
       // exhaust smoke from the back of the truck: thick under throttle, a light wisp when idling
       car.smokeT = (car.smokeT ?? 0) - dt;

@@ -1,6 +1,6 @@
 // Seeded procedural levels and race tracks built from proven obstacle segments.
 // Every seed that ships is validated by tools/gensel.mjs (bot must finish).
-import { B, settle } from './builder.js';
+import { B, settle, insidePiece } from './builder.js';
 import { WORLD_DEFS } from './worlds.js';
 
 function rng(seed) {
@@ -14,6 +14,8 @@ const POOLS = {
   medieval: ['hill', 'stepUp', 'rampDown', 'gap', 'bridge', 'bridge', 'drawbridge', 'drawbridge', 'seesaw', 'bumps', 'bigJump', 'logs', 'rocky', 'logPile', 'climb', 'valley', 'barrels'],
   science: ['pad', 'pad', 'stepUp', 'rampDown', 'gap', 'crates', 'seesaw', 'pad', 'bumps', 'bigJump', 'containers', 'barrels', 'wreck', 'rolling', 'valley', 'pipes'],
 };
+// soft sand, mud puddles, steep hills and the rough stuff: added to every pool once the levels get hard
+const HARD = ['sandPit', 'puddle', 'steepHill', 'sandPit', 'puddle', 'steepHill', 'rocky', 'climb', 'valley', 'barrels', 'logPile'];
 const RACE_EXTRA = ['dominoes', 'barrels', 'boulders', 'wall', 'dominoes', 'logPile', 'wall', 'boulders'];
 
 const RACE_WORDS = [['Mega', 'Wild', 'Crazy', 'Turbo', 'Wacky', 'Bumpy', 'Chaos', 'Super', 'Hyper', 'Rowdy', 'Loopy', 'Zany'], ['Derby', 'Rally', 'Rumble', 'Scramble', 'Dash', 'Mayhem', 'Circuit', 'Run', 'Brawl', 'Frenzy']];
@@ -21,7 +23,8 @@ const RACE_WORDS = [['Mega', 'Wild', 'Crazy', 'Turbo', 'Wacky', 'Bumpy', 'Chaos'
 function nameFor(words, r) { return `${words[0][(r() * words[0].length) | 0]} ${words[1][(r() * words[1].length) | 0]}`; }
 
 // Build a track from segments. Returns a level object (same shape as hand-made levels).
-function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
+// `base`: a hand-made level to carry on from (its finish is taken away and the track continues after it).
+function build(def, seed, diff, { race = false, length, sea = 0, base = null } = {}) {
   const r = rng(seed);
   const st = def;
   const b = new B(st.ground);
@@ -29,11 +32,19 @@ function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
   const pick = (a) => a[(r() * a.length) | 0];
   const rr = (a, c) => a + r() * (c - a);
   let x = 6, top = 0;
-  const water = -3;
+  const water = base?.water ?? -3;
   const ground = (x0, x1, t = top, s = st.ground) => b.ground(x0, x1, t, s, t - water);
-  b.ground(-8, x, 0, def.startGround, 3);
-  const pool = race ? [...POOLS[def.kind], ...RACE_EXTRA] : POOLS[def.kind];
-  const nSeg = length ?? (race ? 9 : 4 + Math.round(diff * 5));
+  if (base) {
+    const f = base.pieces.find((p) => p.t === 'finish');
+    b.p = base.pieces.filter((p) => p.t !== 'finish' && !p.runout && !p.barrier);
+    const solid = b.p.filter((p) => (p.t === 'box' && p.s !== 'pad') || p.t === 'poly');
+    top = f.y; x = f.x;
+    while (solid.some((q) => insidePiece(q, x + 0.05, top - 0.1))) x += 0.1;
+    x = Math.round(x * 10) / 10;
+  } else b.ground(-8, x, 0, def.startGround, 3);
+  // from level 4 on (diff >= 0.55) the harder stretches come up much more often
+  const pool = [...(race ? [...POOLS[def.kind], ...RACE_EXTRA] : POOLS[def.kind]), ...(diff >= 0.55 ? HARD : [])];
+  const nSeg = length ?? (race ? 9 : 3 + Math.round(diff * 7));
   let last = '';
   for (let i = 0; i < nSeg; i++) {
     let seg = pick(pool);
@@ -165,6 +176,28 @@ function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
         b.ramp(x + L1 + 2, top + h, x + L1 + 2 + L2, top, st.ground, top - 0.5);
         b.gem(x + L1 + 1, top + h + 1.3); x += L1 + L2 + 2; break;
       }
+      case 'sandPit': {   // soft sand with dunes: the truck bogs down, keep the speed up
+        const L = rr(12, 17), n = 2 + ((r() * 2) | 0), seg = (L - 2) / n;
+        ground(x, x + L, top, 'softsand');
+        for (let k = 0; k < n; k++) b.hill(x + 1 + k * seg, x + 1 + (k + 1) * seg, rr(0.5, 0.8 + diff * 0.5), top, 'softsand');
+        b.gem(x + L / 2, top + 2.0); x += L; ground(x, x + 3); x += 3; break;
+      }
+      case 'puddle': {   // a muddy dip full of water: slippery and it drags the wheels
+        const d = rr(0.6, 0.85 + diff * 0.35), L1 = 2.6, F = rr(3, 5.5);
+        b.ramp(x, top, x + L1, top - d, 'mud');
+        ground(x + L1, x + L1 + F, top - d, 'mud');
+        b.ramp(x + L1 + F, top - d, x + 2 * L1 + F, top, 'mud');
+        b.add({ t: 'puddle', x0: x + 0.7, x1: x + 2 * L1 + F - 0.7, y: top - 0.14 });
+        b.gem(x + L1 + F / 2, top + 0.9); x += 2 * L1 + F; ground(x, x + 3); x += 3; break;
+      }
+      case 'steepHill': {   // short and steep: needs a run at it, and a careful way down
+        const h = rr(1.6, 2.1 + diff * 0.6), L = h * 2.3;
+        ground(x, x + 2 * L + 1.5);
+        b.ramp(x, top, x + L, top + h, st.ground, top - 0.5);
+        b.ramp(x + L, top + h, x + L + 1.5, top + h, st.ground, top - 0.5);
+        b.ramp(x + L + 1.5, top + h, x + 2 * L + 1.5, top, st.ground, top - 0.5);
+        b.gem(x + L + 0.75, top + h + 1.3); x += 2 * L + 1.5; ground(x, x + 3); x += 3; break;
+      }
       // ---- obstacles
       case 'barrels': {   // oil barrels standing on the road: knock them over
         const n = 2 + ((r() * 3) | 0);
@@ -245,8 +278,11 @@ function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
   const words = race ? RACE_WORDS : def.words;
   const nr = rng(seed * 7 + 3);
   const opts = { water, ai, name: nameFor(words, nr), gen: seed, ...(seaGaps.length ? { seaGaps } : {}) };
+  if (base) return { ...base, pieces: settle(b.p, water), ai: { ...(base.ai || {}), zones: [...(base.ai?.zones || []), ...ai.zones], ...(ai.airAngle ? { airAngle: ai.airAngle } : {}) }, tail: seed };
   return { pieces: settle(b.p, water), start: { x: 0, y: 0 }, ...opts };
 }
+// a hand-made level with a generated harder stretch added before the finish (levels 4-10 of worlds 1-4)
+export const extendLevel = (base, world, seed, diff, nSeg) => build(defOf(world), seed, diff, { base, length: nSeg });
 
 const defOf = (w) => (typeof w === 'string' ? WORLD_DEFS.find((d) => d.id === w) : WORLD_DEFS[w]);
 export const genLevel = (world, seed, diff, o = {}) => build(defOf(world), seed, diff, o);

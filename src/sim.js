@@ -8,7 +8,10 @@ const CAT_TERRAIN = 0x0001, CAT_CAR = 0x0002, CAT_DYN = 0x0004;
 // the hook hangs from the truck: it swings into the road, walls and crates like a real one (never into the truck itself)
 const HOOK_FILTER = { groupIndex: 0, categoryBits: CAT_CAR, maskBits: CAT_TERRAIN | CAT_DYN };
 
-const FRICTION = { snow: 0.75, icecave: 0.6, asphalt: 0.95, docks: 0.95, toy: 0.9, grass: 0.9, dirt: 0.9, wood: 0.95, stone: 0.85, concrete: 0.85, girder: 0.8, metal: 0.75, castle: 0.85, ice: 0.08, sand: 0.9, pad: 0.8 };
+const FRICTION = { softsand: 0.7, mud: 0.45, snow: 0.75, icecave: 0.6, asphalt: 0.95, docks: 0.95, toy: 0.9, grass: 0.9, dirt: 0.9, wood: 0.95, stone: 0.85, concrete: 0.85, girder: 0.8, metal: 0.75, castle: 0.85, ice: 0.08, sand: 0.9, pad: 0.8 };
+
+// soft ground: soft sand and mud hold the truck back (per second, while a wheel is in it)
+const SOFT = { softsand: 0.9, mud: 1.5 };
 
 export class Sim {
   constructor(level, spec, opts = {}) {
@@ -346,7 +349,7 @@ export class Sim {
     if (!s.crane || this.bannerHit || this.finishX == null || this.debris.some((d) => d.kind === 'boom')) return;
     const c = s.crane, ch = this.chassis;
     const a = ch.getWorldPoint(V(c.pivot[0], c.pivot[1])), b = ch.getWorldPoint(V(c.pivot[0] + Math.cos(c.angle) * c.length, c.pivot[1] + Math.sin(c.angle) * c.length));
-    const x0 = this.finishX - 0.25, x1 = this.finishX + 0.25, y0 = this.finishY + 3.45, y1 = this.finishY + 4.35;
+    const x0 = this.finishX - 0.25, x1 = this.finishX + 0.25, y0 = this.finishY + 5.35, y1 = this.finishY + 6.25;
     // sample the boom segment against the banner box
     for (let i = 0; i <= 8; i++) {
       const px = a.x + (b.x - a.x) * i / 8, py = a.y + (b.y - a.y) * i / 8;
@@ -438,6 +441,18 @@ export class Sim {
       }
     }
     for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
+    // soft sand / mud under a wheel: the truck bogs down (drag on the body), more the faster it goes
+    let soft = 0, softKind = null;
+    this.wheels.forEach((wb, i) => {
+      if (this.lostWheels.has(i)) return;
+      for (let ce = wb.getContactList(); ce; ce = ce.next) {
+        if (!ce.contact.isTouching()) continue;
+        const fo = ce.contact.getFixtureA().getBody() === wb ? ce.contact.getFixtureB() : ce.contact.getFixtureA(), sk = fo.getUserData()?.style, k = SOFT[sk];
+        if (k && k > soft) { soft = k; softKind = sk; }
+      }
+    });
+    this.softKind = softKind;
+    if (soft) { const cv = this.chassis.getLinearVelocity(); this.chassis.setLinearVelocity(V(cv.x * (1 - soft * DT), cv.y)); }
     this.world.step(DT, 8, 3);
     this.time += DT;
     this.tickDebris();
@@ -470,6 +485,17 @@ export class Sim {
         this.headTime += DT;
         if (this.headTime > 0.6) this.fail('crash');
       } else this.headTime = 0;
+      // stuck for good: lying on its side (propped on the boom / an accessory), or high-centred with no wheel on
+      // the ground. The wheels just spin in the air and nothing the player does can move it: that is a roll-over.
+      const wheelsDown = (this.wheelTouch[0] > 0 ? 1 : 0) + (this.wheelTouch[1] > 0 ? 1 : 0);
+      // Judged by where it gets to, not by its speed: a truck on its side rocks back and forth on the spinning wheels.
+      const hopeless = (Math.abs(a) > 1.3 && wheelsDown < 2) || wheelsDown === 0;
+      if (hopeless) {
+        const an = this.stuckAt;
+        if (!an || Math.hypot(pos.x - an.x, pos.y - an.y) > 0.5) { this.stuckAt = { x: pos.x, y: pos.y }; this.stuckT = 0; }
+        this.stuckT = (this.stuckT || 0) + DT;
+        if (this.stuckT > 1.5) { this.failStuck = true; this.fail('crash'); }
+      } else { this.stuckT = 0; this.stuckAt = null; }
       if (!this.dunked && pos.y < (this.level.water ?? -4) + 0.5) { this.dunked = true; this.events.push({ type: 'dunk' }); }
       if (pos.y < (this.level.water ?? -4) - 1.2) this.fail('splash');
       if (pos.x < (this.level.minX ?? -12)) this.fail('lost');
@@ -544,7 +570,7 @@ export class Sim {
       for (const h of this.hook) h.getFixtureList().setFilterData(HOOK_FILTER);
     }
     this.recoverPose = { x: gx, y: cy };
-    this.headTouch = 0; this.headProp = 0; this.shellTop = 0; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
+    this.headTouch = 0; this.headProp = 0; this.shellTop = 0; this.stuckT = 0; this.stuckAt = null; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
     for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
     this.state = 'recover'; this.reason = ''; this.freeze = hold;
     this.maxX = Math.max(this.maxX, gx);

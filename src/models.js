@@ -461,10 +461,11 @@ export function buildFinish(width = 4.2) {
   const g = new THREE.Group();
   const hz = width / 2 + 0.1;
   for (const z of [-hz, hz]) {
-    box(g, -0.25, -0.3, z - 0.25, 0.25, 4.2, z + 0.25, 0x8d93a3);
-    for (const y of [0.6, 1.8, 3.0]) box(g, -0.28, y, z - 0.28, 0.28, y + 0.2, z + 0.28, 0x646a7a);
-    box(g, -0.04, 4.2, z - 0.04, 0.04, 5.4, z + 0.04, 0x3c3d44);
-    const flag = box(g, 0.04, 4.9, z - 0.02, 0.7, 5.35, z + 0.02, RED);
+    // tall posts: the banner sits high enough for a crane boom (even in a wheelie) to pass under it
+    box(g, -0.25, -0.3, z - 0.25, 0.25, 6.1, z + 0.25, 0x8d93a3);
+    for (const y of [0.6, 1.8, 3.0, 4.2, 5.4]) box(g, -0.28, y, z - 0.28, 0.28, y + 0.2, z + 0.28, 0x646a7a);
+    box(g, -0.04, 6.1, z - 0.04, 0.04, 7.3, z + 0.04, 0x3c3d44);
+    const flag = box(g, 0.04, 6.8, z - 0.02, 0.7, 7.25, z + 0.02, RED);
     flag.userData.wave = true;
   }
   const cm = () => { const t = unshare(tex('checker').clone()); t.needsUpdate = true; t.repeat.set(width * 1.2, 1); return new THREE.MeshLambertMaterial({ map: t }); };
@@ -472,7 +473,7 @@ export function buildFinish(width = 4.2) {
   const banner = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, width + 0.4), [dark, dark, dark, dark, dark, dark]);
   const side = cm(); side.map.rotation = Math.PI / 2; side.map.repeat.set(1, width * 1.2);
   banner.material[0] = side; banner.material[1] = side;
-  banner.position.set(0, 3.9, 0); banner.castShadow = true; g.add(banner);
+  banner.position.set(0, 5.8, 0); banner.castShadow = true; g.add(banner);
   // checkered strip on the ground
   const stripT = unshare(tex('checker').clone()); stripT.needsUpdate = true; stripT.repeat.set(1, width);
   const strip = new THREE.Mesh(new THREE.PlaneGeometry(1.0, width), new THREE.MeshLambertMaterial({ map: stripT, polygonOffset: true, polygonOffsetFactor: -2 }));

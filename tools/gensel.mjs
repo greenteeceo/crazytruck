@@ -3,7 +3,8 @@ import fs from 'fs';
 import { Sim } from '../src/sim.js';
 import { genLevel, genRace } from '../src/gen.js';
 import { WORLD_DEFS } from '../src/worlds.js';
-import { WORLDS, RACE_TRACKS, genDiff, levelSea, raceSea } from '../src/levels.js';
+import { WORLDS, RACE_TRACKS, HANDMADE, TAIL_FROM, tailLen, tailDiff, genDiff, levelSea, raceSea } from '../src/levels.js';
+import { extendLevel } from '../src/gen.js';
 import { VEHICLES } from '../src/vehicles.js';
 import { makeBot } from '../src/bot.js';
 import { makeRacer, racerWatch } from '../src/racer.js';
@@ -13,11 +14,30 @@ const names = new Set([...WORLDS.slice(0, 4).flatMap((w) => w.levels.map((l) => 
 const solo = (l, skill) => { const s = new Sim(l, spec), bot = makeBot(skill, 1); for (let i = 0; i < 60 * 60 && s.state === 'run'; i++) { s.step(bot(s)); s.drainEvents(); } return s.state === 'win' ? s.finishTime : null; };
 const raced = (l, skill, sp = spec) => { const r = makeRacer(l, sp, { collectGems: false }), bot = makeBot(skill, 3); let fin = null; for (let i = 0; i < 60 * 60 && fin == null; i++) { r.sim.step(bot(r.sim)); for (const e of r.sim.drainEvents()) if (e.type === 'win') fin = r.sim.finishTime; racerWatch(r); } return fin == null ? null : { t: fin, resp: r.respawns }; };
 const prev = JSON.parse(fs.readFileSync('src/genseeds.json', 'utf8'));
-const out = { levels: {}, races: [] };
+const out = { levels: {}, tails: {}, races: [] };
 let tried = 0;
 for (const [wi, d] of WORLD_DEFS.entries()) {
   const handmade = wi < 4;
   out.levels[d.id] = [];
+  // hand-made levels 4-10: the harder stretch added after them (the hero, a slower driver and all 21 trucks must finish)
+  if (handmade) {
+    out.tails[d.id] = [];
+    for (let li = TAIL_FROM; li < HANDMADE[d.id].length; li++) {
+      const j = li - TAIL_FROM, base = HANDMADE[d.id][li];
+      const mk = (seed) => { const l = extendLevel(base, d.id, seed, tailDiff(li), tailLen(li)); l.world = wi; l.index = li; l.id = `${d.id}-${li + 1}`; return l; };
+      const ok = (l) => { const t1 = solo(l, 1); return t1 != null && t1 <= 60 && solo(l, 0.85) != null && allPass(l).ok ? t1 : null; };
+      const old = prev.tails?.[d.id]?.[j];
+      if (old != null) { const t0 = ok(mk(old)); if (t0 != null) { out.tails[d.id].push(old); continue; } console.log('replace tail', d.id, li + 1); }
+      for (let seed = 70000 + wi * 1000 + li * 37 + (old != null ? 7919 : 0); ; seed++) {
+        tried++;
+        const t1 = ok(mk(seed));
+        if (t1 == null) continue;
+        out.tails[d.id].push(seed);
+        console.log('tail', d.id, li + 1, seed, base.name.padEnd(16), t1.toFixed(1) + 's');
+        break;
+      }
+    }
+  }
   const count = handmade ? 10 : 20;
   for (let k = 0; k < count; k++) {
     const diff = genDiff(k, !handmade);

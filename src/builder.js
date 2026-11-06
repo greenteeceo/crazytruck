@@ -42,7 +42,7 @@ export class B {
 // Then a long run-out after the finish line with a barrel barrier at the end, so a truck that crosses the line
 // at full speed brakes to a stop on the road instead of driving off into the sea.
 const DECKS = new Set(['girder', 'wood', 'metal', 'concrete']);
-function insidePiece(q, x, y) {
+export function insidePiece(q, x, y) {
   if (q.t === 'box') return !q.a && Math.abs(x - q.x) <= q.w / 2 + 1e-3 && Math.abs(y - q.y) <= q.h / 2 + 1e-3;
   const P = q.pts; let pos = 0, neg = 0;
   for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], c = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]); if (c > 1e-6) pos++; else if (c < -1e-6) neg++; }
@@ -80,7 +80,9 @@ export function settle(pieces, water = -3) {
   if (f) {
     const under = solid.find((q) => insidePiece(q, f.x, f.y - 0.1));
     const st = under?.s && under.s !== 'pad' ? under.s : 'concrete';
-    out.push({ t: 'box', x: f.x + 15, y: (f.y + water) / 2, w: 34, h: f.y - water, s: st, runout: true });
+    // the road goes on from where the finish ground ends (no overlapping slabs), to 32 m past the line
+    let xe = f.x; while (xe < f.x + 32 && solid.some((q) => insidePiece(q, xe + 0.05, f.y - 0.1))) xe += 0.1;
+    if (xe < f.x + 32) out.push({ t: 'box', x: (xe + f.x + 32) / 2, y: (f.y + water) / 2, w: f.x + 32 - xe, h: f.y - water, s: st, runout: true });
     out.push({ t: 'box', x: f.x + 31.5, y: f.y + 0.6, w: 1, h: 1.2, s: 'barrel', barrier: true });
   }
   return out;
