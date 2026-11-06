@@ -13,6 +13,14 @@ export function makeBot(skill = 1, seed = 1) {
     // small human-like hesitation for weaker bots
     if (hold > 0) { hold--; return holdVal; }
     if (skill < 1 && rand() < 0.012 * (1 - skill)) { hold = 8 + (rand() * 14) | 0; holdVal = rand() < 0.5 ? 0 : 1; }
+    // sea crossings: Rocket on the run-up, Super Jump at the lip, Glider once airborne
+    for (const g of lvl.seaGaps || []) {
+      if (x < g.lip - 4 || x > g.land || !sim.useItem) continue;
+      if (!sim.fx.boost && !sim.fx.glide && sim.count('boost') > 0 && x > g.lip - 3) sim.useItem('boost');
+      else if (!sim.fx.boost && !sim.fx.glide && !sim.usedJumpAt && sim.count('jump') > 0 && x > g.lip - 0.4 && sim.count('boost') === 0) { sim.useItem('jump'); sim.usedJumpAt = x; }
+      else if (!sim.fx.boost && !sim.fx.glide && sim.airborne && x > g.lip + 1 && sim.count('glide') > 0) sim.useItem('glide');
+      if (x > g.lip - 6 && x < g.lip) return 1;   // full throttle on the run-up
+    }
     let t = 1;
     if (sim.airborne) {
       const w = c.getAngularVelocity();

@@ -151,13 +151,15 @@ export const UPGRADES = [
   { id: 'power', name: 'Power', key: 'torque', pct: 0.05, lo: 20, hi: 52 },
   { id: 'grip', name: 'Grip', key: 'grip', pct: 0.04, lo: 1.2, hi: 2.5 },
   { id: 'air', name: 'Air', key: 'air', pct: 0.07, lo: 5, hi: 17 },
+  // stability: less wheelie kick, a self-righting push on two wheels, survives harder wall hits (added, base 0)
+  { id: 'stability', name: 'Stability', key: 'stab', add: 0.25, lo: 0, hi: 1.25 },
 ];
 export const MAX_UPGRADE = 5;
 // level 1 costs ~8% of the truck price (min 150), each further level costs more
 export const upgradeCost = (v, lvl) => Math.round((Math.max(150, v.price * 0.08) * (1 + lvl * 0.75)) / 10) * 10;
 export function withUpgrades(v, ups = {}) {
   const out = { ...v };
-  for (const u of UPGRADES) out[u.key] = v[u.key] * (1 + u.pct * (ups[u.id] || 0));
+  for (const u of UPGRADES) out[u.key] = u.add ? (v[u.key] || 0) + u.add * (ups[u.id] || 0) : v[u.key] * (1 + u.pct * (ups[u.id] || 0));
   return out;
 }
 

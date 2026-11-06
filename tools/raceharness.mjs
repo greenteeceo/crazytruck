@@ -6,7 +6,7 @@ const spec = { ...VEHICLES[0] };
 for (const l of RACE_TRACKS) {
   const res = [];
   for (const skill of [1, 0.85, 0.7]) {
-    const r = makeRacer(l, spec, { collectGems: false }), bot = makeBot(skill, 3);
+    const r = makeRacer(l, spec, { collectGems: false, items: { boost: 3 } }), bot = makeBot(skill, 3);   // rivals carry Rockets
     let fin = null;
     for (let i = 0; i < 60 * 90 && fin == null; i++) {
       r.sim.step(bot(r.sim));

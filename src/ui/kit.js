@@ -52,9 +52,15 @@ export class UI {
   update(dt) {
     this.t += dt;
     for (const s of Object.values(this.scrolls)) {
-      if (s.drag || Math.abs(s.vel) < 1) continue;
-      s.off = clamp(s.off + s.vel * dt, 0, s.max); s.vel *= Math.exp(-dt * 4); this.dirty = true;
-      if (s.off <= 0 || s.off >= s.max) s.vel = 0;
+      if (s.drag) continue;
+      if (s.off < 0 || s.off > s.max) {   // pulled past an end: ease back (rubber band)
+        const tgt = clamp(s.off, 0, s.max); s.off += (tgt - s.off) * (1 - Math.exp(-dt * 14)); s.vel = 0;
+        if (Math.abs(tgt - s.off) < 0.5) s.off = tgt;
+        this.dirty = true; continue;
+      }
+      if (Math.abs(s.vel) < 4) { s.vel = 0; continue; }
+      s.off += s.vel * dt; s.vel *= Math.exp(-dt * 2.6); this.dirty = true;   // momentum glide
+      if (s.off < -60 || s.off > s.max + 60) { s.off = clamp(s.off, -60, s.max + 60); s.vel = 0; }
     }
     if (this.t < this.animUntil || this.fx.length || this.toasts.length) this.dirty = true;
     if (!this.dirty) return false;
@@ -87,7 +93,7 @@ export class UI {
 
   // ---------------------------------------------------------------- input
   hit(x, y, w, h, o = {}) {
-    let r = { x: x + this.ox, y: y + this.oy, w, h, ...o };
+    let r = { x: x + this.ox, y: y + this.oy, w, h, inScroll: this.curScroll, ...o };
     if (this.clipR) {
       const c = this.clipR, x0 = Math.max(r.x, c.x), y0 = Math.max(r.y, c.y), x1 = Math.min(r.x + r.w, c.x + c.w), y1 = Math.min(r.y + r.h, c.y + c.h);
       if (x1 <= x0 || y1 <= y0) return;
@@ -100,11 +106,14 @@ export class UI {
 
   pointerDown(p) {
     const r = this.find(p.x, p.y);
-    const st = { x0: p.x, y0: p.y, x: p.x, y: p.y, r, t0: this.t, moved: false };
+    const st = { x0: p.x, y0: p.y, x: p.x, y: p.y, r, t0: this.t, moved: false, lastMs: Date.now(), v: 0 };
     this.pointers.set(p.id, st);
     if (r?.hold) { r.hold(true); this.down.add(r.id); }
     else if (r && !r.disabled && r.onTap) this.down.add(r.id);
-    if (r?.scrollKey) { const s = this.scrolls[r.scrollKey]; if (s) { s.drag = true; s.vel = 0; st.scroll = s; st.off0 = s.off; } }
+    // a drag that starts on a list row (or anywhere, if the screen says so) scrolls the list; the tap is cancelled once it moves
+    const key = r?.hold ? null : (r?.scrollKey || r?.inScroll || (!this.overlays.length && this.screen?.dragScroll) || null);
+    const s = key && this.scrolls[key];
+    if (s) { s.drag = true; s.vel = 0; st.scroll = s; st.off0 = s.off; }
     this.onAny?.();
     this.dirty = true;
   }
@@ -117,10 +126,13 @@ export class UI {
       if (st.r && !st.r.hold) this.down.delete(st.r.id);   // a drag cancels the tap
     }
     // scroll (vertical or horizontal list)
-    const sc = st.scroll || (st.r?.scrollKey && this.scrolls[st.r.scrollKey]);
+    const sc = st.scroll;
     if (sc && st.moved) {
-      const d = sc.horizontal ? dx : dy, dt = Math.max(1 / 120, this.t - (st.lt ?? st.t0));
-      sc.off = clamp(sc.off - d, -40, sc.max + 40); sc.vel = -d / dt * 0.6; st.lt = this.t; this.dirty = true;
+      const d = sc.horizontal ? dx : dy, now = Date.now(), dt = Math.max(4, now - st.lastMs) / 1000;
+      // past an end the list follows the finger at half speed (rubber band)
+      const over = sc.off < 0 || sc.off > sc.max;
+      sc.off = clamp(sc.off - d * (over ? 0.45 : 1), -90, sc.max + 90);
+      st.v = st.v * 0.35 + (-d / dt) * 0.65; st.lastMs = now; this.dirty = true;   // smoothed finger speed
     }
     // a held control stays down while the finger slides off it a little (like the DOM version)
   }
@@ -128,7 +140,8 @@ export class UI {
     const st = this.pointers.get(p.id); this.pointers.delete(p.id); if (!st) return;
     const r = st.r;
     if (r?.hold) { r.hold(false); this.down.delete(r.id); }
-    const sc = st.scroll; if (sc) { sc.drag = false; if (sc.off < 0 || sc.off > sc.max) { sc.off = clamp(sc.off, 0, sc.max); sc.vel = 0; } }
+    const sc = st.scroll;
+    if (sc) { sc.drag = false; sc.vel = st.moved && Date.now() - st.lastMs < 90 ? clamp(st.v, -4000, 4000) : 0; this.request(2); }
     if (r && !r.hold && !st.moved && this.down.has(r.id)) { this.down.delete(r.id); if (!r.disabled) r.onTap?.(r); }
     else if (r) this.down.delete(r.id);
     // horizontal swipe on empty space
@@ -144,15 +157,16 @@ export class UI {
     const s = this.scrolls[key] ||= { off: 0, vel: 0, drag: false, horizontal, max: 0, inited: false };
     s.max = Math.max(0, size - (horizontal ? w : h)); s.horizontal = horizontal;
     if (!s.inited) { s.inited = true; if (start != null) s.off = clamp(start, 0, s.max); }
-    if (!s.drag) s.off = clamp(s.off, 0, s.max);
+    if (!s.drag && (s.off < -200 || s.off > s.max + 200)) s.off = clamp(s.off, 0, s.max);
     const c = this.ctx;
     this.hit(x, y, w, h, { id: '__scroll_' + key, scrollKey: key });
+    const prevScroll = this.curScroll; this.curScroll = key;
     c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
     const prevClip = this.clipR, pox = this.ox, poy = this.oy;
     this.clipR = { x: x + this.ox, y: y + this.oy, w, h };
     if (horizontal) { c.translate(-s.off, 0); this.ox -= s.off; } else { c.translate(0, -s.off); this.oy -= s.off; }
     content();
-    this.ox = pox; this.oy = poy; this.clipR = prevClip;
+    this.ox = pox; this.oy = poy; this.clipR = prevClip; this.curScroll = prevScroll;
     c.restore();
     // scrollbar hint
     if (s.max > 0 && !horizontal) {

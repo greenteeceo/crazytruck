@@ -6,7 +6,7 @@ const vid = process.argv[2] || 'crane';
 const spec = VEHICLES.find(v => v.id === vid);
 const out = {};
 for (const w of WORLDS) for (const l of w.levels) {
-  const sim = new Sim(l, spec); const bot = makeBot(1, 1);
+  const sim = new Sim(l, spec, { items: l.seaGaps ? { boost: 1 } : {} }); const bot = makeBot(1, 1);   // sea crossings: one Rocket
   let steps = 0;
   while (sim.state === 'run' && steps < 60 * 60) { sim.step(bot(sim)); sim.drainEvents(); steps++; }
   const t = sim.state === 'win' ? sim.finishTime : null;

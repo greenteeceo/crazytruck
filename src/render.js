@@ -405,6 +405,8 @@ export class Renderer {
     if (gems) for (const g of sim.gems) {
       const v = buildGem(); v.position.set(g.piece.x, g.piece.y, z); s.add(v); this.gemViews.push({ v, g, t: srand() * 6, pop: 0, z });
     }
+    // "?" item boxes (race tracks with a sea crossing)
+    lane.boxViews = sim.itemBoxes.map((box) => { const m = this.itemBoxMesh(); m.position.set(box.piece.x, box.piece.y, z); s.add(m); return { box, m }; });
     this.lanes.push(lane);
     return lane;
   }
@@ -724,6 +726,7 @@ export class Renderer {
       car.lift = want > car.lift ? want : car.lift + (want - car.lift) * (1 - Math.exp(-dt * 8));
       const ly = hopY + car.lift;
       car.parts.group.position.set(p.x, p.y + ly, z); car.parts.group.rotation.z = p.a;
+      this.itemFx(car, { x: p.x, y: p.y + ly, a: p.a }, dt);
       car.parts.group.scale.set(1 + sq * 0.1, 1 - sq * 0.16, 1 + sq * 0.08);
       sim.wheels.forEach((w, i) => {
         const q = sim.pose(w, al), wv = car.wheels[i];
@@ -780,6 +783,10 @@ export class Renderer {
     }
     for (const lane of this.lanes || []) {
       for (const d of lane.dynViews) { const q = lane.sim.pose(d.body, this.alpha ?? 1); d.m.position.set(q.x, q.y, lane.z); d.m.rotation.z = q.a; }
+      for (const bv of lane.boxViews || []) {
+        const up = lane.sim.time - bv.box.taken > 4, k = up ? Math.min(1, (lane.sim.time - bv.box.taken - 4) * 3) : 0;
+        bv.m.visible = k > 0.01; bv.m.scale.setScalar(Math.max(0.01, k)); bv.m.rotation.y += dt * 2.2; bv.m.position.y = bv.box.piece.y + Math.sin(t * 3) * 0.15;
+      }
       for (const r of lane.ropes) {
         const arr = r.line.geometry.attributes.position.array; let k = 0;
         for (const b of lane.bridgeBodies) {
@@ -921,6 +928,53 @@ export class Renderer {
       o.rotation.x = t.side * t.tip * Math.PI / 2 + (t.tip > 0 && t.tip < 1 ? Math.sin(t.tip * 14) * 0.15 * (1 - t.tip) : 0);
     }
   }
+  // ---------------------------------------------------------------- special item visuals
+  itemBoxMesh() {
+    if (!this.qTex) {
+      const c = P.createCanvas(64, 64), g = c.getContext('2d');
+      const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, '#ffe066'); gr.addColorStop(1, '#ff9a14'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+      g.strokeStyle = '#fff'; g.lineWidth = 6; g.strokeRect(3, 3, 58, 58);
+      g.fillStyle = '#fff'; g.font = 'bold 46px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('?', 32, 35);
+      this.qTex = new THREE.CanvasTexture(c); this.qTex.colorSpace = THREE.SRGBColorSpace; this.qTex.userData.shared = true;
+    }
+    const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ map: this.qTex, emissive: 0x553300 }));
+    m.castShadow = true; return m;
+  }
+  // rocket flame, glider wings, shield bubble, magnet sparkles: driven by sim.fx every frame
+  itemFx(car, p, dt) {
+    const sim = car.sim, f = sim.fx; if (!f) return;
+    const ca = Math.cos(p.a), sa = Math.sin(p.a), at = (lx, ly) => [p.x + lx * ca - ly * sa, p.y + lx * sa + ly * ca];
+    if (f.boost > 0) {
+      const [fx, fy] = at(-2.1, 0.35);
+      for (let i = 0; i < 5; i++) this.spawn(fx, fy, car.z + (Math.random() - 0.5) * 0.6, -ca * (7 + Math.random() * 6), -sa * 7 + (Math.random() - 0.5) * 2.5, (Math.random() - 0.5) * 2, [0xfff3a0, 0xffb21a, 0xff6a1a, 0xff3d1a][i % 4], 0.22 + Math.random() * 0.18, 0.45 + Math.random() * 0.35, 0);
+      if (Math.random() < 0.6) this.smoke(fx - ca * 0.8, fy, car.z, 0.35, -ca * 2, 0.3);
+    }
+    // wings
+    if (f.glide > 0 && !car.wings) {
+      const w = new THREE.Group(); car.parts.group.add(w); w.position.set(-0.1, 1.45, 0);
+      for (const sd of [-1, 1]) {
+        const half = new THREE.Group(); half.userData.side = sd; w.add(half);
+        box(half, -0.7, -0.05, sd > 0 ? 0.6 : -3.1, 0.7, 0.05, sd > 0 ? 3.1 : -0.6, 0xffffff);
+        box(half, -0.72, -0.06, sd > 0 ? 2.5 : -3.12, 0.72, 0.06, sd > 0 ? 3.12 : -2.5, 0x2f7cf6);
+        box(half, -0.1, -0.3, sd > 0 ? 0.6 : -0.75, 0.1, 0.05, sd > 0 ? 0.75 : -0.6, 0x55565e);
+      }
+      car.wings = w;
+    }
+    if (car.wings) {
+      const on = f.glide > 0; car.wings.visible = on;
+      if (on) { const fl = Math.sin(performance.now() / 120) * 0.1; for (const h of car.wings.children) h.rotation.x = -h.userData.side * (0.38 + fl); /* V-shaped, flapping */ car.wings.scale.setScalar(Math.min(1, (car.wings.scale.x || 0) + dt * 5)); }
+      else car.wings.scale.setScalar(0.01);
+    }
+    // shield bubble
+    if (f.shield && !car.bubble) {
+      car.bubble = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshLambertMaterial({ color: 0x7df9ff, emissive: 0x1a6a88, transparent: true, opacity: 0.28, depthWrite: false }));
+      car.bubble.position.set(0, 0.25, 0); car.parts.group.add(car.bubble);
+    }
+    if (car.bubble) { car.bubble.visible = f.shield; const k = 1 + Math.sin(performance.now() / 180) * 0.04; car.bubble.scale.set(2.7 * k, 2.0 * k, 1.9 * k); }
+    // magnet sparkles
+    if (f.magnet > 0 && Math.random() < 0.5) { const a = Math.random() * Math.PI * 2; this.spawn(p.x + Math.cos(a) * 3, p.y + Math.sin(a) * 2, car.z, -Math.cos(a) * 5, -Math.sin(a) * 3, 0, 0x7df9ff, 0.5, 0.18, 0); }
+  }
+
   // Back on its wheels: everything is bolted back on.
   fixAcc(car) {
     for (const t of car.tyres || []) this.scene.remove(t.obj);
@@ -1028,7 +1082,7 @@ export class Renderer {
     spec.wheelX.forEach((wx) => { const w = buildWheel(spec.wheelR, spec.look); w.position.set(wx, spec.wheelY, 0); tg.add(w); });
     if (spec.crane) { const c = spec.crane; const y = c.pivot[1] + Math.sin(c.angle) * c.length; const x = c.pivot[0] + Math.cos(c.angle) * c.length; for (let i = 0; i < c.links; i++) { const l = buildHookLink(i === c.links - 1); l.position.set(x, y - c.linkLen * (i + 0.5), 0); tg.add(l); } }
     this.menuSpin = parts.spin; this.menuT = 0;
-    this.menuCam = { pos: new THREE.Vector3(8.5, 4.6, 11), look: new THREE.Vector3(0, 0.5, 0) };
+    this.menuCam = { pos: new THREE.Vector3(8.5, 6.4, 11), look: new THREE.Vector3(0, 2.3, 0) };   // truck sits low: stats and name above it
     this.sun.position.set(-6, 14, 10);
     const sc = this.sun.shadow.camera; sc.left = -6; sc.right = 6; sc.top = 6; sc.bottom = -6; sc.updateProjectionMatrix();
   }

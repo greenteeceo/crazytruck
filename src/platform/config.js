@@ -29,3 +29,14 @@ export const isPlaceholder = (id) => !id || /AD_UNIT_ID$/.test(id);
 // Developer test tools in Settings (Autoplay, All resources) and the AUTO / TEST chips.
 // true while testing; set to false for the store build (5 taps on the version line in Settings still unlocks them).
 export const DEV_TOOLS = true;
+
+// Gem packs for real money (shown in the shop). In-app purchases are not wired yet: while IAP_ENABLED is
+// false the buttons say "Soon". Prices are display strings; the store sets the real local price.
+export const IAP_ENABLED = false;
+export const GEM_PACKS = [
+  { id: 'gems_s', gems: 500, price: '$0.99' },
+  { id: 'gems_m', gems: 1200, price: '$1.99', tag: '+20%' },
+  { id: 'gems_l', gems: 3200, price: '$4.99', tag: '+30%' },
+  { id: 'gems_xl', gems: 7000, price: '$9.99', tag: 'Popular' },
+  { id: 'gems_xxl', gems: 16000, price: '$19.99', tag: 'Best value' },
+];

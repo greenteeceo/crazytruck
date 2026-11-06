@@ -7,10 +7,11 @@ import { makeBot } from './bot.js';
 import { Renderer, setLabelFont } from './render.js';
 import { Audio } from './audio.js';
 import { P } from './platform/index.js';
-import { AD_RULES, REWARDS, DEV_TOOLS } from './platform/config.js';
+import { AD_RULES, REWARDS, DEV_TOOLS, IAP_ENABLED, GEM_PACKS } from './platform/config.js';
 import { UI, INK, GOLD, GRAD } from './ui/kit.js';
 import PARS from './pars.json';
 import { board, rankOf, BOARD_SIZE } from './leaderboard.js';
+import { ITEMS, CROSSERS, itemById, STARTER_ITEMS } from './items.js';
 
 // ------------------------------------------------------------ save
 const KEY = 'cranerush.save.v2';
@@ -19,9 +20,10 @@ let save;
 try { save = { ...defaults, ...JSON.parse(P.load(KEY) || '{}') }; } catch { save = { ...defaults }; }
 save.tt ||= {};
 save.tut ||= {};   // tutorial steps already shown
+if (!save.items) save.items = { ...STARTER_ITEMS };   // a starter pack of special items
 // dev tools (Autoplay, All resources, AUTO / TEST chips): on while DEV_TOOLS is true (config.js),
 // otherwise hidden until the version line in Settings is tapped 5 times
-const VERSION = '3.6';
+const VERSION = '3.7';
 const dev = () => DEV_TOOLS || !!save.dev;
 if (save.allRes == null) save.allRes = !!(save.infinite && save.unlockAll);
 if (!dev()) save.autoplay = save.allRes = false;
@@ -164,16 +166,18 @@ function startLevel(level, race = null, opts = {}) {
   const theme = WORLDS[level.world].theme;
   R.buildLevel(level, theme, race ? { lanes: laneCount(), laneW: LANE_W } : {});
   const z0 = race ? laneZ(0) : 0;
-  const me = makeRacer(level, spec, { stuckLimit: 5 });
+  // special items: the player's own stock (free and unlimited for bot runs and All resources)
+  const freeItems = !!(save.allRes || save.autoplay || testRun || opts.hint);
+  const me = makeRacer(level, spec, { stuckLimit: 5, items: freeItems ? Object.fromEntries(ITEMS.map((i) => [i.id, 99])) : { ...save.items } });
   const sim = me.sim;
   const lane = R.attachSim(sim, { z: z0 });
   const player = R.addCar(sim, spec, race ? { label: 'You', color: '#ffe14d', z: z0 } : {});
   R.focusZ = z0;
-  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makeBot(1, 11), t0: ui.t, continued: false, hint: !!opts.hint };
+  game = { level, spec, sim, me, lane, player, z: z0, race, racers: [], acc: 0, over: false, failT: 0, countdown: race ? 3.0 : 0, autoBot: makeBot(1, 11), t0: ui.t, continued: false, hint: !!opts.hint, freeItems };
   if (race) {
     race.rivals.forEach((rv, i) => {
       const s2 = aiSpec(rv.car);
-      const r = makeRacer(level, s2, { collectGems: false });
+      const r = makeRacer(level, s2, { collectGems: false, items: { boost: 3 } });   // rivals carry Rockets for sea crossings
       const z = laneZ(i + 1);
       const ln = R.attachSim(r.sim, { z, gems: false });
       const car = R.addCar(r.sim, s2, { label: rv.name, color: rv.color, z });
@@ -182,6 +186,10 @@ function startLevel(level, race = null, opts = {}) {
   }
   if (!race && !testRun && !save.autoplay && !opts.hint && !save.tut.drive) game.tut = 'drive';
   if (opts.hint) tip(game, 'Hint: watch how it is done!', 3);
+  else if (level.seaGaps && !race) {
+    const has = freeItems || CROSSERS.some((k) => (save.items[k] || 0) > 0);
+    tip(game, has ? 'Sea crossing ahead: use a Rocket, Super Jump or Glider!' : 'Sea crossing ahead: you need a Rocket, Jump or Glider (Shop)', 3.8);
+  }
   R.snapCam = true;
   showHud();
   Audio.engineStart();
@@ -299,6 +307,17 @@ function fx(e, sim, z = 0, car = null) {
       if (e.v > 9 && (game.impT || 0) < ui.t) { game.impT = ui.t + 0.8; R.popText(e.heavy ? 'CRASH!' : 'SMASH!', e.x, e.y + 2.2, z, '#ff6b74'); }
       break;
     }
+    case 'item': {
+      if (e.owned && !game.freeItems && game.sim === sim) { save.items[e.kind] = Math.max(0, (save.items[e.kind] || 0) - 1); persist(); }
+      const label = { boost: 'ROCKET!', jump: 'BOING!', glide: 'Glide!', shield: 'Shield up!', magnet: 'Magnet!' }[e.kind];
+      R.popText(label, p.x, p.y + 2.6, z, '#ffd21a');
+      if (e.kind === 'boost') { Audio.boost(); R.punch = 1; R.shake = Math.max(R.shake, 0.15); }
+      else if (e.kind === 'jump') { Audio.boost(); for (const w of sim.wheels) { const q = w.getPosition(); for (let i = 0; i < 4; i++) R.smoke(q.x + (Math.random() - 0.5), q.y - sim.spec.wheelR + 0.2, z + (Math.random() < 0.5 ? -0.86 : 0.86), 0.4, (Math.random() - 0.5) * 2, 0.2); } }
+      else Audio.gem();
+      P.vibrate(); break;
+    }
+    case 'pickup': R.popText('+Rocket!', e.x, e.y + 1.2, z, '#ffd21a'); R.burst(e.x, e.y, 0xffd21a, 12, 4, -6, 0.6, z); Audio.gem(); break;
+    case 'shieldSave': R.burst(p.x, p.y + 0.5, 0x7df9ff, 20, 6, -6, 0.8, z); R.popText('Saved by the shield!', p.x, p.y + 2.8, z, '#7df9ff'); Audio.boost(); P.vibrate(); break;
     case 'tumble': R.popText('Too fast!', p.x, p.y + 2.8, z, '#ffd21a'); R.shake = 0.5; Audio.crash(); P.vibrate(); break;
     case 'bannerHit': {
       const look = game?.spec?.look;
@@ -610,7 +629,7 @@ function showLevels(wi) {
   if (R.mode !== 'menu') R.showDiorama(WORLDS[wi], vehicleById(save.car));
   const w = WORLDS[wi];
   const firstOpen = w.levels.findIndex((l) => lvlSave(l)?.time == null);
-  ui.show('levels', (u) => drawLevels(u, wi, firstOpen));
+  ui.show('levels', (u) => drawLevels(u, wi, firstOpen), { dragScroll: 'lv' });   // swipe anywhere to scroll the list
 }
 function drawLevels(u, wi, firstOpen) {
   const w = WORLDS[wi], c = u.ctx, T = u.safeTop;
@@ -694,6 +713,29 @@ function drawHud(u) {
     c.restore();
     u.hit(side === 'L' ? 0 : half, u.h * 0.45, half, u.h * 0.55, { id, hold: (v) => { if (side === 'L') touchL = v; else touchR = v; Audio.unlock(); u.request(); } });
   }
+  // special item buttons: a row above the drive controls (only items you have)
+  {
+    const have = ITEMS.filter((it) => g.sim.count(it.id) > 0), bs = short() ? 44 : 50, gp = 10;
+    const nearSea = (g.level.seaGaps || []).some((sg) => g.sim.x > sg.lip - 30 && g.sim.x < sg.lip + 1);
+    const rowW = have.length * bs + (have.length - 1) * gp, iy = cy - bs - 14;
+    have.forEach((it, i) => {
+      const x = u.w / 2 - rowW / 2 + i * (bs + gp), n = g.sim.count(it.id), f = g.sim.fx;
+      const active = (it.id === 'boost' && f.boost > 0) || (it.id === 'glide' && f.glide > 0) || (it.id === 'shield' && f.shield) || (it.id === 'magnet' && f.magnet > 0);
+      const glow = nearSea && CROSSERS.includes(it.id) && !active, k = glow ? 1 + Math.sin(u.t * 9) * 0.08 : 1, down = u.isDown('item_' + it.id);
+      c.save(); c.translate(x + bs / 2, iy + bs / 2); c.scale(k * (down ? 0.9 : 1), k * (down ? 0.9 : 1));
+      if (glow) { c.beginPath(); c.arc(0, 0, bs / 2 + 7, 0, Math.PI * 2); c.fillStyle = 'rgba(255,210,26,0.45)'; c.fill(); }
+      c.beginPath(); c.arc(0, 0, bs / 2 + 3, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill();
+      c.beginPath(); c.arc(0, 0, bs / 2, 0, Math.PI * 2); c.fillStyle = u.grad(-bs / 2, bs / 2, GRAD[it.color]); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+      u.icon(it.icon, -bs * 0.32, -bs * 0.32, bs * 0.64);
+      if (active) { c.beginPath(); c.arc(0, 0, bs / 2 + 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ((u.t * 2) % 1)); c.lineWidth = 4; c.strokeStyle = '#fff'; c.stroke(); }
+      const txt = n >= 50 ? '∞' : String(n), tw = Math.max(20, u.measure(txt, 13) + 10);
+      u.rr(bs / 2 - tw + 4, -bs / 2 - 4, tw, 20, 10); c.fillStyle = '#ff3d57'; c.fill(); c.lineWidth = 2; c.strokeStyle = '#fff'; c.stroke();
+      u.text(txt, bs / 2 - tw / 2 + 4, -bs / 2 + 6, 13, '#fff', { outline: false });
+      c.restore();
+      u.hit(x - 4, iy - 4, bs + 8, bs + 8, { id: 'item_' + it.id, onTap: () => { if (g.countdown <= 0 && !g.over) g.sim.useItem(it.id); } });
+    });
+    if (have.length) u.request(0.1);
+  }
   // tutorial: hand on the ▶ control, then short tips
   if (g.tut === 'drive') {
     const x = u.w * 0.96 - cs, k = 0.5 + 0.5 * Math.sin(u.t * 5);
@@ -765,7 +807,8 @@ function onFail() {
   const snap = g.snap || R.snapshotCar(g.sim, g.z);
   const pose = g.sim.failPose || g.sim.reason || 'crash';
   const q = QUIPS[pose] || QUIPS.crash;
-  const st = { snap, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l, lives: livesNow(), hint: failCount[l.id] >= 2 && !save.autoplay };
+  const st = { snap, sticker: STICKERS[pose], caption: q[(Math.random() * q.length) | 0], tilt: (Math.random() * 10 - 5) * Math.PI / 180, l, lives: livesNow(), hint: failCount[l.id] >= 2 && !save.autoplay,
+    needItem: !!l.seaGaps && g.sim.reason === 'splash' && !g.freeItems && !CROSSERS.some((k) => g.sim.count(k) > 0) };
   ui.show('fail', (u) => drawFail(u, st));
 }
 function drawSticker(u, kind, x, y, w, h, t) {
@@ -831,8 +874,10 @@ function drawFail(u, st) {
   const by = u.h - B - 24 - barH;
   // rewarded offers: continue from the checkpoint, and after 2 crashes on this level a hint (the bot shows the way)
   const offers = [];
-  if (canContinue) offers.push({ id: 'continue', color: 'green', parts: [{ icon: 'video', size: 22 }, 'Continue'], fn: () => continueAfterCrash(st) });
-  if (st.hint) offers.push({ id: 'hint', color: 'purple', parts: [{ icon: 'video', size: 22 }, 'Hint', { icon: 'bulb', size: 22, color: GOLD }], fn: () => startLevel(st.l, null, { hint: true }) });
+  // fell into a sea crossing without anything to cross it: one free Rocket for a video
+  if (st.needItem) offers.push({ id: 'freeitem', color: 'orange', parts: [{ icon: 'video', size: 22 }, 'Free', { icon: 'rocket', size: 24, color: GOLD }], fn: () => { save.items.boost = (save.items.boost || 0) + 1; persist(); ui.toast('+1 Rocket Boost!'); startLevel(st.l); } });
+  if (canContinue && offers.length < 2) offers.push({ id: 'continue', color: 'green', parts: [{ icon: 'video', size: 22 }, 'Continue'], fn: () => continueAfterCrash(st) });
+  if (st.hint && offers.length < 2) offers.push({ id: 'hint', color: 'purple', parts: [{ icon: 'video', size: 22 }, 'Hint', { icon: 'bulb', size: 22, color: GOLD }], fn: () => startLevel(st.l, null, { hint: true }) });
   if (offers.length) {
     const ow = Math.min(u.w - PAD * 2, offers.length > 1 ? 360 : 280), bw = (ow - GAP * (offers.length - 1)) / offers.length;
     offers.forEach((o, i) => u.button(o.id, u.w / 2 - ow / 2 + i * (bw + GAP), by - 66, bw, 52, { color: o.color, parts: o.parts, size: 20, scale: u.pop(0.6, 0.4), onTap: tap(() => watchAd(o.fn)) }));
@@ -1159,26 +1204,53 @@ function showShop(sel) {
   game = null; Audio.engineStop();
   shopSel = sel || shopSel || save.car;
   R.showGarage(vehicleById(shopSel));
-  ui.show('shop', drawShop, { keepScroll: !!sel });
+  ui.show('shop', drawShop, { keepScroll: !!sel, swipe: (d) => { if (shopTab === 'trucks') shopStep(d); } });
 }
+// swipe left / right anywhere on the showroom: next / previous truck
+const shopList = () => [...VEHICLES].sort((a, b) => a.price - b.price);
+function shopStep(d) {
+  const list = shopList(), i = list.findIndex((v) => v.id === shopSel), n = Math.max(0, Math.min(list.length - 1, i + d));
+  if (n === i) return;
+  shopSel = list[n].id; R.showGarage(list[n]); Audio.click();
+  const sc = ui.scrolls.cards; if (sc) { const cw = short() ? 110 : 128; sc.off = Math.max(0, Math.min(sc.max, n * (cw + GAP) - ui.w / 2 + cw / 2 + PAD)); sc.vel = 0; }
+  ui.request(0.5);
+}
+let shopTab = 'trucks';
 function drawShop(u) {
   const c = u.ctx, T = u.safeTop, B = u.safeBottom, sh = short();
-  const cur = vehicleById(shopSel), own = owns(cur.id), ups = save.upgrades?.[cur.id] || {};
+  if (shopTab === 'trucks') u.hit(0, 0, u.w, u.h, { id: '__swipe' });   // empty space: swipe to change truck
   topbar(u);
   // free gems for a video (left, under the safe area)
   u.button('freegems', PAD, topY(u), 132, pillH(), { color: 'green', parts: [{ icon: 'video', size: 22 }, `+${REWARDS.freeGems}`, { gem: true, size: 18 }], size: 17, radius: 12, onTap: tap(() => watchAd(() => { earnGems(REWARDS.freeGems, { x: 70, y: T + 30 }); Audio.win(); })) });
-  const ny = T + (sh ? 76 : 86);
-  u.text(cur.name, u.w / 2, ny, sh ? 26 : 32);
-  u.text(cur.desc, u.w / 2, ny + (sh ? 26 : 30), sh ? 13 : 15, '#fff', { maxW: u.w - 30 });
+  // tabs: Trucks | Items | Gems
+  const tabsY = topY(u) + pillH() + GAP, tabH = sh ? 34 : 38, tw = Math.min(u.w - PAD * 2, 360), tx0 = u.w / 2 - tw / 2;
+  const tabs = [['trucks', 'Trucks', 'shop'], ['items', 'Items', 'rocket'], ['gems', 'Gems', null]];
+  u.rr(tx0 - 3, tabsY - 3, tw + 6, tabH + 6, tabH / 2 + 3); c.fillStyle = 'rgba(255,255,255,0.7)'; c.fill();
+  tabs.forEach(([id, label, ic], i) => {
+    const x = tx0 + i * tw / 3, on = shopTab === id;
+    u.rr(x + 2, tabsY + 2, tw / 3 - 4, tabH - 4, (tabH - 4) / 2); c.fillStyle = on ? u.grad(tabsY, tabsY + tabH, GRAD.orange) : 'rgba(10,30,80,0.55)'; c.fill();
+    u.row([ic ? { icon: ic, size: 18 } : { gem: true, size: 16 }, label], x + tw / 6, tabsY + tabH / 2, { size: sh ? 15 : 16, maxW: tw / 3 - 10 });
+    u.hit(x, tabsY, tw / 3, tabH, { id: 'stab' + id, onTap: tap(() => { shopTab = id; u.request(0.5); }) });
+  });
+  if (shopTab === 'items') return drawShopItems(u, tabsY + tabH + GAP);
+  if (shopTab === 'gems') return drawShopGems(u, tabsY + tabH + GAP);
+  const cur = vehicleById(shopSel), own = owns(cur.id), ups = save.upgrades?.[cur.id] || {};
+  const ny = tabsY + tabH + (sh ? 22 : 30);
+  u.text(cur.name, u.w / 2, ny, sh ? 24 : 30);
+  // price (or owned) right under the name, so prices show while swiping through the trucks
+  const list0 = shopList(), idx0 = list0.findIndex((v) => v.id === cur.id);
+  u.row(own ? [{ icon: 'check', size: 16, color: '#7aff8a' }, `Owned · ${idx0 + 1}/${list0.length}`] : [{ gem: true, size: 16 }, String(cur.price), `· ${idx0 + 1}/${list0.length}`], u.w / 2, ny + (sh ? 22 : 26), { size: sh ? 14 : 16, color: own ? '#c8ffd0' : GOLD });
+  u.text(cur.desc, u.w / 2, ny + (sh ? 40 : 48), sh ? 12 : 14, '#fff', { maxW: u.w - 30 });
   // stats
   const pct = (val, up) => Math.max(0.06, Math.min(1, (val - up.lo) / (up.hi - up.lo)));
-  const sw = Math.min(u.w - 30, own ? 340 : 380), sx = u.w / 2 - sw / 2, sy = ny + (sh ? 46 : 54);
+  const upgraded = withUpgrades(cur, ups);
+  const sw = Math.min(u.w - 30, own ? 340 : 380), sx = u.w / 2 - sw / 2, sy = ny + (sh ? 58 : 68);
   UPGRADES.forEach((up, i) => {
-    const lvl = ups[up.id] || 0, baseP = pct(cur[up.key], up), upP = pct(cur[up.key] * (1 + up.pct * lvl), up);
+    const lvl = ups[up.id] || 0, baseP = pct(cur[up.key] || 0, up), upP = pct(upgraded[up.key] || 0, up);
     const cols = own ? 1 : 2, colW = (sw - (cols - 1) * 14) / cols;
-    const x = sx + (own ? 0 : (i % 2) * (colW + 14)), y = sy + (own ? i * (sh ? 25 : 28) : Math.floor(i / 2) * 24);
-    u.text(up.name, x, y + 8, 14, '#fff', { align: 'left' });
-    const bx = x + 50, bw = colW - 50 - (own ? 66 : 0), bh = 14;
+    const x = sx + (own ? 0 : (i % 2) * (colW + 14)), y = sy + (own ? i * (sh ? 23 : 27) : Math.floor(i / 2) * 22);
+    u.text(up.name, x, y + 8, 13, '#fff', { align: 'left', maxW: 58 });
+    const bx = x + 62, bw = colW - 62 - (own ? 66 : 0), bh = 14;
     u.rr(bx, y + 1, bw, bh, 7); c.fillStyle = '#0b3e8a'; c.fill();
     c.save(); u.rr(bx, y + 1, bw, bh, 7); c.clip();
     c.fillStyle = u.grad(y, y + bh, ['#ffd84a', '#ff9a14']); c.fillRect(bx, y + 1, bw * baseP, bh);
@@ -1195,9 +1267,16 @@ function drawShop(u) {
       }
     }
   });
+  // swipe arrows (below the stats so they never cover an upgrade button)
+  const ay = Math.max(u.h * 0.42, sy + (own ? UPGRADES.length * (sh ? 23 : 27) : Math.ceil(UPGRADES.length / 2) * 22) + 12);
+  for (const [d, x] of [[-1, 6], [1, u.w - 6 - 30]]) {
+    const ok = idx0 + d >= 0 && idx0 + d < list0.length; if (!ok) continue;
+    u.icon(d < 0 ? 'left' : 'right', x, ay, 30, 'rgba(255,255,255,0.85)');
+    u.hit(x - 6, ay - 10, 42, 50, { id: 'sw' + d, onTap: tap(() => shopStep(d)) });
+  }
   // truck cards
   const bh0 = sh ? 46 : 52, btnY = navTop(u) - 2 * GAP - bh0, cardH = sh ? 96 : 112, cardW = sh ? 110 : 128, cy = btnY - 2 * GAP - cardH;
-  const list = [...VEHICLES].sort((a, b) => a.price - b.price);
+  const list = shopList();
   const selIdx = list.findIndex((v) => v.id === cur.id);
   let made = false;
   u.scroll('cards', 0, cy - 8, u.w, cardH + 16, list.length * (cardW + GAP) + PAD * 2 - GAP, () => {
@@ -1231,6 +1310,60 @@ function drawShop(u) {
   navbar(u, 'shop');
   return made || u.st < 0.8;
 }
+// Items tab: special items bought with gems (x1 or a pack of 5 for the price of 4)
+function drawShopItems(u, top) {
+  const c = u.ctx, sh = short(), pw = Math.min(u.w - PAD * 2, 440), px = u.w / 2 - pw / 2, ph = navTop(u) - 2 * GAP - top;
+  c.fillStyle = 'rgba(10,40,120,0.45)'; c.fillRect(0, top - 6, u.w, u.h);
+  u.text('Use them in levels and races. Sea crossings need a Rocket, Jump or Glider.', u.w / 2, top + 10, 12, '#fff', { maxW: pw });
+  const rh = sh ? 74 : 82, listY = top + 26, listH = ph - 26;
+  u.scroll('itemsList', px - 4, listY, pw + 8, listH, ITEMS.length * (rh + 8) + 8, () => {
+    ITEMS.forEach((it, i) => {
+      const y = listY + 4 + i * (rh + 8), n = save.allRes ? '∞' : String(save.items[it.id] || 0);
+      u.rr(px, y, pw, rh, 16); c.fillStyle = u.grad(y, y + rh, GRAD.blue); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+      const r = rh * 0.32, cx = px + 14 + r, cyy = y + rh / 2;
+      c.beginPath(); c.arc(cx, cyy, r + 3, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill();
+      c.beginPath(); c.arc(cx, cyy, r, 0, Math.PI * 2); c.fillStyle = u.grad(cyy - r, cyy + r, GRAD[it.color]); c.fill(); c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
+      u.icon(it.icon, cx - r * 0.66, cyy - r * 0.66, r * 1.32);
+      const tx = cx + r + 12, bw = sh ? 74 : 80, btx = px + pw - 10 - bw;
+      u.text(it.name, tx, y + rh * 0.28, sh ? 16 : 18, '#fff', { align: 'left', maxW: btx - tx - 40 });
+      u.text(`x${n}`, btx - 8, y + rh * 0.28, 16, GOLD, { align: 'right' });
+      u.text(it.desc, tx, y + rh * 0.56, 11, '#dfe9ff', { align: 'left', maxW: btx - tx - 6, outline: false });
+      const bh = (rh - 18) / 2;
+      u.button('ib1' + it.id, btx, y + 6, bw, bh, { color: canAfford(it.price) ? 'green' : 'gray', parts: ['+1', { gem: true, size: 13 }, String(it.price)], size: 13, radius: 9, ring: false, onTap: () => buyItem(it, 1) });
+      u.button('ib5' + it.id, btx, y + 12 + bh, bw, bh, { color: canAfford(it.price * 4) ? 'orange' : 'gray', parts: ['+5', { gem: true, size: 13 }, String(it.price * 4)], size: 13, radius: 9, ring: false, onTap: () => buyItem(it, 5) });
+    });
+  });
+  navbar(u, 'shop');
+  return u.st < 0.6;
+}
+function buyItem(it, n) {
+  const cost = it.price * (n === 5 ? 4 : n);
+  if (!canAfford(cost)) return shakeGems();
+  spend(cost); save.items[it.id] = (save.items[it.id] || 0) + n; persist(); Audio.gem(); ui.toast(`+${n} ${it.name}`); ui.request(1);
+}
+// Gems tab: a free video, and gem packs for real money (in-app purchase hooks come later)
+function drawShopGems(u, top) {
+  const c = u.ctx, sh = short(), pw = Math.min(u.w - PAD * 2, 440), px = u.w / 2 - pw / 2;
+  c.fillStyle = 'rgba(10,40,120,0.45)'; c.fillRect(0, top - 6, u.w, u.h);
+  u.button('gfree', px, top + 4, pw, sh ? 50 : 56, { color: 'green', parts: [{ icon: 'video', size: 24 }, 'Watch a video', `+${REWARDS.freeGems}`, { gem: true, size: 20 }], size: 18, onTap: tap(() => watchAd(() => { earnGems(REWARDS.freeGems, { x: u.w / 2, y: top + 30 }); Audio.win(); })) });
+  const rh = sh ? 56 : 62, listY = top + (sh ? 66 : 74), listH = navTop(u) - 2 * GAP - listY - 22;
+  u.scroll('gemPacks', px - 4, listY, pw + 8, listH, GEM_PACKS.length * (rh + 8) + 8, () => {
+    GEM_PACKS.forEach((gp, i) => {
+      const y = listY + 4 + i * (rh + 8);
+      u.rr(px, y, pw, rh, 14); c.fillStyle = u.grad(y, y + rh, GRAD.panel); c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+      for (let k = 0; k < Math.min(4, i + 1); k++) u.gem(px + 28 + k * 9, y + rh / 2 - k * 3 + 4, 26);
+      u.text(gp.gems.toLocaleString('en-US'), px + 82, y + rh / 2, sh ? 20 : 22, '#fff', { align: 'left' });
+      if (gp.tag) { const tw = u.measure(gp.tag, 11) + 14; u.rr(px + 82, y + 4, tw, 16, 8); c.fillStyle = '#ff3d57'; c.fill(); u.text(gp.tag, px + 82 + tw / 2, y + 12, 11, '#fff', { outline: false }); }
+      const bw = 92;
+      u.button('gp' + gp.id, px + pw - 10 - bw, y + (rh - 40) / 2, bw, 40, { color: IAP_ENABLED ? 'orange' : 'gray', label: IAP_ENABLED ? gp.price : `${gp.price}`, size: 16, radius: 10, ring: false,
+        onTap: tap(() => ui.toast(IAP_ENABLED ? 'Opening the store…' : 'Gem packs are coming soon!', '#ff8a1f')) });
+    });
+  });
+  u.text(IAP_ENABLED ? 'Prices in your store currency.' : 'Purchases open in a coming update.', u.w / 2, navTop(u) - 2 * GAP - 10, 12, '#fff', { maxW: pw });
+  navbar(u, 'shop');
+  return u.st < 0.6;
+}
+
 function shakeGems() { Audio.crash(); ui.toast('Not enough gems', '#ff5a6e'); }
 function doBuy(id) {
   const v = vehicleById(id);
@@ -1401,6 +1534,8 @@ P.onKey((code) => {
   if (KR.includes(code)) keys.right = true;
   if (game && !game.paused && !game.over) {
     if (code === 'KeyR') startLevel(game.level, game.race ? { ...game.race } : null);
+    const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(code);
+    if (n >= 0 && game && !game.over && game.countdown <= 0) game.sim.useItem(ITEMS[n].id);
     if (code === 'Escape' || code === 'KeyP') pauseMenu();
   }
 }, (code) => { if (KL.includes(code)) keys.left = false; if (KR.includes(code)) keys.right = false; });
