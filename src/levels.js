@@ -306,13 +306,13 @@ export const PLANS = {
     ['puddle', 'rocky', 'gap', 'seesaw', 'crates'],                                     // 9
     ['climb', 'rampDown', 'bigJump', 'sandPit'],                                        // 10 big jump
     ['rocky', 'puddle', 'steepHill', 'barrels', 'gap'],                                 // 11
-    ['bridge', 'logPile', 'valley', 'sandPit', 'seesaw'],                               // 12
+    ['bridge', 'toppleWall', 'valley', 'sandPit', 'seesaw'],                            // 12 a wall to push over
     ['rolling', 'bigJump', 'puddle', 'steepHill', 'crates'],                            // 13
     ['sandPit', 'rocky', 'climb', 'logPile', 'gap', 'barrels'],                         // 14
     ['puddle', 'seesaw', 'steepHill', 'valley', 'bridge', 'crates'],                    // 15
     ['bigJump', 'sandPit', 'rocky', 'puddle', 'logPile', 'steepHill'],                  // 16
     ['climb', 'gap', 'puddle', 'barrels', 'seesaw', 'rocky', 'valley'],                 // 17
-    ['steepHill', 'sandPit', 'bigJump', 'logPile', 'puddle', 'bridge', 'crates'],       // 18
+    ['steepHill', 'sandPit', 'bigJump', 'toppleWall', 'puddle', 'bridge', 'crates'],    // 18
     ['rocky', 'puddle', 'climb', 'gap', 'sandPit', 'seesaw', 'barrels', 'steepHill'],   // 19
     ['bigJump', 'steepHill', 'puddle', 'logPile', 'sandPit', 'valley', 'rocky', 'bridge'], // 20 the final exam
   ],

@@ -16,7 +16,7 @@ const POOLS = {
 };
 // soft sand, mud puddles, steep hills and the rough stuff: added to every pool once the levels get hard
 const HARD = ['sandPit', 'puddle', 'steepHill', 'sandPit', 'puddle', 'steepHill', 'rocky', 'climb', 'valley', 'barrels', 'logPile'];
-const RACE_EXTRA = ['dominoes', 'barrels', 'boulders', 'wall', 'dominoes', 'logPile', 'wall', 'boulders'];
+const RACE_EXTRA = ['dominoes', 'barrels', 'boulders', 'wall', 'toppleWall', 'logPile', 'toppleWall', 'boulders'];
 
 const RACE_WORDS = [['Mega', 'Wild', 'Crazy', 'Turbo', 'Wacky', 'Bumpy', 'Chaos', 'Super', 'Hyper', 'Rowdy', 'Loopy', 'Zany'], ['Derby', 'Rally', 'Rumble', 'Scramble', 'Dash', 'Mayhem', 'Circuit', 'Run', 'Brawl', 'Frenzy']];
 
@@ -224,6 +224,12 @@ function build(def, seed, diff, { race = false, length, sea = 0, base = null, pl
         b.ramp(x, top, x + 4, top + 0.9, 'wood', top - 0.5);
         b.block(x + 7.2, top + 0.45, 3.2, 0.9, 'metal');
         b.gem(x + 7.2, top + 2.6); x += 16; break;
+      }
+      case 'toppleWall': {   // a tall heavy plank wall across the road: push it over, it falls slowly and becomes a ramp
+        ground(x, x + 11);
+        b.dyn(x + 3.5, top + 1.9, 0.5, 3.8, 'wood', 1.4);
+        b.block(x + 3.84, top + 0.07, 0.16, 0.14, 'wood');   // a sill in front of its foot: pushed, it tips over forward instead of sliding
+        b.gem(x + 8, top + 1.4); x += 11; break;
       }
       case 'pipes': {   // big round rocks lying on the road (they roll when hit)
         const n = 2 + ((r() * 2) | 0);

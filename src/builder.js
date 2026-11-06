@@ -15,7 +15,8 @@ export class B {
   steps(x0, top0, n, dx, dy, s = this.s, depth = 3) { for (let i = 0; i < n; i++) this.ground(x0 + i * dx, x0 + (i + 1) * dx, top0 + (i + 1) * dy, s, depth + i * dy); return this; }
   bridge(x1, y1, x2, y2, s = 'wood', n) { return this.add({ t: 'bridge', x1, y1, x2, y2, s, n }); }
   dyn(x, y, w, h, s = 'crate', d = 0.4, a = 0) { return this.add({ t: 'dyn', x, y, w, h, s, d, a }); }
-  crate(x, y, sz = 0.9, s = 'crate') { return this.dyn(x, y + sz / 2, sz, sz, s, 0.25); }
+  // crates are heavy enough that the truck shoves them along the road rather than flicking them away
+  crate(x, y, sz = 0.9, s = 'crate') { return this.dyn(x, y + sz / 2, sz, sz, s, 0.35); }
   stack(x, y, cols, rows, sz = 0.9, s = 'crate') { for (let r = 0; r < rows; r++) for (let c = 0; c < cols - r; c++) this.crate(x + c * sz + r * sz / 2, y + r * sz, sz, s); return this; }
   seesaw(x, y, w, a0 = 0.2, lim = 0.22, s = 'wood') { return this.add({ t: 'seesaw', x, y, w, a0, lim, s }); }
   hinge(x, y, w, a0, lo, hi, s = 'wood', h = 0.35) { return this.add({ t: 'hinge', x, y, w, a0, lo, hi, s, h }); }

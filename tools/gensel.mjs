@@ -62,7 +62,7 @@ for (const [wi, d] of WORLD_DEFS.entries()) {
 }
 const strong = (CHECK_TRUCKS.find(([n]) => n === 'titan+max') || CHECK_TRUCKS[0])[1];
 const raceOk = (l) => { const res = [1, 0.85, 0.7].map((sk) => raced(l, sk)); const st = raced(l, 1, strong); return !res.some((x) => !x || x.t > 50 || x.resp > 3) && st && st.resp <= 3 ? res : null; };
-if (process.env.ONLY) out.races = prev.races;
+if (process.env.ONLY && process.env.ONLY !== 'races') out.races = prev.races;
 else for (let i = 0; i < 20; i++) {
   const w = 4 + (i % 16);
   const old = prev.races?.[i];
