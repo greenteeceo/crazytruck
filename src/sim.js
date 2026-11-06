@@ -422,9 +422,9 @@ export class Sim {
     if (air) {
       this.airTime += DT;
       if (t !== 0) {
-        // throttle / brake in the air pitch the truck a little (wheel inertia), not like a jetpack
-        const av = this.chassis.getAngularVelocity() + t * s.air * 0.55 * DT;
-        this.chassis.setAngularVelocity(Math.max(-3.2, Math.min(3.2, av)));
+        // throttle / brake in the air tip the truck back / forward (spinning the big wheels): enough to line up a landing
+        const av = this.chassis.getAngularVelocity() + t * s.air * 1.0 * DT;
+        this.chassis.setAngularVelocity(Math.max(-4, Math.min(4, av)));
       }
     } else {
       if (this.airTime > 0.45) this.events.push({ type: 'land', v: this.airTime });

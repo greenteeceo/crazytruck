@@ -227,6 +227,7 @@ const laneZ = (i) => ((laneCount() - 1) / 2 - i) * LANE_W;
 function aiSpec(id) { const base = VEHICLES[0], v = vehicleById(id); return { ...base, look: v.look, crane: null, blade: false }; }
 
 function startLevel(level, race = null, opts = {}) {
+  R.camPush = 0;
   // a truck tried from the shop (rewarded video) drives the next level or race, once
   const carId = trialCar || save.car; if (trialCar) trialCar = null;
   const spec = withUpgrades(vehicleById(carId), save.upgrades?.[carId]);
@@ -285,7 +286,9 @@ function tick(dt) {
   }
   // keep counting below zero so the lights and GO! fade out, then stop
   if (g.countdown > -1) { g.countdown = Math.max(-1, g.countdown - dt); ui.request(0.1); }
-  g.acc += Math.min(dt, 0.1);
+  // a crash plays in slow motion for a moment while the camera pushes in
+  const slow = g.slowT > 0 ? 0.3 : 1; if (g.slowT > 0) { g.slowT -= dt; R.camPush = Math.min(1, (R.camPush || 0) + dt * 4); }
+  g.acc += Math.min(dt, 0.1) * slow;
   const t = save.autoplay || testRun ? g.autoBot(g.sim) : throttleInput();
   tutorialTick(g, dt, t);
   // wedged against something with the wheels spinning (the truck is upright, so the game goes on): after a few
@@ -416,6 +419,7 @@ function fx(e, sim, z = 0, car = null) {
       R.cheer(); Audio.applause();   // the crowd at the line jumps, claps and cheers
       Audio.win(); break;
     case 'fail':
+      if (game && !game.race && e.reason !== 'splash' && !testRun && !save.autoplay) game.slowT = 0.75;   // the crash in slow motion
       if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }
       else if ((sim.tier ?? 3) <= 1) {   // gentle roll-over: a soft puff and a thud, nothing breaks
         for (let i = 0; i < 4; i++) R.smoke(p.x + (Math.random() - 0.5) * 2, p.y - 0.4, z + (Math.random() - 0.5) * 1.4, 0.35, (Math.random() - 0.5) * 1.2, 0.3 + Math.random() * 0.3);
@@ -926,7 +930,7 @@ function continueAfterCrash(st) {
   const back = g.sim.reason === 'splash' ? 9 : 5;
   const cp = [...g.me.safe].reverse().find((x) => x <= g.sim.x - back) ?? g.sim.startX;
   respawnAt(g.me, cp);
-  g.over = false; g.failT = 0; g.snap = null; g.paused = false;
+  g.over = false; g.failT = 0; g.snap = null; g.paused = false; g.slowT = 0; R.camPush = 0;
   showHud(); Audio.engineStart();
 }
 

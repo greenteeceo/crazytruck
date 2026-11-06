@@ -924,8 +924,10 @@ export class Renderer {
     } else {
       const viewW = aspect < 0.7 ? 11.5 : aspect < 1 ? 14 : aspect < 1.4 ? 19 : 24;
       const dist = viewW / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * aspect);
-      look = new THREE.Vector3(p.x + 1.8 + THREE.MathUtils.clamp(v.x * 0.15, -2, 2.5), p.y + 0.7 + THREE.MathUtils.clamp(v.y * 0.06, -1, 1), 0);
-      pos = new THREE.Vector3(look.x + dist * 0.2, look.y + dist * 0.2, dist);
+      // crash: the camera pushes in on the truck (camPush 0..1, eased back out when the next run starts)
+      const push = this.camPush || 0, d2 = dist * (1 - 0.32 * push);
+      look = new THREE.Vector3(p.x + (1.8 + THREE.MathUtils.clamp(v.x * 0.15, -2, 2.5)) * (1 - push), p.y + 0.7 + THREE.MathUtils.clamp(v.y * 0.06, -1, 1) * (1 - push), 0);
+      pos = new THREE.Vector3(look.x + d2 * 0.2, look.y + d2 * 0.2, d2);
     }
     const k = this.snapCam ? 1 : 1 - Math.exp(-dt * 4.5);
     this.camLook.lerp(look, k); this.camPos.lerp(pos, k);

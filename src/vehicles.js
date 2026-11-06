@@ -16,8 +16,8 @@ const base = {
   speed: 21,        // wheel angular speed rad/s
   torque: 29,       // per wheel
   air: 7.5,         // air pitch accel rad/s^2
-  susHz: 4.2,
-  susDamp: 0.65,
+  susHz: 3.4,       // soft, long-travel monster-truck suspension: the body bobs on landings
+  susDamp: 0.42,
   crane: null,
 };
 
