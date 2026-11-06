@@ -1,6 +1,6 @@
 // Seeded procedural levels and race tracks built from proven obstacle segments.
 // Every seed that ships is validated by tools/gensel.mjs (bot must finish).
-import { B } from './builder.js';
+import { B, settle } from './builder.js';
 import { WORLD_DEFS } from './worlds.js';
 
 function rng(seed) {
@@ -9,12 +9,12 @@ function rng(seed) {
 }
 
 const POOLS = {
-  classic: ['hill', 'hill', 'stepUp', 'rampDown', 'gap', 'gap', 'bridge', 'bridge', 'seesaw', 'crates', 'logs', 'bigJump'],
-  construction: ['hill', 'stepUp', 'rampDown', 'gap', 'girderGap', 'girderGap', 'mover', 'mover', 'crates', 'seesaw', 'bigJump', 'bumps'],
-  medieval: ['hill', 'stepUp', 'rampDown', 'gap', 'bridge', 'bridge', 'drawbridge', 'drawbridge', 'seesaw', 'bumps', 'bigJump', 'logs'],
-  science: ['pad', 'pad', 'mover', 'stepUp', 'rampDown', 'gap', 'crates', 'seesaw', 'pad', 'bumps', 'bigJump'],
+  classic: ['hill', 'hill', 'stepUp', 'rampDown', 'gap', 'gap', 'bridge', 'bridge', 'seesaw', 'crates', 'logs', 'bigJump', 'rolling', 'rocky', 'valley', 'logPile', 'climb', 'barrels'],
+  construction: ['hill', 'stepUp', 'rampDown', 'gap', 'girderGap', 'girderGap', 'crates', 'seesaw', 'bigJump', 'bumps', 'containers', 'containers', 'wreck', 'barrels', 'valley', 'rolling', 'pipes'],
+  medieval: ['hill', 'stepUp', 'rampDown', 'gap', 'bridge', 'bridge', 'drawbridge', 'drawbridge', 'seesaw', 'bumps', 'bigJump', 'logs', 'rocky', 'logPile', 'climb', 'valley', 'barrels'],
+  science: ['pad', 'pad', 'stepUp', 'rampDown', 'gap', 'crates', 'seesaw', 'pad', 'bumps', 'bigJump', 'containers', 'barrels', 'wreck', 'rolling', 'valley', 'pipes'],
 };
-const RACE_EXTRA = ['dominoes', 'hammer', 'boulders', 'wall', 'dominoes', 'hammer', 'wall', 'boulders'];
+const RACE_EXTRA = ['dominoes', 'barrels', 'boulders', 'wall', 'dominoes', 'logPile', 'wall', 'boulders'];
 
 const RACE_WORDS = [['Mega', 'Wild', 'Crazy', 'Turbo', 'Wacky', 'Bumpy', 'Chaos', 'Super', 'Hyper', 'Rowdy', 'Loopy', 'Zany'], ['Derby', 'Rally', 'Rumble', 'Scramble', 'Dash', 'Mayhem', 'Circuit', 'Run', 'Brawl', 'Frenzy']];
 
@@ -33,7 +33,7 @@ function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
   const ground = (x0, x1, t = top, s = st.ground) => b.ground(x0, x1, t, s, t - water);
   b.ground(-8, x, 0, def.startGround, 3);
   const pool = race ? [...POOLS[def.kind], ...RACE_EXTRA] : POOLS[def.kind];
-  const nSeg = length ?? (race ? 8 : 3 + Math.round(diff * 4));
+  const nSeg = length ?? (race ? 9 : 4 + Math.round(diff * 5));
   let last = '';
   for (let i = 0; i < nSeg; i++) {
     let seg = pick(pool);
@@ -137,6 +137,67 @@ function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
         b.dyn(x + 3, top + 0.3, 0.6, 0.6, 'log', 0.2).dyn(x + 3.8, top + 0.3, 0.6, 0.6, 'log', 0.2).dyn(x + 3.4, top + 0.9, 0.6, 0.6, 'log', 0.2);
         b.gem(x + 6.5, top + 1.2); x += 8; break;
       }
+      // ---- road shapes
+      case 'rolling': {   // a wavy road: several smooth humps in a row
+        const n = 3 + ((r() * 2) | 0), L = rr(5, 6.5), h = rr(0.45, 0.7 + diff * 0.3);
+        ground(x, x + n * L);
+        for (let k = 0; k < n; k++) b.hill(x + k * L, x + (k + 1) * L, h * (0.8 + 0.4 * r()), top, def.hill);
+        b.gem(x + L * 1.5, top + h + 1.2); x += n * L; break;
+      }
+      case 'rocky': {   // rough ground: low rocks sticking out of the road
+        const L = rr(10, 14);
+        ground(x, x + L);
+        for (let rx = x + 1.2; rx < x + L - 1; rx += rr(1.4, 2.6)) { const w = rr(0.6, 1.2), h = rr(0.14, 0.3 + diff * 0.1); b.ramp(rx, top, rx + w / 2, top + h, 'stone', top - 0.1); b.ramp(rx + w / 2, top + h, rx + w, top, 'stone', top - 0.1); }
+        b.gem(x + L / 2, top + 1.3); x += L; break;
+      }
+      case 'valley': {   // down into a dip and straight back up
+        const d = rr(1.2, 2.0 + diff * 0.6), L = d * 3 + 2, F = rr(3, 5);
+        b.ramp(x, top, x + L, top - d, st.ground);
+        ground(x + L, x + L + F, top - d);
+        b.ramp(x + L + F, top - d, x + 2 * L + F, top, st.ground);
+        b.gem(x + L + F / 2, top - d + 1.2); x += 2 * L + F; ground(x, x + 3); x += 3; break;
+      }
+      case 'climb': {   // a long climb to a crest, then down the other side
+        const h = rr(2.2, 3.2 + diff * 0.6), L1 = h * 3.2, L2 = h * 3.6;
+        ground(x, x + L1 + L2 + 2);
+        b.ramp(x, top, x + L1, top + h, st.ground, top - 0.5);
+        b.ramp(x + L1, top + h, x + L1 + 2, top + h, st.ground, top - 0.5);
+        b.ramp(x + L1 + 2, top + h, x + L1 + 2 + L2, top, st.ground, top - 0.5);
+        b.gem(x + L1 + 1, top + h + 1.3); x += L1 + L2 + 2; break;
+      }
+      // ---- obstacles
+      case 'barrels': {   // oil barrels standing on the road: knock them over
+        const n = 2 + ((r() * 3) | 0);
+        ground(x, x + 4 + n * 1.2);
+        for (let k = 0; k < n; k++) b.dyn(x + 3 + k * 1.1, top + 0.45, 0.7, 0.9, 'barrel', 0.2);
+        if (n >= 3) b.dyn(x + 3.55, top + 1.35, 0.7, 0.9, 'barrel', 0.2);
+        b.gem(x + 2 + n * 1.2, top + 1.4); x += 4 + n * 1.2; break;
+      }
+      case 'logPile': {   // a pyramid of logs across the road
+        ground(x, x + 9);
+        const lx = x + 3.5;
+        for (let row = 0; row < 3; row++) for (let k = 0; k < 3 - row; k++) b.dyn(lx + k * 0.62 + row * 0.31, top + 0.3 + row * 0.56, 0.6, 0.56, 'log', 0.2);
+        b.gem(x + 7.5, top + 1.2); x += 9; break;
+      }
+      case 'containers': {   // shipping containers: drive up a ramp, along the roof and drop off the end
+        const L = rr(6, 9), h = rr(1.0, 1.3);
+        ground(x, x + L + 9);
+        b.ramp(x, top, x + 4, top + h, 'concrete', top - 0.5);
+        b.block(x + 4 + L / 2, top + h / 2, L, h, 'metal');
+        b.gem(x + 4 + L / 2, top + h + 1.2); x += L + 9; break;
+      }
+      case 'wreck': {   // an old car wreck on the road with a kicker ramp to jump it
+        ground(x, x + 16);
+        b.ramp(x, top, x + 4, top + 0.9, 'wood', top - 0.5);
+        b.block(x + 7.2, top + 0.45, 3.2, 0.9, 'metal');
+        b.gem(x + 7.2, top + 2.6); x += 16; break;
+      }
+      case 'pipes': {   // big round rocks lying on the road (they roll when hit)
+        const n = 2 + ((r() * 2) | 0);
+        ground(x, x + 4 + n * 3);
+        for (let k = 0; k < n; k++) b.ball(x + 3 + k * 3, top + 0.55, 0.55, 0, 'stone');
+        b.gem(x + 2 + n * 1.5, top + 1.6); x += 4 + n * 3; break;
+      }
       // ---- race-only chaos
       case 'dominoes': {
         const n = 4 + ((r() * 4) | 0);
@@ -184,7 +245,7 @@ function build(def, seed, diff, { race = false, length, sea = 0 } = {}) {
   const words = race ? RACE_WORDS : def.words;
   const nr = rng(seed * 7 + 3);
   const opts = { water, ai, name: nameFor(words, nr), gen: seed, ...(seaGaps.length ? { seaGaps } : {}) };
-  return { pieces: b.p, start: { x: 0, y: 0 }, ...opts };
+  return { pieces: settle(b.p, water), start: { x: 0, y: 0 }, ...opts };
 }
 
 const defOf = (w) => (typeof w === 'string' ? WORLD_DEFS.find((d) => d.id === w) : WORLD_DEFS[w]);

@@ -1,9 +1,12 @@
 // Deterministic 2D physics simulation of one truck on one level (planck / Box2D).
+import HULLS from './hulls.json';
 import * as pl from 'planck';
 
 const V = pl.Vec2;
 export const DT = 1 / 60;
 const CAT_TERRAIN = 0x0001, CAT_CAR = 0x0002, CAT_DYN = 0x0004;
+// the hook hangs from the truck: it swings into the road, walls and crates like a real one (never into the truck itself)
+const HOOK_FILTER = { groupIndex: 0, categoryBits: CAT_CAR, maskBits: CAT_TERRAIN | CAT_DYN };
 
 const FRICTION = { snow: 0.75, icecave: 0.6, asphalt: 0.95, docks: 0.95, toy: 0.9, grass: 0.9, dirt: 0.9, wood: 0.95, stone: 0.85, concrete: 0.85, girder: 0.8, metal: 0.75, castle: 0.85, ice: 0.08, sand: 0.9, pad: 0.8 };
 
@@ -113,6 +116,11 @@ export class Sim {
         case 'mover': case 'spin': {
           const b = w.createKinematicBody({ position: V(p.x, p.y), angle: p.a || 0 });
           b.createFixture(pl.Box(p.w / 2, p.h / 2), this.fixtureOpts(p.s));
+          if (p.t === 'mover' && !p.dy) {
+            // a sliding deck rides on a ram that goes down into the water (it does not float)
+            const water = this.level.water ?? -3, rh = Math.max(0.5, p.y - p.h / 2 - water + 0.5);
+            b.createFixture(pl.Box(0.28, rh / 2, V(0, -p.h / 2 - rh / 2), 0), this.fixtureOpts(p.s));
+          }
           this.kinematics.push({ body: b, piece: p });
           this.dynamics.push({ body: b, piece: p });
           break;
@@ -169,6 +177,7 @@ export class Sim {
     for (const h of s.heads) {
       ch.createFixture(pl.Box(h.hw, h.hh, V(h.x, h.y)), carFix({ kind: 'car', part: 'head' }, { density: s.density * 0.4, friction: 0.4 }));
     }
+    this.addShell();
     if (s.blade) ch.createFixture(pl.Box(0.12, 0.42, V(2.0, -0.05)), carFix({ kind: 'car', part: 'chassis' }, { density: 0.5, friction: 0.3 }));
     this.wheels = []; this.joints = [];
     s.wheelX.forEach((wx, i) => {
@@ -184,7 +193,7 @@ export class Sim {
       let prev = ch, px = st.x + tx, py = cy + ty;
       for (let i = 0; i < c.links; i++) {
         const b = w.createDynamicBody({ position: V(px, py - c.linkLen * (i + 0.5)), angularDamping: 0.4, linearDamping: 0.1 });
-        b.createFixture(pl.Box(0.06, c.linkLen / 2), { density: 0.15, filterMaskBits: 0, filterCategoryBits: 0 });
+        b.createFixture(pl.Box(0.06, c.linkLen / 2), { density: 0.15, friction: 0.3, filterGroupIndex: 0, filterCategoryBits: HOOK_FILTER.categoryBits, filterMaskBits: HOOK_FILTER.maskBits, userData: { kind: 'hook' } });
         const j = w.createJoint(pl.RevoluteJoint({}, prev, b, V(px, py - c.linkLen * i)));
         if (i === 0) this.hookJoint = j;
         this.hook.push(b); prev = b;
@@ -201,6 +210,25 @@ export class Sim {
     this.tracked = [ch, ...this.wheels, ...this.hook, ...this.dynamics.map((d) => d.body)];
     this.prev = new Map(this.tracked.map((b) => [b, { x: b.getPosition().x, y: b.getPosition().y, a: b.getAngle() }]));
     this.startX = (this.level.start || { x: 0 }).x;
+  }
+
+  // The truck's visible body as solid shapes (convex outlines of the voxel model: cab, bodywork, boom,
+  // accessories), so no part of the model ever goes into a wall or the road. They weigh nothing - mass and
+  // handling stay those of the chassis - and parts above the roof count as the roof for crash checks.
+  addShell(only = null) {
+    const hs = HULLS[this.spec.hullId || this.spec.id]; if (!hs) return;
+    this.shell ||= [];
+    for (const h of hs) {
+      if (only && !only.includes(h.k)) continue;
+      const pts = []; for (let i = 0; i < h.p.length; i += 2) pts.push(V(h.p[i], h.p[i + 1]));
+      const f = this.chassis.createFixture(pl.Polygon(pts), { density: 0, friction: 0.4, filterCategoryBits: CAT_CAR, filterMaskBits: CAT_TERRAIN | CAT_DYN, userData: { kind: 'car', part: 'shell', top: h.top, key: h.k } });
+      this.shell.push(f);
+    }
+  }
+  dropShell(keys) {
+    for (const f of this.shell || []) if (keys.includes(f.getUserData().key)) this.chassis.destroyFixture(f);
+    this.shell = (this.shell || []).filter((f) => !keys.includes(f.getUserData().key));
+    this.shellTop = 0;
   }
 
   makeJoint(wb) {
@@ -221,6 +249,7 @@ export class Sim {
       b.setLinearVelocity(V(v.x * 0.6 - 1.5, Math.max(v.y, 0) + 6));
       b.setAngularVelocity(2.5 + Math.random() * 2);
       this.debris.push({ body: b, kind: 'boom' });
+      this.dropShell(['boom', 'piston']);
       if (this.hookJoint) { w.destroyJoint(this.hookJoint); this.hookJoint = null; }
       this.hookBoomJoint = w.createJoint(pl.RevoluteJoint({}, b, this.hook[0], b.getWorldPoint(V(c.length, 0))));
       for (const h of this.hook) h.getFixtureList().setFilterData({ groupIndex: 0, categoryBits: CAT_DYN, maskBits: CAT_TERRAIN });
@@ -339,6 +368,7 @@ export class Sim {
         if (o.kind === 'ground') {
           if (delta > 0) this.noteImpact(c, u, o, fo);
           if (u.part === 'wheel') this.wheelTouch[u.idx] = Math.max(0, this.wheelTouch[u.idx] + delta);
+          else if (u.part === 'shell') { if (u.top && !o.prop) this.shellTop = Math.max(0, (this.shellTop || 0) + delta); }
           else if (u.part === 'head') { if (o.prop) this.headProp = Math.max(0, (this.headProp || 0) + delta); else this.headTouch = Math.max(0, this.headTouch + delta); }
           if (delta > 0 && o.prop) this.events.push({ type: 'bonk', style: o.style });
           if (delta > 0 && o.style === 'pad' && o.pad) this.events.push({ type: 'pad', p: o.pad });
@@ -431,7 +461,8 @@ export class Sim {
       // roof on solid ground: instant crash. Roof on a prop (crate, domino...) or resting upside down: a short grace period.
       let a = this.chassis.getAngle() % (Math.PI * 2); if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
       const v = this.chassis.getLinearVelocity(), slow = Math.abs(v.x) + Math.abs(v.y) < 1.5;
-      if (this.headTouch > 0) {
+      // the roof (or what is on it: boom, ladder, cone...) on solid ground with the truck on its side or upside down
+      if (this.headTouch > 0 || ((this.shellTop || 0) > 0 && Math.abs(a) > 1.5)) {
         this.headTime += DT;
         if (this.headTime > 0.1) this.fail('crash');
       } else if (((this.headProp || 0) > 0 && Math.abs(a) > 1.1) || (Math.abs(a) > 2.0 && slow)) {   // a crate on the roof of an upright truck is just a dent
@@ -506,12 +537,13 @@ export class Sim {
       if (boom) {
         if (this.hookBoomJoint) { this.world.destroyJoint(this.hookBoomJoint); this.hookBoomJoint = null; }
         this.world.destroyBody(boom.body); this.debris = this.debris.filter((d) => d !== boom);
+        this.addShell(['boom', 'piston']);
       }
       if (!this.hookJoint) this.hookJoint = this.world.createJoint(pl.RevoluteJoint({}, this.chassis, this.hook[0], V(gx + tx, cy + ty)));
-      for (const h of this.hook) h.getFixtureList().setFilterData({ groupIndex: 0, categoryBits: 0, maskBits: 0 });
+      for (const h of this.hook) h.getFixtureList().setFilterData(HOOK_FILTER);
     }
     this.recoverPose = { x: gx, y: cy };
-    this.headTouch = 0; this.headProp = 0; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
+    this.headTouch = 0; this.headProp = 0; this.shellTop = 0; this.headTime = 0; this.airTime = 0; this.wheelTouch = [0, 0];
     for (const b of this.tracked) { const q = this.prev.get(b), pos = b.getPosition(); q.x = pos.x; q.y = pos.y; q.a = b.getAngle(); }
     this.state = 'recover'; this.reason = ''; this.freeze = hold;
     this.maxX = Math.max(this.maxX, gx);

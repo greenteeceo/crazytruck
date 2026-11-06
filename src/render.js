@@ -307,6 +307,13 @@ export class Renderer {
             }
           }
         }
+        if (p.posts != null) {
+          // a beam over the road stands on towers at both sides of the road (the truck drives between them)
+          const top = p.y - p.h / 2, bw = Math.min(1.2, p.w * 0.2);
+          for (const xx of [p.x - p.w / 2 + bw / 2, p.x + p.w / 2 - bw / 2]) for (const zz of [-Dd / 2, Dd / 2]) {
+            const t = new THREE.Mesh(prismGeo([[xx - bw / 2, p.posts - 1], [xx + bw / 2, p.posts - 1], [xx + bw / 2, top], [xx - bw / 2, top]], 1.0, zz), styleMats(p.s)); t.castShadow = true; t.receiveShadow = true; s.add(t);
+          }
+        }
         const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
         const bx0 = Math.min(...xs), bx1 = Math.max(...xs), by0 = Math.min(...ys), by1 = Math.max(...ys);
         minX = Math.min(minX, bx0); maxX = Math.max(maxX, bx1);
@@ -340,6 +347,7 @@ export class Renderer {
         box(s, p.x - 0.25, p.y, -hz - 0.25, p.x + 0.25, p.y + 0.45, hz + 0.25, 0x3c3d44);
       } else if (p.t === 'finish') {
         const f = buildFinish(Dd); f.position.set(p.x, p.y, 0); f.userData.dynamic = true; s.add(f); this.finish = f;
+        this.buildCrowd(s, p.x, p.y, Dd);
       }
     }
     this.background(s, theme, minX, maxX, waterY);
@@ -392,6 +400,14 @@ export class Renderer {
       } else {
         const depth = ['crate', 'labcrate', 'barrel'].includes(p.s) ? p.w : this.laneCount > 1 ? this.laneW - 0.25 : p.t === 'dyn' && p.s === 'log' ? 3 : 3.4;
         m = texturedBox(p.w, p.h, depth, p.s);
+        if (p.t === 'mover' && !p.dy) {
+          // the ram under a sliding deck: a steel column with a collar, down into the water
+          const rh = Math.max(0.5, p.y - p.h / 2 - (sim.level.water ?? -3) + 0.5);
+          const ram = new THREE.Mesh(new THREE.BoxGeometry(0.56, rh, Math.min(1.4, depth * 0.45)), mat(0x5d6270, { flatShading: true }));
+          ram.position.y = -p.h / 2 - rh / 2; ram.castShadow = true; m.add(ram);
+          const col = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.22, Math.min(1.7, depth * 0.55)), mat(0xffc61a, { flatShading: true }));
+          col.position.y = -p.h / 2 - 0.16; m.add(col);
+        }
       }
       s.add(m); lane.dynViews.push({ m, body: d.body });
     }
@@ -562,6 +578,52 @@ export class Renderer {
     }
   }
   // The finish gate sways after the crane boom clangs into its banner.
+  // Spectators on a small stand behind the road at the finish. They sway while they wait; when the
+  // player crosses the line they jump, throw their arms up and clap (see cheer()).
+  buildCrowd(s, fx, fy, Dd) {
+    rseed = 4242 + Math.round(fx * 10);
+    const z0 = -Dd / 2 - 0.9, stand = new THREE.Group();
+    // two concrete steps the crowd stands on
+    box(stand, fx - 9, fy - 0.2, z0 - 2.6, fx + 3, fy + 0.35, z0 + 0.5, 0x9aa0ae);
+    box(stand, fx - 9, fy - 0.2, z0 - 2.6, fx + 3, fy + 0.85, z0 - 1.1, 0x8a909e);
+    s.add(stand);
+    const SHIRT = [0xff4d6a, 0x2f7cf6, 0xffd21a, 0x46d35c, 0xff8a1f, 0xc6a8ff, 0xffffff, 0x2ee6c8], SKIN = [0xf2c9a0, 0xd9a274, 0xa86e45, 0x7a4a2a, 0xffdcc0];
+    const crowd = new THREE.Group(); crowd.userData.dynamic = true; this.crowd = [];
+    for (let row = 0; row < 2; row++) for (let x = fx - 8.4; x < fx + 2.6; x += 0.85 + srand() * 0.5) {
+      if (srand() < 0.15) continue;
+      const pg = new THREE.Group(), shirt = SHIRT[(srand() * SHIRT.length) | 0], skin = SKIN[(srand() * SKIN.length) | 0], h = 0.9 + srand() * 0.25;
+      box(pg, -0.16, 0, -0.1, 0.16, h * 0.45, 0.1, 0x3a3f55);                    // legs
+      box(pg, -0.2, h * 0.45, -0.13, 0.2, h * 0.85, 0.13, shirt);                // body
+      box(pg, -0.14, h * 0.86, -0.13, 0.14, h * 1.12, 0.13, skin);               // head
+      if (srand() < 0.4) box(pg, -0.16, h * 1.1, -0.15, 0.16, h * 1.18, 0.15, SHIRT[(srand() * SHIRT.length) | 0]);   // cap
+      const arms = [];
+      for (const side of [-1, 1]) {
+        const a = new THREE.Group(); a.position.set(side * 0.24, h * 0.82, 0);
+        box(a, -0.06, -h * 0.38, -0.06, 0.06, 0, 0.06, shirt); box(a, -0.06, -h * 0.46, -0.06, 0.06, -h * 0.38, 0.06, skin);
+        a.rotation.z = side * 0.12; pg.add(a); arms.push(a);
+      }
+      const y = fy + (row ? 0.85 : 0.35), z = z0 + (row ? -1.85 : -0.3);
+      pg.position.set(x, y, z); pg.rotation.y = (srand() - 0.5) * 0.5;
+      crowd.add(pg); this.crowd.push({ g: pg, arms, y, ph: srand() * 6.28, sp: 0.8 + srand() * 0.6 });
+    }
+    s.add(crowd);
+    this.cheerT = 0;
+  }
+  cheer(sec = 4) { this.cheerT = sec; }
+  updateCrowd(dt) {
+    if (!this.crowd?.length) return;
+    const t = performance.now() / 1000;
+    if (this.cheerT > 0) this.cheerT -= dt;
+    const on = this.cheerT > 0;
+    for (const c of this.crowd) {
+      const k = t * c.sp * (on ? 9 : 1.6) + c.ph;
+      c.g.position.y = c.y + (on ? Math.abs(Math.sin(k * 0.5)) * 0.32 : 0);
+      c.g.rotation.z = on ? 0 : Math.sin(k) * 0.04;
+      // arms: up and clapping over the head when cheering, hanging and swinging a little otherwise
+      c.arms.forEach((a, i) => { const sd = i ? 1 : -1; a.rotation.z = on ? sd * (2.6 + Math.sin(k * 1.3) * 0.35) : sd * (0.12 + Math.sin(k + i) * 0.05); });
+    }
+  }
+
   kickFinish(k) { this.finishKick = Math.min(1.5, (this.finishKick || 0) + k); }
 
   // Soft voxel exhaust puff: grows, rises and fades.
@@ -684,6 +746,7 @@ export class Renderer {
   // ------------------------------------------------------------ per-frame
   update(dt, focus, throttle = 0) {
     this.watchFps(dt);
+    this.updateCrowd(dt);
     const t = performance.now() / 1000;
     for (const car of this.cars) {
       const { sim } = car;
@@ -1155,7 +1218,7 @@ export class Renderer {
     if (this.scene?.background?.isTexture) this.scene.background.dispose();
     // every scene has its own sun: its shadow map is a full render target (up to 2048² depth)
     if (this.sun?.shadow?.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
-    this.cars = []; this._pools = null; this.finish = null; this.finishKick = 0; this.groundProf = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0;
+    this.cars = []; this._pools = null; this.finish = null; this.finishKick = 0; this.groundProf = null; this.lanes = []; this.gemViews = []; this.laneCount = 1; this.focusZ = 0; this.crowd = null; this.cheerT = 0;
     this.clouds = []; this.dioramaRoot = null; this.menuSpin = []; this.garage = false;
     this.snapCam = true;
   }

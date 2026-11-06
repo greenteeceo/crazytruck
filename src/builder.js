@@ -30,7 +30,60 @@ export class B {
   dominoes(x0, n, dx = 1.5, top = 0, h = 2.2, s = 'wood') { for (let i = 0; i < n; i++) this.dyn(x0 + i * dx, top + h / 2, 0.32, h, s, 0.35); return this; }
   wall(x, cols, rows, top = 0, sz = 0.75, s = 'crate') { for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) this.dyn(x + c * sz, top + sz / 2 + r * sz, sz, sz, s, 0.15); return this; }
   ball(x, y, r = 0.8, vx = 0, s = 'stone') { return this.add({ t: 'ball', x, y, r, vx, s }); }
+  // oil barrels standing on the road (a pile of 2-4, one on top when there are 3 or more)
+  barrels(x, n = 3, top = 0) { for (let k = 0; k < n; k++) this.dyn(x + k * 1.1, top + 0.45, 0.7, 0.9, 'barrel', 0.2); if (n >= 3) this.dyn(x + 0.55, top + 1.35, 0.7, 0.9, 'barrel', 0.2); return this; }
+  // a pyramid of logs across the road
+  logPile(x, top = 0) { for (let row = 0; row < 3; row++) for (let k = 0; k < 3 - row; k++) this.dyn(x + k * 0.62 + row * 0.31, top + 0.3 + row * 0.56, 0.6, 0.56, 'log', 0.2); return this; }
   hammer(x, top = 0, a0 = 1.1, len = 4.4) { return this.add({ t: 'pend', x, y: top + len + 1.8, len, bw: 1.0, bh: 1.4, a0 }); }
 }
 
-export const lvl = (name, style, fn, opts = {}) => { const b = new B(style); fn(b); return { name, pieces: b.p, water: -3, start: { x: 0, y: 0 }, ...opts }; };
+// Real ground: nothing hangs in the air. Earth slabs and ramps whose underside is above the water are filled
+// down to it; thin decks (girders, planks, plates) stand on piers instead; a moving deck rides on a ram (sim).
+// Then a long run-out after the finish line with a barrel barrier at the end, so a truck that crosses the line
+// at full speed brakes to a stop on the road instead of driving off into the sea.
+const DECKS = new Set(['girder', 'wood', 'metal', 'concrete']);
+function insidePiece(q, x, y) {
+  if (q.t === 'box') return !q.a && Math.abs(x - q.x) <= q.w / 2 + 1e-3 && Math.abs(y - q.y) <= q.h / 2 + 1e-3;
+  const P = q.pts; let pos = 0, neg = 0;
+  for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], c = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]); if (c > 1e-6) pos++; else if (c < -1e-6) neg++; }
+  return !(pos && neg);
+}
+export function settle(pieces, water = -3) {
+  const solid = pieces.filter((p) => (p.t === 'box' && p.s !== 'pad') || p.t === 'poly');
+  const held = (p, x, y) => solid.some((q) => q !== p && insidePiece(q, x, y - 0.08));
+  const out = [];
+  for (const p of pieces) {
+    out.push(p);
+    if (!solid.includes(p) || p.a) continue;
+    const xs = p.t === 'box' ? [p.x - p.w / 2, p.x + p.w / 2] : p.pts.map((q) => q[0]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), bot = p.t === 'box' ? p.y - p.h / 2 : Math.min(...p.pts.map((q) => q[1]));
+    if (bot <= water + 0.05) continue;
+    const n = Math.max(2, Math.ceil((x1 - x0) / 0.8) + 1), samples = [];
+    for (let i = 0; i < n; i++) samples.push(x0 + 0.12 + (x1 - x0 - 0.24) * i / (n - 1));
+    if (samples.every((x) => held(p, x, bot))) continue;
+    // over the road (a gate lintel, a beam to drive under): it stands on towers at both sides of the road
+    let floor = null;
+    for (let y = bot - 1.2; y > water && floor == null; y -= 0.2) if (solid.some((q) => q !== p && insidePiece(q, (x0 + x1) / 2, y))) floor = y;
+    if (floor != null) { p.posts = floor; continue; }
+    if (p.t === 'box' && p.h < 1 && p.w >= 2 && DECKS.has(p.s)) {
+      // a deck: piers at both ends and every 6 m, wherever nothing already holds it up
+      const k = Math.max(1, Math.ceil((x1 - x0 - 0.8) / 6)), ps = [];
+      for (let i = 0; i <= k; i++) ps.push(x0 + 0.4 + (x1 - x0 - 0.8) * i / k);
+      for (const px of ps) if (!held(p, px, bot)) out.push({ t: 'box', x: px, y: (bot + water) / 2, w: 0.5, h: bot - water, s: p.s, pier: true });
+    } else if (p.t === 'box') {
+      const top = p.y + p.h / 2; p.h = top - water; p.y = (top + water) / 2;
+    } else {
+      p.pts = p.pts.map(([x, y]) => [x, y <= bot + 1e-6 ? water : y]);
+    }
+  }
+  const f = pieces.find((p) => p.t === 'finish');
+  if (f) {
+    const under = solid.find((q) => insidePiece(q, f.x, f.y - 0.1));
+    const st = under?.s && under.s !== 'pad' ? under.s : 'concrete';
+    out.push({ t: 'box', x: f.x + 15, y: (f.y + water) / 2, w: 34, h: f.y - water, s: st, runout: true });
+    out.push({ t: 'box', x: f.x + 31.5, y: f.y + 0.6, w: 1, h: 1.2, s: 'barrel', barrier: true });
+  }
+  return out;
+}
+
+export const lvl = (name, style, fn, opts = {}) => { const b = new B(style); fn(b); return { name, pieces: settle(b.p, opts.water ?? -3), water: -3, start: { x: 0, y: 0 }, ...opts }; };

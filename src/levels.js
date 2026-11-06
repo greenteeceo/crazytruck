@@ -84,7 +84,7 @@ const construction = [
   lvl('Barrel Roll', 'concrete', (b) => {
     b.ground(-8, 10, 0).ramp(10, 0, 30, -3).ground(30, 56, -3)
       .dyn(18, 0, 0.7, 0.7, 'barrel', 0.15).dyn(22, -0.8, 0.7, 0.7, 'barrel', 0.15).dyn(26, -1.6, 0.7, 0.7, 'barrel', 0.15)
-      .stack(38, -3, 3, 2, 0.8).gem(15, 0.4).gem(34, -1.8).gem(45, -1.8).finish(50, -3);
+      .stack(38, -3, 3, 2, 0.75).gem(15, 0.4).gem(34, -1.8).gem(45, -1.8).finish(50, -3);
   }, { water: -6 }),
   lvl('Rooftops', 'concrete', (b) => {
     b.ground(-8, 14, 0).ramp(9, 0, 14, 1.0).ground(19, 27, 0.6, 'concrete', 3.6).ramp(23, 0.6, 27, 1.4)
@@ -123,7 +123,7 @@ const medieval = [
       .bridge(40, -0.8, 52, 0).ground(52, 66, 0, 'grass').gem(13, 0.8).gem(29, 0.2).gem(46, 0.4).finish(60);
   }, { ai: { zones: [[6, 53, 8]] } }),
   lvl('Castle Gate', 'castle', (b) => {
-    b.ground(-8, 60, 0, 'grass').block(24, 5.0, 10, 2, 'castle').ground(18.5, 30, 0.4, 'castle', 0.4)
+    b.ground(-8, 60, 0, 'grass').block(24, 6.2, 10, 2, 'castle').ground(18.5, 30, 0.4, 'castle', 0.4)
       .hill(36, 44, 1.2, 0, 'castle').deco('torch', 17, 0).deco('torch', 31, 0)
       .gem(24, 1.6).gem(40, 2.6).gem(48, 1.2).finish(54);
   }),
@@ -212,9 +212,9 @@ export const RACE_TRACKS = [
       .ball(46, 4.6, 0.8, -3).ball(51, 4.6, 0.95, -2).ball(54, 4.6, 0.7, -4).pad(78, 0.02, 2.4, 12, 8).ground(88, 112, 0).ball(96, 1.0, 0.9).finish(104)
       .gem(30, 3.0).gem(49, 5.0).gem(84, 4.0);
   }, { ai: { zones: [[16, 44, 8]] } }),
-  race('Hammer Time', 1, 'concrete', (b) => {
-    b.ground(-8, 110, 0).hammer(18, 0, 1.2).hammer(28, 0, -1.1).hammer(38, 0, 1.0).wall(46, 2, 3, 0, 0.75)
-      .hill(54, 62, 1.2, 0, 'girder').hammer(70, 0, -1.2).hammer(78, 0, 1.2).dominoes(86, 5, 1.5, 0, 2.2, 'girder').finish(102)
+  race('Barrel Alley', 1, 'concrete', (b) => {
+    b.ground(-8, 110, 0).barrels(18, 3).barrels(28, 2).logPile(37).wall(46, 2, 3, 0, 0.75)
+      .hill(54, 62, 1.2, 0, 'girder').barrels(69, 4).logPile(78).dominoes(86, 5, 1.5, 0, 2.2, 'girder').finish(102)
       .gem(23, 1.2).gem(33, 1.2).gem(58, 2.6).gem(74, 1.2);
   }),
   race('Bounce House', 3, 'metal', (b) => {
@@ -235,8 +235,8 @@ export const RACE_TRACKS = [
   }),
   race('Castle Smash', 2, 'castle', (b) => {
     b.ground(-8, 11.6, 0, 'grass').hinge(12, -0.18, 10, 1.25, -0.02, 1.3, 'wood').block(22.4, -0.5, 0.8, 0.6)
-      .ground(22.8, 40, 0).hammer(30, 0, 1.2).ramp(40, 0, 56, 3).ground(56, 66, 3, 'castle', 6).ball(60, 4.0, 0.9, -3).ball(64, 4.0, 0.8, -2)
-      .ramp(66, 3, 78, 0).ground(78, 108, 0, 'grass').hammer(88, 0, -1.2).wall(94, 2, 3, 0, 0.75).finish(102)
+      .ground(22.8, 40, 0).barrels(29, 3).ramp(40, 0, 56, 3).ground(56, 66, 3, 'castle', 6).ball(60, 4.0, 0.9, -3).ball(64, 4.0, 0.8, -2)
+      .ramp(66, 3, 78, 0).ground(78, 108, 0, 'grass').logPile(87).wall(94, 2, 3, 0, 0.75).finish(102)
       .gem(17, 1.0).gem(34, 1.2).gem(61, 5.0).gem(84, 1.2);
   }, { ai: { zones: [[38, 58, 8]] } }),
   race('Plank Panic', 2, 'castle', (b) => {
@@ -244,26 +244,26 @@ export const RACE_TRACKS = [
       .pad(50, -0.58, 2.4, 11, 8).ground(62, 70, 0).bridge(70, 0, 84, 0).ground(84, 106, 0, 'grass').wall(90, 2, 2).finish(100)
       .gem(15, 0.8).gem(37, 0.4).gem(56, 4.0).gem(77, 0.8);
   }, { ai: { zones: [[6, 45, 8], [68, 85, 8]] } }),
-  race('Spin Cycle', 3, 'metal', (b) => {
-    b.ground(-8, 108, 0).spin(20, 0.0, 4.2, 0.4, 0.9).hammer(36, 0, -1.2).mover(52, 3.0, 3, 0.5, 0, 1.2, 2.4, 'metal')
-      .wall(62, 2, 3, 0, 0.75, 'labcrate').hammer(74, 0, 1.2).pad(84, 0.02, 2.4, 11, 7).finish(100)
+  race('Lab Yard', 3, 'metal', (b) => {
+    b.ground(-8, 108, 0).hill(16, 24, 1.0, 0, 'metal').barrels(35, 3).dominoes(50, 4, 1.6)
+      .wall(62, 2, 3, 0, 0.75, 'labcrate').barrels(73, 2).pad(84, 0.02, 2.4, 11, 7).finish(100)
       .gem(28, 1.2).gem(44, 1.2).gem(68, 1.2).gem(88, 3.6);
   }),
-  race('Moon Bounce', 3, 'metal', (b) => {
-    b.ground(-8, 14, 0).ramp(8, 0, 14, 1.0).ground(22, 34, 0.8).ball(30, 2.0, 0.9).pad(33, 0.82, 2.4, 9, 6).ground(48, 58, 0.5)
-      .wall(52, 2, 3, 0.5, 0.75, 'labcrate').ramp(54, 0.5, 58, 1.4).ground(70, 100, 0).dominoes(76, 5, 1.6).finish(94)
-      .gems(17, 4.0, 3, 2.2).gems(38, 5.0, 3, 2.6).gems(61, 4.6, 3, 2.4);
+  race('Crater Run', 3, 'metal', (b) => {
+    b.ground(-8, 14, 0).ramp(8, 0, 14, 1.0).ground(20, 34, 0.8).ball(30, 2.0, 0.9).pad(33, 0.82, 2.4, 12, 8).ground(45, 58, 0.5)
+      .wall(50, 2, 3, 0.5, 0.75, 'labcrate').ramp(54, 0.5, 58, 1.4).ramp(58, 1.4, 64, 0).ground(64, 100, 0).dominoes(76, 5, 1.6).finish(94)
+      .gems(17, 4.0, 3, 2.2).gems(38, 5.0, 3, 2.6).gem(58, 2.6).gems(68, 1.2, 3, 2.4);
   }, { ai: { airAngle: -0.05 } }),
   race('Rolling Thunder', 2, 'castle', (b) => {
     b.ground(-8, 10, 0, 'grass').ramp(10, 0, 40, 4.5).ground(40, 52, 4.5, 'castle', 7.5)
       .ball(45, 5.5, 0.9, 0).ball(49, 5.5, 0.8, 0)
-      .hammer(46, 4.5, 1.1).ramp(52, 4.5, 72, 0).ground(72, 106, 0, 'grass').ball(84, 1.0, 0.9).wall(90, 2, 3).finish(100)
+      .ramp(52, 4.5, 72, 0).ground(72, 106, 0, 'grass').ball(84, 1.0, 0.9).wall(90, 2, 3).finish(100)
       .gem(25, 3.4).gem(46, 5.6).gem(62, 3.4).gem(80, 1.2);
   }, { ai: { zones: [[8, 42, 8]] } }),
   race('Grand Chaos', 1, 'concrete', (b) => {
-    b.ground(-8, 40, 0).dominoes(10, 5, 1.5).hammer(24, 0, 1.2).wall(32, 2, 3).pad(38, 0.02, 2.4, 12, 8).ground(50, 58, 0.5, 'girder', 3.5)
-      .block(62.6, -1.6, 0.8, 3.6, 'girder').seesaw(62.6, 0.3, 9.2, 0.2, 0.2, 'girder').ground(67.2, 112, -0.8).hammer(78, -0.8, 1.1)
-      .ball(90, 0.2, 0.9, -2).hammer(96, -0.8, -1.2).finish(106, -0.8)
+    b.ground(-8, 40, 0).dominoes(10, 5, 1.5).barrels(23, 3).wall(32, 2, 3).pad(38, 0.02, 2.4, 12, 8).ground(50, 58, 0.5, 'girder', 3.5)
+      .block(62.6, -1.6, 0.8, 3.6, 'girder').seesaw(62.6, 0.3, 9.2, 0.2, 0.2, 'girder').ground(67.2, 112, -0.8).logPile(77, -0.8)
+      .ball(90, 0.2, 0.9, -2).barrels(96, 2, -0.8).finish(106, -0.8)
       .gem(17, 1.2).gem(44, 4.2).gem(62.6, 2.0).gem(86, 0.4);
   }, { ai: { zones: [[56, 70, 6]] } }),
 ];

@@ -444,6 +444,7 @@ function fx(e, sim, z = 0, car = null) {
     case 'recover': if (car) { P.vibrate('light'); R.carRecover(car, e); R.popText(e.to.x < e.from.x - 1 ? 'Back you go!' : 'Flip!', e.from.x, e.from.y + 2.6, z, '#ffffff'); } break;
     case 'win':
       for (const c of [0xffffff, 0xff3d6b, 0x2f7cf6, 0xffd21a]) R.burst(p.x + 1, p.y + 2, c, 14, 7, -5, 1.2, z);
+      R.cheer(); Audio.applause();   // the crowd at the line jumps, claps and cheers
       Audio.win(); break;
     case 'fail':
       if (e.reason === 'splash') { R.burst(p.x, (sim.level.water ?? -3) + 0.2, 0xffffff, 30, 7, -10, 1, z); Audio.splash(); }
