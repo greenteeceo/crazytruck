@@ -98,18 +98,6 @@
         ]
       },
       {
-        "label": "hint",
-        "ads": [
-          {
-            "id": "<rewarded AD UNIT ID for hint>",
-            "type": "rewarded",
-            "config": {
-              "cooldown": 30
-            }
-          }
-        ]
-      },
-      {
         "label": "try_truck",
         "ads": [
           {
