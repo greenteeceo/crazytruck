@@ -359,6 +359,8 @@ export const NASTY = [
   ['iceSlide', 'Frozen floors'], ['tower:toy', 'Toy block towers'], ['dominoRun:neon', 'Neon dominoes'], ['precisionJump', 'Sky ledges'],
 ];
 const SKILL = ['precisionJump', 'iceSlide'];
+const JUMPS = ['bigJump', 'gap', 'girderGap', 'precisionJump', 'pad'];
+const DEBRIS = ['tower', 'toppleWall', 'barrels', 'logPile', 'wreck', 'dominoRun', 'containers', 'rollers', 'bouncy', 'jelly', 'catapult', 'crates', 'logs', 'dominoes', 'boulders', 'wall'];
 function autoPlan(wid, li) {
   const wi = WORLD_DEFS.findIndex((d) => d.id === wid), sig = SIGNATURE[wid] || [];
   const base = SETS[WORLD_DEFS[wi].kind] || SETS.classic;
@@ -379,6 +381,11 @@ function autoPlan(wid, li) {
   if (li >= 3 && sig.length && !plan.some((p) => sig.includes(p))) plan[(rnd() * plan.length) | 0] = li === 3 ? sig[0] : sig[(rnd() * sig.length) | 0];
   // the last levels (17-20) always have a section that needs a steady hand
   if (li >= 16 && !plan.some((p) => SKILL.includes(p))) plan[(rnd() * plan.length) | 0] = SKILL[(rnd() * SKILL.length) | 0];
+  // a jump never comes right after a stretch that leaves loose things on the road: crates rolling onto the
+  // kicker take the speed the jump needs (the jump goes first, the debris after it)
+  for (let pass = 0; pass < 3; pass++) for (let i = 1; i < plan.length; i++) {
+    if (JUMPS.includes(plan[i].split(':')[0]) && DEBRIS.includes(plan[i - 1].split(':')[0])) [plan[i - 1], plan[i]] = [plan[i], plan[i - 1]];
+  }
   return plan;
 }
 const WORLD_STEP = 0.02;    // each world is a little harder than the one before (warm-ups only a little)
