@@ -4,8 +4,9 @@ export const REWARDS = {
 };
 
 // Developer test tools in Settings (Autoplay, All resources) and the AUTO / TEST chips.
-// true while testing; set to false for the store build (5 taps on the version line in Settings still unlocks them).
-export const DEV_TOOLS = true;
+// On in the web / artifact build for testing; off in the TikTok store package (build.mjs defines __STORE__).
+// 5 taps on the version line in Settings still unlocks them.
+export const DEV_TOOLS = !(typeof __STORE__ !== 'undefined' && __STORE__);
 
 // Gem packs for real money: these become the HS dashboard products (economy.js → PRODUCTS). The price shown in
 // the game is the store's own (p.price, or Beans on TikTok); the USD prices here are the targets.
