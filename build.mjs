@@ -21,7 +21,7 @@ fs.writeFileSync('dist/artifact.html', head.trim() + '\n' + body.trim() + '\n');
 // The HS kit (hs-kit/hs-game.js + hs-sdk.min.js) is loaded by game.js itself, next to it; the local stand-in
 // used by the web build is left out.
 const noLocalHS = { name: 'no-local-hs', setup(b) { b.onResolve({ filter: /hs-local\.js$/ }, () => ({ path: 'hs-local', namespace: 'empty' })); b.onLoad({ filter: /.*/, namespace: 'empty' }, () => ({ contents: '' })); } };
-const tt = await build({ entryPoints: ['src/tt-entry.js'], bundle: true, minify: !process.env.NOMIN, format: 'iife', target: ['es2018'], write: false, legalComments: 'none', plugins: [noLocalHS], loader: { '.jpg': 'dataurl' }, define: { __STORE__: 'true' } });
+const tt = await build({ entryPoints: ['src/tt-entry.js'], bundle: true, minify: !process.env.NOMIN, format: 'iife', target: ['es2018'], write: false, legalComments: 'none', plugins: [noLocalHS], loader: { '.jpg': 'dataurl' }, define: { __STORE__: process.env.DEVTOOLS ? 'false' : 'true' } });   // DEVTOOLS=1: keep Autoplay / AUTO / TEST in the TikTok package
 const out = 'dist-tiktok';
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
